@@ -1,0 +1,39 @@
+{
+  "generated_at_utc": "2026-03-25T20:16:00.433409+00:00",
+  "strategy_name": "demo",
+  "input_file": "D:\\qt\\secure-eval-wrapper\\open-core\\data\\sample\\features.json",
+  "input_sha256": "661d09c1cfb162d45d80a9baed4fe65cf94456c0f0aaf46267d07ca635cf74f1",
+  "config": {
+    "seed": 20260325,
+    "bars": 280,
+    "mc_paths": 200,
+    "mc_path_len": 220,
+    "fee_bps": 2.0,
+    "slippage_bps": 3.0,
+    "stress_slippage_bps_grid": [
+      0.0,
+      3.0,
+      8.0,
+      15.0
+    ],
+    "stress_volatility_mult_grid": [
+      1.0,
+      1.3,
+      1.6
+    ],
+    "intrabar_stop_loss_pct": 0.004,
+    "intrabar_take_profit_pct": 0.006,
+    "intrabar_steps_per_bar": 12
+  },
+  "config_sha256": "54f5ca26ceaa0bfbff6430565025fd4e79ee13b31b9bee3e8145ac5069c91aa2",
+  "code_hashes": {
+    "src/core/strategy_base.py": "75e45d215885d7aaea68316780140edcf1b0fad2715c30da25c231a407994dde",
+    "src/strategies/demo_strategy.py": "42b4cf5e895656ce6c9a31fc11ea36297edc2caa335c4baa7a49331d42dba57d",
+    "src/eval/simulations.py": "5108dd2c40a6f2b1f07be71aec76599a57463a86fc1bef59bc7ec52ddc0f7ebe",
+    "src/eval/metrics.py": "bdc798efaca29bd628291550454777d1591bd8b0d50eafe389965e98a91a39e4",
+    "src/eval/repro.py": "900942826ff8734fd6cf033461a1f4f367cd58b580f0b576f2759b3a9af38b84",
+    "src/eval/reporting.py": "59c25072c8788a48aa0dc574ac4acd404a9e367ba2fb95c487b4e95925b453db",
+    "src/eval_cli.py": "2cd5efc174173d234982cef66e56ab3ee5353d760e70f93d501943a80846a1a1"
+  },
+  "repro_note": "Use the same input snapshot, config, and code hashes to reproduce the same deterministic demo results."
+}

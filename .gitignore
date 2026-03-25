@@ -1,0 +1,84 @@
+﻿# ==============================
+# Private strategy and secrets
+# ==============================
+private/
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.pfx
+*.p12
+*.crt
+*.cer
+*.der
+*.jks
+*.keystore
+*.kdbx
+
+# Common secret-like config files
+secrets.*
+credentials.*
+config.local.*
+
+# ==============================
+# Python
+# ==============================
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.eggs/
+*.egg-info/
+dist/
+build/
+site/
+.venv/
+venv/
+ENV/
+env/
+
+# ==============================
+# IDE / Editor
+# ==============================
+.vscode/
+.idea/
+*.iml
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# ==============================
+# OS files
+# ==============================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ==============================
+# Logs / runtime artifacts
+# ==============================
+*.log
+*.out
+*.tmp
+*.temp
+*.pid
+open-core/output/
+
+# ==============================
+# Delivery artifacts (optional)
+# Keep demo-run if you want; ignore heavy archives by default
+# ==============================
+*.zip
+*.tar
+*.tar.gz
+*.7z

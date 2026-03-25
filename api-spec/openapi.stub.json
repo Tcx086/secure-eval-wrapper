@@ -1,0 +1,19 @@
+﻿{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Black-box Eval API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/infer": {
+      "post": {
+        "summary": "Get trading signal from normalized features"
+      }
+    },
+    "/news": {
+      "get": {
+        "summary": "Get normalized RSS items"
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "action": "LONG",
+  "score": 0.24,
+  "confidence": 0.24,
+  "meta": {
+    "strategy": "demo",
+    "is_demo": true
+  }
+}

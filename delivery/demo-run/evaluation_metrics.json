@@ -1,0 +1,112 @@
+{
+  "signal": {
+    "action": "LONG",
+    "score": 0.24,
+    "confidence": 0.24,
+    "meta": {
+      "strategy": "demo",
+      "is_demo": true
+    }
+  },
+  "monte_carlo": {
+    "paths": 200,
+    "path_len": 220,
+    "p05_total_return": -0.173715,
+    "p50_total_return": 0.175452,
+    "p95_total_return": 0.579558,
+    "p95_max_drawdown": -0.077911,
+    "p50_sharpe": 1.028002
+  },
+  "stress_test": [
+    {
+      "slippage_bps": 0.0,
+      "volatility_mult": 1.0,
+      "total_return": 0.291888,
+      "max_drawdown": -0.165536,
+      "sharpe": 1.26055
+    },
+    {
+      "slippage_bps": 0.0,
+      "volatility_mult": 1.3,
+      "total_return": 0.406645,
+      "max_drawdown": -0.208657,
+      "sharpe": 1.319149
+    },
+    {
+      "slippage_bps": 0.0,
+      "volatility_mult": 1.6,
+      "total_return": 0.525601,
+      "max_drawdown": -0.250187,
+      "sharpe": 1.355774
+    },
+    {
+      "slippage_bps": 3.0,
+      "volatility_mult": 1.0,
+      "total_return": 0.18787,
+      "max_drawdown": -0.178254,
+      "sharpe": 0.879655
+    },
+    {
+      "slippage_bps": 3.0,
+      "volatility_mult": 1.3,
+      "total_return": 0.293415,
+      "max_drawdown": -0.220731,
+      "sharpe": 1.026153
+    },
+    {
+      "slippage_bps": 3.0,
+      "volatility_mult": 1.6,
+      "total_return": 0.402822,
+      "max_drawdown": -0.26164,
+      "sharpe": 1.117714
+    },
+    {
+      "slippage_bps": 8.0,
+      "volatility_mult": 1.0,
+      "total_return": 0.032726,
+      "max_drawdown": -0.202428,
+      "sharpe": 0.244829
+    },
+    {
+      "slippage_bps": 8.0,
+      "volatility_mult": 1.3,
+      "total_return": 0.124526,
+      "max_drawdown": -0.242641,
+      "sharpe": 0.537825
+    },
+    {
+      "slippage_bps": 8.0,
+      "volatility_mult": 1.6,
+      "total_return": 0.219685,
+      "max_drawdown": -0.281558,
+      "sharpe": 0.720948
+    },
+    {
+      "slippage_bps": 15.0,
+      "volatility_mult": 1.0,
+      "total_return": -0.151138,
+      "max_drawdown": -0.23635,
+      "sharpe": -0.643926
+    },
+    {
+      "slippage_bps": 15.0,
+      "volatility_mult": 1.3,
+      "total_return": -0.075637,
+      "max_drawdown": -0.274639,
+      "sharpe": -0.145833
+    },
+    {
+      "slippage_bps": 15.0,
+      "volatility_mult": 1.6,
+      "total_return": 0.002627,
+      "max_drawdown": -0.311766,
+      "sharpe": 0.165476
+    }
+  ],
+  "intrabar": {
+    "bars_simulated": 280,
+    "stop_hit_rate": 0.385714,
+    "take_profit_hit_rate": 0.371429,
+    "avg_intrabar_pnl": 0.000817
+  }
+}

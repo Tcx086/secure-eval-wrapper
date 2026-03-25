@@ -1,0 +1,8 @@
+﻿{
+  "symbol": "BTCUSDT",
+  "ts": "2026-03-25T10:00:00Z",
+  "price_momentum": 0.32,
+  "volatility": 0.18,
+  "news_sentiment": 0.21,
+  "rss_source": "https://news-monitor.tcx086.com/"
+}
