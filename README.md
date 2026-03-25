@@ -6,16 +6,21 @@
 A secure evaluation framework that demonstrates how to ship reproducible model/strategy evaluation systems **without exposing proprietary logic**.
 
 ### What Problem It Solves
-Teams often need to share results externally, but exposing source code, parameters, and private edge is risky.
-This project provides a practical pattern:
-- deterministic runs,
-- auditable artifacts,
-- and strict public/private boundaries.
+Build a production-style evaluation workflow that is:
+- reproducible,
+- auditable,
+- and safe to present publicly.
 
 ### Why This Is Hard
-- Reproducibility breaks easily when config/data/code drift.
-- Evaluation claims are weak without stress and stability checks.
-- Sharing enough evidence while protecting core IP requires deliberate architecture.
+- Config, data, and code drift can silently break reproducibility.
+- Evaluation claims are fragile without standardized stress/stability checks.
+- Promotion decisions are unreliable without deterministic artifacts and audit trails.
+
+### Engineering Challenges Solved
+- Deterministic reproducibility with fixed seed + input/config/code hashes.
+- Unified risk suite with Monte Carlo, stress windows, and intrabar probes.
+- Promotion-grade artifact packaging for review and sim/live gating.
+- Public/private isolation with contract-level integration points.
 
 ### Top 3 Engineering Strengths
 1. Deterministic reproducibility via seed + input/config/code hashes.
@@ -25,14 +30,14 @@ This project provides a practical pattern:
 ### System Architecture
 ```mermaid
 flowchart LR
-  A[Strategy Adapter\n(public contract)] --> B[Signal/Scoring Layer]
+  A["Strategy Adapter<br/>(public contract)"] --> B["Signal/Scoring Layer"]
   B --> C[Evaluation Engine]
-  C --> D[Risk Suite\nMC / Stress / Intrabar]
-  D --> E[Repro Manifest\n(hash + seed + config)]
+  C --> D["Risk Suite<br/>MC / Stress / Intrabar"]
+  D --> E["Repro Manifest<br/>(hash + seed + config)"]
   E --> F[Artifact Packager]
   F --> G[Delivery Bundle]
 
-  P[Private Strategy Code\nlocal-only] -. injected locally .-> A
+  P["Private Strategy Code<br/>local-only"] -. injected locally .-> A
 ```
 
 ### Quick Start
@@ -105,19 +110,21 @@ Private:
 目标是在**不暴露私有策略逻辑**的前提下，展示可复现、可审计的评估系统工程能力。
 
 ### 解决的问题
-对外展示时常见矛盾：
-- 不展示结果，别人不信；
-- 展示太细，又会泄露 edge。
-
-本仓库给出可执行方案：
-- 确定性复现
-- 可审计产物
-- 公私边界隔离
+构建一套可用于生产门禁思路的评估工作流，要求同时满足：
+- 可复现
+- 可审计
+- 可公开展示
 
 ### 难点在哪里
 - 配置/数据/代码轻微漂移就会破坏复现。
 - 没有压力测试与稳定性检查，结果说服力不足。
-- “展示证据”与“保护 IP”天然冲突，需要工程化设计。
+- 缺少标准化产物与审计链路时，升级决策不稳定。
+
+### 已解决的工程难点
+- 通过 seed + 输入/配置/代码哈希实现确定性复现。
+- 建立统一风险套件（Monte Carlo / stress / intrabar）。
+- 形成可用于评审与门禁的标准化产物打包流程。
+- 通过契约层集成实现公开框架与私有逻辑隔离。
 
 ### 3 个最能打的工程点
 1. seed + 输入/配置/代码哈希，保证确定性复现。
@@ -127,14 +134,14 @@ Private:
 ### 架构图
 ```mermaid
 flowchart LR
-  A[策略适配层\n公开契约] --> B[信号/评分层]
+  A["策略适配层<br/>公开契约"] --> B["信号/评分层"]
   B --> C[评估引擎]
-  C --> D[风险套件\nMC/Stress/Intrabar]
-  D --> E[复现清单\n哈希+seed+配置]
+  C --> D["风险套件<br/>MC/Stress/Intrabar"]
+  D --> E["复现清单<br/>哈希+seed+配置"]
   E --> F[产物打包]
   F --> G[交付包]
 
-  P[私有策略代码\n本地保留] -. 本地注入 .-> A
+  P["私有策略代码<br/>本地保留"] -. 本地注入 .-> A
 ```
 
 ### 一键运行
