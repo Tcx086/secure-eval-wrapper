@@ -89,20 +89,42 @@ This means the research process is not random iteration:
 3. verify reproducibility artifacts/checksums
 4. then promote to paper/sim execution
 
-Sanitized performance presentation format (recommended for public sharing, side-by-side not "replacement"):
+Sanitized standalone presentation format (recommended for public sharing):
 
-| Metric | v5 (Sanitized) | v6 (Sanitized) | Delta (v6-v5) |
-|---|---:|---:|---:|
-| Annualized Return | `[base]` | `[base + x%]` | `+x% to +y%` |
-| Max Drawdown | `[base]` | `[improved]` | `-(x to y) pp` |
-| Sharpe | `[base]` | `[base + x]` | `+x to +y` |
-| Win Rate | `[base]` | `[base + x pp]` | `+x to +y pp` |
-| Turnover | `[base]` | `[lower/higher]` | `-(x to y)%` or `+(x to y)%` |
-| Monte Carlo P50 Return | `[base]` | `[base + x%]` | `+x% to +y%` |
-| Stress Test Worst-Case Return | `[base]` | `[less negative]` | `+x% to +y%` |
-| Intrabar Stability Score | `[base]` | `[base + x]` | `+x to +y` |
+#### v5 Standalone Results (Math/Stat Edge, v3+v4)
+| Metric | Value (Sanitized) |
+|---|---:|
+| Cost Assumption | `22 bps` |
+| Annualized Return | `[fill value or range]` |
+| Max Drawdown | `[fill value or range]` |
+| Sharpe | `[fill value or range]` |
+| Win Rate | `[fill value or range]` |
+| Turnover | `[fill value or range]` |
+| Monte Carlo P50 Return | `[fill value or range]` |
+| Stress Test Worst-Case Return | `[fill value or range]` |
+| Intrabar Stability Score | `[fill value or range]` |
+| Survivability Conclusion | `Survives at 22 bps: Yes/No` |
 
-Note: publish only aggregated/normalized metrics (or percentage deltas), not private model parameters or factor internals.
+#### v6 Standalone Results (News-Driven Edge)
+| Metric | Value (Sanitized) |
+|---|---:|
+| Cost Assumption | `22 bps` |
+| Annualized Return | `[fill value or range]` |
+| Max Drawdown | `[fill value or range]` |
+| Sharpe | `[fill value or range]` |
+| Win Rate | `[fill value or range]` |
+| Turnover | `[fill value or range]` |
+| Monte Carlo P50 Return | `[fill value or range]` |
+| Stress Test Worst-Case Return | `[fill value or range]` |
+| Intrabar Stability Score | `[fill value or range]` |
+| Survivability Conclusion | `Survives at 22 bps: Yes/No` |
+
+#### Common Survival Criteria
+- Same transaction-cost assumption: `22 bps`
+- Same reproducibility requirements: snapshot/config freeze + hash/checksum audit
+- Same validation gates: backtest + risk suite + stress/intrabar checks
+
+Note: publish aggregated/range metrics only; do not disclose private model parameters or factor internals.
 
 ### Important Note
 These published numbers are for the **demo strategy pipeline** and public methodology demonstration.
@@ -206,20 +228,42 @@ powershell -ExecutionPolicy Bypass -File scripts/run_all.ps1
 3. 校验复现证据（含 checksum/hash）
 4. 再进入 paper/sim 执行层
 
-建议公开展示采用“并列对比”的脱敏聚合表：
+建议公开展示采用“各自独立结果表”：
 
-| 指标 | v5（脱敏） | v6（脱敏） | 变化（v6-v5） |
-|---|---:|---:|---:|
-| 年化收益 | `[基准]` | `[基准 + x%]` | `+x% ~ +y%` |
-| 最大回撤 | `[基准]` | `[改善后]` | `-(x ~ y) 个百分点` |
-| Sharpe | `[基准]` | `[基准 + x]` | `+x ~ +y` |
-| 胜率 | `[基准]` | `[基准 + x 个百分点]` | `+x ~ +y 个百分点` |
-| 换手率 | `[基准]` | `[更低/更高]` | `-(x ~ y)%` 或 `+(x ~ y)%` |
-| Monte Carlo P50 收益 | `[基准]` | `[基准 + x%]` | `+x% ~ +y%` |
-| 压力测试最差场景收益 | `[基准]` | `[更不负]` | `+x% ~ +y%` |
-| Intrabar 稳定性评分 | `[基准]` | `[基准 + x]` | `+x ~ +y` |
+#### v5 独立结果（数学/统计 Edge，v3+v4）
+| 指标 | 数值（脱敏） |
+|---|---:|
+| 成本假设 | `22 bps` |
+| 年化收益 | `[填写具体值或区间]` |
+| 最大回撤 | `[填写具体值或区间]` |
+| Sharpe | `[填写具体值或区间]` |
+| 胜率 | `[填写具体值或区间]` |
+| 换手率 | `[填写具体值或区间]` |
+| Monte Carlo P50 收益 | `[填写具体值或区间]` |
+| 压力测试最差场景收益 | `[填写具体值或区间]` |
+| Intrabar 稳定性评分 | `[填写具体值或区间]` |
+| 生存性结论 | `22 bps 下可生存：是/否` |
 
-说明：公开时建议只给聚合指标/百分比变化，不公开参数、阈值、因子内部实现。
+#### v6 独立结果（新闻驱动 Edge）
+| 指标 | 数值（脱敏） |
+|---|---:|
+| 成本假设 | `22 bps` |
+| 年化收益 | `[填写具体值或区间]` |
+| 最大回撤 | `[填写具体值或区间]` |
+| Sharpe | `[填写具体值或区间]` |
+| 胜率 | `[填写具体值或区间]` |
+| 换手率 | `[填写具体值或区间]` |
+| Monte Carlo P50 收益 | `[填写具体值或区间]` |
+| 压力测试最差场景收益 | `[填写具体值或区间]` |
+| Intrabar 稳定性评分 | `[填写具体值或区间]` |
+| 生存性结论 | `22 bps 下可生存：是/否` |
+
+#### 统一生存标准
+- 相同交易成本假设：`22 bps`
+- 相同复现要求：snapshot/config 冻结 + hash/checksum 审计
+- 相同验证流程：backtest + risk suite + stress/intrabar 检查
+
+说明：公开时建议只给聚合值/区间，不公开参数、阈值、因子内部实现。
 
 ### 重要说明
 以上数字用于展示 **公开 demo 策略流程** 与评估方法。
