@@ -1,0 +1,33 @@
+{
+  "generated_at_utc": "2026-03-25T21:34:37.350386+00:00",
+  "stages": [
+    {
+      "name": "signal_demo",
+      "attempts": 1,
+      "success": true,
+      "elapsed_sec": 0.214,
+      "last_returncode": 0
+    },
+    {
+      "name": "eval_quant",
+      "attempts": 1,
+      "success": true,
+      "elapsed_sec": 0.248,
+      "last_returncode": 0
+    },
+    {
+      "name": "package_quant",
+      "attempts": 1,
+      "success": true,
+      "elapsed_sec": 1.236,
+      "last_returncode": 0
+    },
+    {
+      "name": "eval_generic",
+      "attempts": 1,
+      "success": true,
+      "elapsed_sec": 0.234,
+      "last_returncode": 0
+    }
+  ]
+}

@@ -41,6 +41,18 @@ This is especially challenging in systems where core logic cannot be open-source
 
 Show the system. Protect the edge.
 
+### System Entry (Top-Level)
+Run the whole system from one entrypoint:
+
+```powershell
+D:\qt\.python\python.exe runner/main.py --mode all
+```
+
+Modes:
+- `--mode quant`
+- `--mode generic`
+- `--mode all`
+
 ### System Architecture
 ```mermaid
 flowchart LR
@@ -53,6 +65,9 @@ flowchart LR
 
   P["Private Strategy Code<br/>local-only"] -. injected locally .-> A
 ```
+
+### Execution Flow (Who Calls Who)
+`runner/main.py` -> `system/pipeline.py` -> `system/orchestrator.py` -> `open-core/scripts/run_*.ps1` -> artifacts in `delivery/`
 
 ### Quick Start
 From `open-core`:
@@ -107,6 +122,11 @@ Private:
 
 ### Deep-Dive Engineering Notes
 - See `ENGINEERING_HARD_PARTS.md` for deterministic design, boundary control, and promotion gate details.
+- See `docs/PIPELINE_FLOW.md` for explicit call graph.
+- See `docs/PERFORMANCE_AND_SCALE.md` for scale/latency notes.
+- See `docs/RELIABILITY.md` for retry/failure/logging design.
+- See `docs/INTERFACE_EXTENSIBILITY.md` for abstraction/extensibility notes.
+- See `security/THREAT_MODEL.md` for threat model, attack surface, and mitigations.
 
 ### Repo Map
 - `open-core/`: public framework + demos
@@ -145,6 +165,18 @@ Private:
 2. 私有策略边界隔离，只公开接口契约与 demo。
 3. 评估与风险产物自动打包，支撑上线前门禁流程。
 
+### 主系统入口
+通过单一入口运行整个系统：
+
+```powershell
+D:\qt\.python\python.exe runner/main.py --mode all
+```
+
+可选模式：
+- `--mode quant`
+- `--mode generic`
+- `--mode all`
+
 ### 架构图
 ```mermaid
 flowchart LR
@@ -157,6 +189,9 @@ flowchart LR
 
   P["私有策略代码<br/>本地保留"] -. 本地注入 .-> A
 ```
+
+### 调用链（谁调用谁）
+`runner/main.py` -> `system/pipeline.py` -> `system/orchestrator.py` -> `open-core/scripts/run_*.ps1` -> `delivery/` 产物
 
 ### 一键运行
 在 `open-core` 下执行：
@@ -211,6 +246,12 @@ powershell -ExecutionPolicy Bypass -File scripts/run_generic_demo.ps1
 
 ### 工程难点说明
 详见 `ENGINEERING_HARD_PARTS.md`（确定性设计、边界隔离、上线门禁流程）。
+补充文档：
+- `docs/PIPELINE_FLOW.md`（流程与调用关系）
+- `docs/PERFORMANCE_AND_SCALE.md`（性能与规模意识）
+- `docs/RELIABILITY.md`（重试/故障处理/日志）
+- `docs/INTERFACE_EXTENSIBILITY.md`（接口抽象与扩展）
+- `security/THREAT_MODEL.md`（威胁模型/攻击面/缓解）
 
 ### 仓库结构
 - `open-core/`：公开框架与 demo
