@@ -2,30 +2,44 @@
 
 ## English
 
-### What This Is
-A secure evaluation framework that demonstrates how to ship reproducible model/strategy evaluation systems **without exposing proprietary logic**.
+## What this is
 
-### What Problem It Solves
-Build a production-style evaluation workflow that is:
-- reproducible,
-- auditable,
-- and safe to present publicly.
+A secure evaluation framework designed to demonstrate how to build a reproducible and auditable evaluation pipeline without exposing proprietary strategy logic.
 
-### Why This Is Hard
-- Config, data, and code drift can silently break reproducibility.
-- Evaluation claims are fragile without standardized stress/stability checks.
-- Promotion decisions are unreliable without deterministic artifacts and audit trails.
+---
 
-### Engineering Challenges Solved
-- Deterministic reproducibility with fixed seed + input/config/code hashes.
-- Unified risk suite with Monte Carlo, stress windows, and intrabar probes.
-- Promotion-grade artifact packaging for review and sim/live gating.
-- Public/private isolation with contract-level integration points.
+## Problem
 
-### Top 3 Engineering Strengths
-1. Deterministic reproducibility via seed + input/config/code hashes.
-2. Sealed private strategy boundary with public contract-only interfaces.
-3. Automated risk/evaluation artifact packaging for promotion to sim/live.
+In real-world systems, evaluation pipelines must satisfy three constraints at the same time:
+
+- Reproducible
+- Auditable
+- Shareable (without leaking sensitive logic)
+
+This is especially challenging in systems where core logic cannot be open-sourced.
+
+---
+
+## Why this is hard
+
+- Small changes in config, data, or code can break reproducibility
+- Results without stress testing lack credibility
+- Without standardized outputs and audit trails, promotion decisions become unreliable
+
+---
+
+## What this repo demonstrates
+
+- A fully reproducible evaluation workflow
+- Built-in stress testing and stability checks
+- A clear separation between public infrastructure and private logic
+- Standardized artifacts for reporting and decision-making
+
+---
+
+## Key idea
+
+Show the system. Protect the edge.
 
 ### System Architecture
 ```mermaid
