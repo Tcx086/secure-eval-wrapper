@@ -2,278 +2,198 @@
 
 ## English
 
-### Overview
-Secure Eval Wrapper is a public demonstration framework for:
-- reproducible strategy evaluation,
-- risk/stability diagnostics,
-- and clean confidentiality boundaries.
+### What This Is
+A secure evaluation framework that demonstrates how to ship reproducible model/strategy evaluation systems **without exposing proprietary logic**.
 
-This repository is designed to show engineering quality and research discipline without exposing proprietary strategy code (edge).
+### What Problem It Solves
+Teams often need to share results externally, but exposing source code, parameters, and private edge is risky.
+This project provides a practical pattern:
+- deterministic runs,
+- auditable artifacts,
+- and strict public/private boundaries.
 
-### What Is Public vs Private
-Public in this repo:
-- `open-core/` (framework + demo strategy)
-- reproducible evaluation pipeline (Monte Carlo, stress tests, intrabar probe)
-- delivery artifacts and methodology
+### Why This Is Hard
+- Reproducibility breaks easily when config/data/code drift.
+- Evaluation claims are weak without stress and stability checks.
+- Sharing enough evidence while protecting core IP requires deliberate architecture.
 
-Private (never published):
-- real strategy logic (`real_test_v5/v6` internals)
-- proprietary feature engineering, weights, thresholds
-- private credentials and operational secrets
+### Top 3 Engineering Strengths
+1. Deterministic reproducibility via seed + input/config/code hashes.
+2. Sealed private strategy boundary with public contract-only interfaces.
+3. Automated risk/evaluation artifact packaging for promotion to sim/live.
 
-### One-Click Run (Recommended)
-From `open-core/`:
+### System Architecture
+```mermaid
+flowchart LR
+  A[Strategy Adapter\n(public contract)] --> B[Signal/Scoring Layer]
+  B --> C[Evaluation Engine]
+  C --> D[Risk Suite\nMC / Stress / Intrabar]
+  D --> E[Repro Manifest\n(hash + seed + config)]
+  E --> F[Artifact Packager]
+  F --> G[Delivery Bundle]
+
+  P[Private Strategy Code\nlocal-only] -. injected locally .-> A
+```
+
+### Quick Start
+From `open-core`:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/run_all.ps1
 ```
 
-This single command will:
-1. run a signal demo
-2. generate reproducible evaluation artifacts
-3. package a delivery zip
+This command runs demo signal + evaluation + zip packaging.
 
-Output:
-- folder: `delivery/demo-run/`
-- zip: `delivery/demo-run.zip`
+### Non-Quant Generic Demo
+A second demo is included to show framework capability beyond trading domain.
 
-### Reproducibility Evidence
-Generated files:
-- `delivery/demo-run/repro_manifest.json`
-- `delivery/demo-run/evaluation_report.md`
-- `delivery/demo-run/evaluation_metrics.json`
-- `delivery/demo-run/model_card_public.md`
-- `delivery/demo-run/signal_output.json`
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_generic_demo.ps1
+```
 
-`repro_manifest.json` includes:
-- input snapshot hash
-- config hash
-- code hashes
-- deterministic seed settings
+Outputs in `delivery/generic-demo`:
+- `generic_manifest.json`
+- `generic_metrics.json`
+- `generic_report.md`
 
-### Current Demo Results (Public Sample)
-Source: `delivery/demo-run/evaluation_metrics.json`
+### Public vs Private Boundary
+Public:
+- framework contracts and demo implementation
+- evaluation methodology and reproducibility artifacts
 
-#### Signal Output
-- Action: `LONG`
-- Score: `0.24`
-- Confidence: `0.24`
+Private:
+- real strategy internals (`real_test_v5/v6` logic)
+- private features, thresholds, and operational secrets
 
-#### Monte Carlo (200 paths, 220 bars/path)
-- P05 Total Return: `-0.173715`
-- P50 Total Return: `0.175452`
-- P95 Total Return: `0.579558`
-- P95 Max Drawdown: `-0.077911`
-- P50 Sharpe: `1.028002`
-
-#### Stress Test Highlights
-- Best sample case (0 bps slippage, vol x1.6): Total Return `0.5256`, Max DD `-0.2502`, Sharpe `1.3558`
-- Harsh sample case (15 bps slippage, vol x1.0): Total Return `-0.1511`, Max DD `-0.2364`, Sharpe `-0.6439`
-
-#### Intrabar Probe (280 bars)
-- Stop Hit Rate: `0.385714`
-- Take Profit Hit Rate: `0.371429`
-- Avg Intrabar PnL: `0.000817`
-
-### Private Edge Track Record (Sanitized: v5 vs v6)
-Based on `d:/qt/real_test_v5/README.md` and `d:/qt/real_test_v6/README.md`:
-
-- **v5** is an independent math/stat edge line (`v3 + v4`), with engineering around parallel portfolio construction, reproducibility, checksum auditing, and Monte Carlo workflow.
-- **v6** is an independent news-driven edge line, with isolated architecture (signal vs execution), `sim`-first deployment policy, and risk-suite gating before runtime promotion.
-
-The two tracks use different public cost assumptions and are presented as separate, reproducible research lines (`v5: 16 bps`, `v6: 22 bps`).
-
-This means the research process is not random iteration:
-1. freeze snapshot/config
-2. run backtest + risk suite
-3. verify reproducibility artifacts/checksums
-4. then promote to paper/sim execution
-
-Sanitized standalone presentation format:
-
-#### v5 Standalone Results (Math/Stat Edge, v3+v4)
-| Metric | Value (Sanitized) |
+### Current Public Results (Sanitized)
+#### v5 Standalone (Math/Stat Edge, v3+v4)
+| Metric | Value |
 |---|---:|
 | Public Metric Cost Basis | `16 bps` |
 | Annualized Return | `19.15%` |
 | Max Drawdown | `10.98%` |
 | Sharpe | `0.9376` |
 | Win Rate | `34.75%` |
-| Turnover | `withheld (private)` |
 | Monte Carlo CAGR P50 | `12.18%` |
 | Stress Test Worst-Case Return | `-23.36%` |
-| Intrabar Stability Score | `withheld (private)` |
-| Survivability Conclusion @22 bps | `Yes (validated privately)` |
 
-#### v6 Standalone Results (News-Driven Edge)
-| Metric | Value (Sanitized) |
+#### v6 Standalone (News-Driven Edge)
+| Metric | Value |
 |---|---:|
 | Cost Assumption | `22 bps` |
 | Annualized Return | `40.55%` |
 | Max Drawdown | `-26.78%` |
 | Sharpe | `1.3789` |
-| Win Rate | `reported in full report tables` |
-| Turnover | `withheld (private)` |
-| Monte Carlo (5000 paths) | `reported in full report appendix` |
-| Stress Test Worst-Case Return | `reported in stress window appendix` |
-| Intrabar Stability Score | `reported in risk suite appendix` |
 | Survivability Conclusion @22 bps | `Yes` |
 
-#### Validation Criteria
-- Public cost assumptions: `v5 = 16 bps`, `v6 = 22 bps`
-- Same reproducibility requirements: snapshot/config freeze + hash/checksum audit
-- Same validation gates: backtest + risk suite + stress/intrabar checks
+### Deep-Dive Engineering Notes
+- See `ENGINEERING_HARD_PARTS.md` for deterministic design, boundary control, and promotion gate details.
 
-Note: publish aggregated/range metrics only; do not disclose private model parameters or factor internals.
-Reverse-engineering note: aggregated portfolio-level metrics are typically insufficient to reconstruct alpha logic; trade-by-trade logs and feature-level attribution materially increase leakage risk and should remain private.
-
-### Important Note
-These published numbers are for the **demo strategy pipeline** and public methodology demonstration.
-They are not a disclosure of the proprietary real strategy implementation.
-
-### Repository Structure
-- `open-core/`: public framework and demo strategy
-- `api-spec/`: API draft
-- `security/`: baseline security notes
-- `delivery/`: runbook, templates, generated demo artifacts
-- `private/`: local-only integration guidance (ignored from git)
+### Repo Map
+- `open-core/`: public framework + demos
+- `delivery/`: generated artifacts, templates, runbook
+- `security/`: baseline controls
+- `api-spec/`: interface stub
+- `private/`: local-only integration notes
 
 ---
 
 ## 中文
 
-### 项目说明
-Secure Eval Wrapper 是一个用于公开展示的方法论框架，重点是：
-- 可复现的策略评估流程
-- 风险与稳定性诊断能力
-- 清晰的保密边界管理
+### 这是什么
+这是一个“安全评估框架”示例仓库：
+目标是在**不暴露私有策略逻辑**的前提下，展示可复现、可审计的评估系统工程能力。
 
-这个仓库用于展示工程能力与研究严谨性，不公开真实策略 edge。
+### 解决的问题
+对外展示时常见矛盾：
+- 不展示结果，别人不信；
+- 展示太细，又会泄露 edge。
 
-### 公开与私有边界
-公开内容：
-- `open-core/`（框架 + demo 策略）
-- 可复现评估流程（Monte Carlo、压力测试、intrabar）
-- 对外交付材料与方法说明
+本仓库给出可执行方案：
+- 确定性复现
+- 可审计产物
+- 公私边界隔离
 
-私有内容（不公开）：
-- `real_test_v5/v6` 真实策略实现
-- 关键特征工程、权重、阈值与训练细节
-- 密钥与生产环境配置
+### 难点在哪里
+- 配置/数据/代码轻微漂移就会破坏复现。
+- 没有压力测试与稳定性检查，结果说服力不足。
+- “展示证据”与“保护 IP”天然冲突，需要工程化设计。
 
-### 一键运行（推荐）
-在 `open-core/` 下执行：
+### 3 个最能打的工程点
+1. seed + 输入/配置/代码哈希，保证确定性复现。
+2. 私有策略边界隔离，只公开接口契约与 demo。
+3. 评估与风险产物自动打包，支撑上线前门禁流程。
+
+### 架构图
+```mermaid
+flowchart LR
+  A[策略适配层\n公开契约] --> B[信号/评分层]
+  B --> C[评估引擎]
+  C --> D[风险套件\nMC/Stress/Intrabar]
+  D --> E[复现清单\n哈希+seed+配置]
+  E --> F[产物打包]
+  F --> G[交付包]
+
+  P[私有策略代码\n本地保留] -. 本地注入 .-> A
+```
+
+### 一键运行
+在 `open-core` 下执行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/run_all.ps1
 ```
 
-该命令会自动完成：
-1. 运行 signal demo
-2. 生成评估报告与指标文件
-3. 打包 zip 交付包
+执行 signal demo + 评估 + zip 打包。
 
-输出位置：
-- 目录：`delivery/demo-run/`
-- 压缩包：`delivery/demo-run.zip`
+### 非量化通用 Demo
+为了证明框架能力不局限于量化场景，额外提供通用评估 demo：
 
-### 可复现证据
-自动生成：
-- `delivery/demo-run/repro_manifest.json`
-- `delivery/demo-run/evaluation_report.md`
-- `delivery/demo-run/evaluation_metrics.json`
-- `delivery/demo-run/model_card_public.md`
-- `delivery/demo-run/signal_output.json`
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_generic_demo.ps1
+```
 
-其中 `repro_manifest.json` 包含：
-- 输入快照哈希
-- 配置哈希
-- 代码哈希
-- 固定随机种子信息
+输出目录 `delivery/generic-demo`：
+- `generic_manifest.json`
+- `generic_metrics.json`
+- `generic_report.md`
 
-### 当前 Demo 结果摘要（公开样例）
-数据来源：`delivery/demo-run/evaluation_metrics.json`
+### 公私边界
+公开：
+- 框架契约与 demo 实现
+- 评估方法与复现产物
 
-#### 信号输出
-- Action: `LONG`
-- Score: `0.24`
-- Confidence: `0.24`
+私有：
+- `real_test_v5/v6` 真实策略实现
+- 私有特征、阈值、参数与密钥
 
-#### Monte Carlo（200 路径，每条 220 bars）
-- P05 Total Return: `-0.173715`
-- P50 Total Return: `0.175452`
-- P95 Total Return: `0.579558`
-- P95 Max Drawdown: `-0.077911`
-- P50 Sharpe: `1.028002`
-
-#### 压力测试示例
-- 较优场景（滑点 0bps，波动 x1.6）：Total Return `0.5256`，Max DD `-0.2502`，Sharpe `1.3558`
-- 严苛场景（滑点 15bps，波动 x1.0）：Total Return `-0.1511`，Max DD `-0.2364`，Sharpe `-0.6439`
-
-#### Intrabar 探针（280 bars）
-- Stop Hit Rate: `0.385714`
-- Take Profit Hit Rate: `0.371429`
-- Avg Intrabar PnL: `0.000817`
-
-### 私有 Edge 轨迹（脱敏版：v5 vs v6）
-依据 `d:/qt/real_test_v5/README.md` 与 `d:/qt/real_test_v6/README.md`：
-
-- **v5** 是一条独立的数学/统计 edge 线路（`v3 + v4`），重点在并行组合工程化、复现审计、Monte Carlo 验证。
-- **v6** 是一条独立的新闻驱动 edge 线路，重点在信号层/执行层隔离、`sim` 优先、risk suite 先行。
-
-两条线路使用不同的公开成本口径并分别验证（`v5 = 16 bps`，`v6 = 22 bps`），属于并行独立研究结果，不是同一策略的简单迭代替换。
-
-这说明研究流程是可审计的，而非随机试错：
-1. 冻结 snapshot/config
-2. 执行 backtest + risk suite
-3. 校验复现证据（含 checksum/hash）
-4. 再进入 paper/sim 执行层
-
-以下为展示用的各自独立结果表：
-
+### 当前公开结果（脱敏）
 #### v5 独立结果（数学/统计 Edge，v3+v4）
-| 指标 | 数值（脱敏） |
+| 指标 | 数值 |
 |---|---:|
 | 公开指标成本口径 | `16 bps` |
 | 年化收益 | `19.15%` |
 | 最大回撤 | `10.98%` |
 | Sharpe | `0.9376` |
 | 胜率 | `34.75%` |
-| 换手率 | `私有，不公开` |
 | Monte Carlo CAGR P50 | `12.18%` |
 | 压力测试最差场景收益 | `-23.36%` |
-| Intrabar 稳定性评分 | `私有，不公开` |
-| 生存性结论（22 bps） | `是（私有验证）` |
 
 #### v6 独立结果（新闻驱动 Edge）
-| 指标 | 数值（脱敏） |
+| 指标 | 数值 |
 |---|---:|
 | 成本假设 | `22 bps` |
 | 年化收益 | `40.55%` |
 | 最大回撤 | `-26.78%` |
 | Sharpe | `1.3789` |
-| 胜率 | `见完整报告表格` |
-| 换手率 | `私有，不公开` |
-| Monte Carlo（5000 paths） | `见完整报告附录` |
-| 压力测试最差场景收益 | `见 stress window 附录` |
-| Intrabar 稳定性评分 | `见 risk suite 附录` |
 | 生存性结论（22 bps） | `是` |
 
-#### 验证标准
-- 公开成本口径：`v5 = 16 bps`，`v6 = 22 bps`
-- 相同复现要求：snapshot/config 冻结 + hash/checksum 审计
-- 相同验证流程：backtest + risk suite + stress/intrabar 检查
+### 工程难点说明
+详见 `ENGINEERING_HARD_PARTS.md`（确定性设计、边界隔离、上线门禁流程）。
 
-说明：公开时建议只给聚合值/区间，不公开参数、阈值、因子内部实现。
-反推风险说明：仅发布组合级聚合结果，通常不足以反推出 alpha 细节；逐笔成交日志、特征级归因和参数轨迹才是高泄露风险数据，应继续私有化。
-
-### 重要说明
-以上数字用于展示 **公开 demo 策略流程** 与评估方法。
-不代表真实私有策略实现细节的公开。
-
-### 目录结构
-- `open-core/`：公开框架与 demo 策略
+### 仓库结构
+- `open-core/`：公开框架与 demo
+- `delivery/`：产物、模板、runbook
+- `security/`：安全基线
 - `api-spec/`：接口草案
-- `security/`：安全基线说明
-- `delivery/`：runbook、模板、演示产物
-- `private/`：本地私有接入说明（已被 git 忽略）
+- `private/`：本地私有接入说明

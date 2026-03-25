@@ -1,0 +1,54 @@
+{
+  "core": {
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "brier": 0.093417,
+    "logloss": 0.341884
+  },
+  "bootstrap": {
+    "paths": 1000,
+    "p05_accuracy": 1.0,
+    "p50_accuracy": 1.0,
+    "p95_accuracy": 1.0
+  },
+  "stress": [
+    {
+      "scenario": "base",
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "brier": 0.093417,
+      "logloss": 0.341884
+    },
+    {
+      "scenario": "confidence_drop",
+      "accuracy": 0.916667,
+      "precision": 1.0,
+      "recall": 0.833333,
+      "f1": 0.909091,
+      "brier": 0.112106,
+      "logloss": 0.389867
+    },
+    {
+      "scenario": "calibration_shift",
+      "accuracy": 0.916667,
+      "precision": 1.0,
+      "recall": 0.833333,
+      "f1": 0.909091,
+      "brier": 0.09715,
+      "logloss": 0.34599
+    },
+    {
+      "scenario": "combined_stress",
+      "accuracy": 0.833333,
+      "precision": 1.0,
+      "recall": 0.666667,
+      "f1": 0.8,
+      "brier": 0.128239,
+      "logloss": 0.408892
+    }
+  ]
+}

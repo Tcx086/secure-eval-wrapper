@@ -10,3 +10,6 @@
 - Monte Carlo + stress + intrabar metrics (`evaluation_metrics.json`)
 - Runbook (`RUNBOOK.md`)
 - External wording template (`external_message_template.md`)
+- Generic non-quant manifest (`generic_manifest.json`)
+- Generic non-quant metrics (`generic_metrics.json`)
+- Generic non-quant report (`generic_report.md`)

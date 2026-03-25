@@ -1,0 +1,14 @@
+﻿[
+  {"id": "c001", "label": 1, "score": 0.91},
+  {"id": "c002", "label": 0, "score": 0.18},
+  {"id": "c003", "label": 1, "score": 0.77},
+  {"id": "c004", "label": 0, "score": 0.34},
+  {"id": "c005", "label": 1, "score": 0.62},
+  {"id": "c006", "label": 0, "score": 0.41},
+  {"id": "c007", "label": 1, "score": 0.88},
+  {"id": "c008", "label": 0, "score": 0.24},
+  {"id": "c009", "label": 1, "score": 0.56},
+  {"id": "c010", "label": 0, "score": 0.13},
+  {"id": "c011", "label": 1, "score": 0.69},
+  {"id": "c012", "label": 0, "score": 0.47}
+]
