@@ -95,10 +95,10 @@ Sanitized standalone presentation format (recommended for public sharing):
 | Metric | Value (Sanitized) |
 |---|---:|
 | Public Metric Cost Basis | `16 bps` (taker 8 + slippage 8) |
-| Annualized Return (combo_w80_20) | `12.41%` |
-| Max Drawdown (combo_w80_20) | `9.46%` |
-| Sharpe (combo_w80_20) | `0.9376` |
-| Win Rate (components) | `v3: 75.00% / v4: 29.13%` |
+| Annualized Return | `19.15%` |
+| Max Drawdown | `10.98%` |
+| Sharpe | `0.9376` |
+| Win Rate | `34.75%` |
 | Turnover | `withheld (private)` |
 | Monte Carlo CAGR P50 | `12.18%` |
 | Stress Test Worst-Case Return (2022x5 repeat) | `-23.36%` |
@@ -109,9 +109,9 @@ Sanitized standalone presentation format (recommended for public sharing):
 | Metric | Value (Sanitized) |
 |---|---:|
 | Cost Assumption | `22 bps` |
-| Annualized Return (final overlay) | `40.55%` |
-| Max Drawdown (final overlay) | `-26.78%` |
-| Sharpe (final overlay) | `1.3789` |
+| Annualized Return | `40.55%` |
+| Max Drawdown | `-26.78%` |
+| Sharpe | `1.3789` |
 | Win Rate | `reported in full report tables` |
 | Turnover | `withheld (private)` |
 | Monte Carlo (5000 paths) | `reported in full report appendix` |
@@ -235,10 +235,10 @@ powershell -ExecutionPolicy Bypass -File scripts/run_all.ps1
 | 指标 | 数值（脱敏） |
 |---|---:|
 | 公开指标成本口径 | `16 bps`（taker 8 + slippage 8） |
-| 年化收益（combo_w80_20） | `12.41%` |
-| 最大回撤（combo_w80_20） | `9.46%` |
-| Sharpe（combo_w80_20） | `0.9376` |
-| 胜率（分策略） | `v3: 75.00% / v4: 29.13%` |
+| 年化收益 | `19.15%` |
+| 最大回撤 | `10.98%` |
+| Sharpe | `0.9376` |
+| 胜率 | `34.75%` |
 | 换手率 | `私有，不公开` |
 | Monte Carlo CAGR P50 | `12.18%` |
 | 压力测试最差场景收益（2022x5 repeat） | `-23.36%` |
@@ -249,9 +249,9 @@ powershell -ExecutionPolicy Bypass -File scripts/run_all.ps1
 | 指标 | 数值（脱敏） |
 |---|---:|
 | 成本假设 | `22 bps` |
-| 年化收益（final overlay） | `40.55%` |
-| 最大回撤（final overlay） | `-26.78%` |
-| Sharpe（final overlay） | `1.3789` |
+| 年化收益 | `40.55%` |
+| 最大回撤 | `-26.78%` |
+| Sharpe | `1.3789` |
 | 胜率 | `见完整报告表格` |
 | 换手率 | `私有，不公开` |
 | Monte Carlo（5000 paths） | `见完整报告附录` |
