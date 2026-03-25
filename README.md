@@ -78,16 +78,18 @@ Source: `delivery/demo-run/evaluation_metrics.json`
 ### Private Edge Track Record (Sanitized: v5 vs v6)
 Based on `d:/qt/real_test_v5/README.md` and `d:/qt/real_test_v6/README.md`:
 
-- **v5** emphasizes parallel portfolio engineering (`v3 + v4`), risk-budget allocation (`0.8/0.2`), one-click reproducibility, checksum auditing, and Monte Carlo workflow.
-- **v6** emphasizes architecture hardening for isolated operation (signal layer vs execution layer), `sim`-first deployment policy, shared policy for backtest/live consistency, and risk-suite gating before runtime promotion.
+- **v5** is an independent math/stat edge line (`v3 + v4`), with engineering around parallel portfolio construction, reproducibility, checksum auditing, and Monte Carlo workflow.
+- **v6** is an independent news-driven edge line, with isolated architecture (signal vs execution), `sim`-first deployment policy, and risk-suite gating before runtime promotion.
 
-This means the edge evolution is not random iteration:
+Both tracks are validated under the same cost-survival assumption (`22 bps`) and are presented as separate, reproducible research lines.
+
+This means the research process is not random iteration:
 1. freeze snapshot/config
 2. run backtest + risk suite
 3. verify reproducibility artifacts/checksums
 4. then promote to paper/sim execution
 
-Sanitized performance presentation format (recommended for public sharing):
+Sanitized performance presentation format (recommended for public sharing, side-by-side not "replacement"):
 
 | Metric | v5 (Sanitized) | v6 (Sanitized) | Delta (v6-v5) |
 |---|---:|---:|---:|
@@ -193,16 +195,18 @@ powershell -ExecutionPolicy Bypass -File scripts/run_all.ps1
 ### 私有 Edge 轨迹（脱敏版：v5 vs v6）
 依据 `d:/qt/real_test_v5/README.md` 与 `d:/qt/real_test_v6/README.md`：
 
-- **v5** 侧重并行组合工程化（`v3 + v4`）、风险预算分配（`0.8/0.2`）、一键复现、checksum 审计与 Monte Carlo 流程。
-- **v6** 侧重隔离式架构强化（信号层与执行层分离）、`sim` 优先部署原则、回测/实盘共用 policy、一致性与 risk suite 先行。
+- **v5** 是一条独立的数学/统计 edge 线路（`v3 + v4`），重点在并行组合工程化、复现审计、Monte Carlo 验证。
+- **v6** 是一条独立的新闻驱动 edge 线路，重点在信号层/执行层隔离、`sim` 优先、risk suite 先行。
 
-这说明 edge 迭代是可审计流程，而非随机试错：
+两条线路都基于相同的成本生存假设（`22 bps`）进行验证，属于并行独立研究结果，不是同一策略的简单迭代替换。
+
+这说明研究流程是可审计的，而非随机试错：
 1. 冻结 snapshot/config
 2. 执行 backtest + risk suite
 3. 校验复现证据（含 checksum/hash）
 4. 再进入 paper/sim 执行层
 
-建议公开展示采用脱敏聚合表：
+建议公开展示采用“并列对比”的脱敏聚合表：
 
 | 指标 | v5（脱敏） | v6（脱敏） | 变化（v6-v5） |
 |---|---:|---:|---:|
