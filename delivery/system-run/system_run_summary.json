@@ -1,0 +1,34 @@
+{
+  "generated_at_utc": "2026-03-25T21:40:17.801996+00:00",
+  "mode": "all",
+  "results": [
+    {
+      "mode": "quant",
+      "signal": {
+        "action": "LONG",
+        "score": 0.24,
+        "confidence": 0.24,
+        "meta": {
+          "strategy": "demo",
+          "is_demo": true
+        }
+      },
+      "eval": {
+        "output_dir": "D:\\qt\\secure-eval-wrapper\\delivery\\demo-run",
+        "files": [
+          "D:\\qt\\secure-eval-wrapper\\delivery\\demo-run\\repro_manifest.json",
+          "D:\\qt\\secure-eval-wrapper\\delivery\\demo-run\\evaluation_report.md",
+          "D:\\qt\\secure-eval-wrapper\\delivery\\demo-run\\model_card_public.md",
+          "D:\\qt\\secure-eval-wrapper\\delivery\\demo-run\\signal_output.json",
+          "D:\\qt\\secure-eval-wrapper\\delivery\\demo-run\\evaluation_metrics.json"
+        ]
+      },
+      "python_exe_hint": "D:\\qt\\.python\\python.exe"
+    },
+    {
+      "mode": "generic",
+      "stdout": "{\n  \"output_dir\": \"D:\\\\qt\\\\secure-eval-wrapper\\\\delivery\\\\generic-demo\",\n  \"files\": [\n    \"D:\\\\qt\\\\secure-eval-wrapper\\\\delivery\\\\generic-demo\\\\generic_manifest.json\",\n    \"D:\\\\qt\\\\secure-eval-wrapper\\\\delivery\\\\generic-demo\\\\generic_metrics.json\",\n    \"D:\\\\qt\\\\secure-eval-wrapper\\\\delivery\\\\generic-demo\\\\generic_report.md\"\n  ]\n}\n",
+      "python_exe_hint": "D:\\qt\\.python\\python.exe"
+    }
+  ]
+}

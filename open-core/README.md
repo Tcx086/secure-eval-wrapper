@@ -1,40 +1,29 @@
 ﻿# Open Core (Public)
 
-This folder is safe to open source.
+## What this is
+Runtime core for a production-style evaluation system.
+
+## Main entrypoint
+Run full pipeline:
+
+```powershell
+D:\qt\.python\python.exe main.py
+```
+
+Run specific mode:
+
+```powershell
+D:\qt\.python\python.exe main.py --mode quant
+D:\qt\.python\python.exe main.py --mode generic
+```
 
 ## Included
 - Strategy interface contract
 - Demo strategy (non-edge)
-- Reproducible evaluation CLI (MC / stress / intrabar)
+- Reproducible quant evaluation pipeline
 - Generic non-quant evaluator demo
-- Local scripts for one-click artifact generation
+- Artifact generation scripts
 
 ## Not Included
 - real_test_v5 / real_test_v6 private logic
 - private params or secrets
-
-## Commands
-### Signal demo
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_demo.ps1
-```
-
-### Evaluation package (quant demo)
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_eval.ps1
-```
-
-### One-click package (signal + eval + zip)
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_all.ps1
-```
-
-### Generic non-quant demo
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_generic_demo.ps1
-```
-
-## Plug in real strategy locally
-1. Place private code under `../private/real_strategy_v5_v6/`
-2. Implement `src/core/strategy_base.py` contract
-3. Register locally in `src/registry.py` (do not publish that change)

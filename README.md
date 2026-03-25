@@ -1,105 +1,137 @@
 ﻿# Secure Eval Wrapper
 
-## English
-
 ## What this is
+Production-grade evaluation system for deterministic validation and secure artifact delivery.
 
-A secure evaluation framework designed to demonstrate how to build a reproducible and auditable evaluation pipeline without exposing proprietary strategy logic.
-
----
-
-## Problem
-
-In real-world systems, evaluation pipelines must satisfy three constraints at the same time:
-
-- Reproducible
-- Auditable
-- Shareable (without leaking sensitive logic)
-
-This is especially challenging in systems where core logic cannot be open-sourced.
+Built for systems where logic cannot be open-sourced.
 
 ---
 
-## Why this is hard
+## System Overview
 
-- Small changes in config, data, or code can break reproducibility
-- Results without stress testing lack credibility
-- Without standardized outputs and audit trails, promotion decisions become unreliable
+```text
+                +--------------+
+                | Strategy API |
+                +------+-------+
+                       |
+                       v
+               +---------------+
+               | Eval Engine   |
+               +------+--------+
+                      |
+                      v
+        +-------------------------------+
+        | Stress / Risk Suite           |
+        | - Monte Carlo                 |
+        | - Intrabar Probe              |
+        +--------------+----------------+
+                       |
+                       v
+            +----------------------+
+            | Audit Layer          |
+            | (hash, cfg, seed)    |
+            +----------+-----------+
+                       |
+                       v
+           +-------------------------+
+           | Artifacts               |
+           | - report                |
+           | - metrics               |
+           | - manifest              |
+           +-------------------------+
+```
 
 ---
 
-## What this repo demonstrates
-
-- A fully reproducible evaluation workflow
-- Built-in stress testing and stability checks
-- A clear separation between public infrastructure and private logic
-- Standardized artifacts for reporting and decision-making
+## Key Features
+- Deterministic pipeline execution (`seed + input snapshot + config snapshot + code hash`)
+- Built-in stress testing (Monte Carlo and intrabar perturbation)
+- Audit layer with checksum/hash verification
+- Standardized artifact generation (`report`, `metrics`, `manifest`)
+- Public infrastructure with private-logic isolation
+- One-command orchestration for repeatable system runs
 
 ---
 
-## Key idea
+## How it works
+1. Strategy adapter receives normalized inputs.
+2. Eval engine computes decision outputs.
+3. Stress/risk suite runs Monte Carlo and perturbation checks.
+4. Audit layer records hashes and configuration snapshot.
+5. Artifact packager writes delivery-ready outputs.
+
+Execution chain:
+`open-core/main.py` -> `src/eval_cli.py` -> `src/eval/*` -> `delivery/*`
+
+---
+
+## Quick Start
+Run full pipeline from `open-core`:
+
+```powershell
+cd open-core
+D:\qt\.python\python.exe main.py
+```
+
+Or run specific mode:
+
+```powershell
+D:\qt\.python\python.exe main.py --mode quant
+D:\qt\.python\python.exe main.py --mode generic
+```
+
+---
+
+## Output Artifacts
+Quant pipeline (`delivery/demo-run`):
+- `repro_manifest.json`
+- `evaluation_report.md`
+- `evaluation_metrics.json`
+- `signal_output.json`
+- `model_card_public.md`
+
+Generic pipeline (`delivery/generic-demo`):
+- `generic_manifest.json`
+- `generic_report.md`
+- `generic_metrics.json`
+
+System run log (`delivery/system-run`):
+- `system_run_summary.json`
+
+---
+
+## Design Principles
+- Deterministic pipeline behavior
+- Audit-first delivery
+- Explicit public/private boundary
+- Standardized outputs for promotion decisions
+
+---
+
+## Notes on Confidentiality
+
+### Confidentiality Design
+This system is designed to support:
+- Public infrastructure
+- Private strategy logic
+
+Only aggregated metrics are exposed.
+Trade-level logs and feature attribution are intentionally excluded to reduce reverse-engineering risk.
 
 Show the system. Protect the edge.
 
-### System Entry (Top-Level)
-Run the whole system from one entrypoint:
+---
 
-```powershell
-D:\qt\.python\python.exe runner/main.py --mode all
-```
+## Example Output
+Public sample highlights:
+- Deterministic manifest with hash chain
+- Quant stress evidence (Monte Carlo + intrabar)
+- Generic non-quant evaluator artifacts
 
-Modes:
-- `--mode quant`
-- `--mode generic`
-- `--mode all`
+---
 
-### System Architecture
-```mermaid
-flowchart LR
-  A["Strategy Adapter<br/>(public contract)"] --> B["Signal/Scoring Layer"]
-  B --> C[Evaluation Engine]
-  C --> D["Risk Suite<br/>MC / Stress / Intrabar"]
-  D --> E["Repro Manifest<br/>(hash + seed + config)"]
-  E --> F[Artifact Packager]
-  F --> G[Delivery Bundle]
-
-  P["Private Strategy Code<br/>local-only"] -. injected locally .-> A
-```
-
-### Execution Flow (Who Calls Who)
-`runner/main.py` -> `system/pipeline.py` -> `system/orchestrator.py` -> `open-core/scripts/run_*.ps1` -> artifacts in `delivery/`
-
-### Quick Start
-From `open-core`:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_all.ps1
-```
-
-This command runs demo signal + evaluation + zip packaging.
-
-### Non-Quant Generic Demo
-A second demo is included to show framework capability beyond trading domain.
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_generic_demo.ps1
-```
-
-Outputs in `delivery/generic-demo`:
-- `generic_manifest.json`
-- `generic_metrics.json`
-- `generic_report.md`
-
-### Public vs Private Boundary
-Public:
-- framework contracts and demo implementation
-- evaluation methodology and reproducibility artifacts
-
-Private:
-- real strategy internals (`real_test_v5/v6` logic)
-- private features, thresholds, and operational secrets
-
-### Current Public Results (Sanitized)
+## Appendix
+### A) Public Sample Metrics (Sanitized)
 #### v5 Standalone (Math/Stat Edge, v3+v4)
 | Metric | Value |
 |---|---:|
@@ -120,142 +152,10 @@ Private:
 | Sharpe | `1.3789` |
 | Survivability Conclusion @22 bps | `Yes` |
 
-### Deep-Dive Engineering Notes
-- See `ENGINEERING_HARD_PARTS.md` for deterministic design, boundary control, and promotion gate details.
-- See `docs/PIPELINE_FLOW.md` for explicit call graph.
-- See `docs/PERFORMANCE_AND_SCALE.md` for scale/latency notes.
-- See `docs/RELIABILITY.md` for retry/failure/logging design.
-- See `docs/INTERFACE_EXTENSIBILITY.md` for abstraction/extensibility notes.
-- See `security/THREAT_MODEL.md` for threat model, attack surface, and mitigations.
-
-### Repo Map
-- `open-core/`: public framework + demos
-- `delivery/`: generated artifacts, templates, runbook
-- `security/`: baseline controls
-- `api-spec/`: interface stub
+### B) Repository Map
+- `open-core/`: runtime pipeline and evaluation engine
+- `api-spec/`: API contract stub
+- `security/`: baseline controls and threat model
+- `delivery/`: generated artifacts and run outputs
 - `private/`: local-only integration notes
-
----
-
-## 中文
-
-### 这是什么
-这是一个“安全评估框架”示例仓库：
-目标是在**不暴露私有策略逻辑**的前提下，展示可复现、可审计的评估系统工程能力。
-
-### 解决的问题
-构建一套可用于生产门禁思路的评估工作流，要求同时满足：
-- 可复现
-- 可审计
-- 可公开展示
-
-### 难点在哪里
-- 配置/数据/代码轻微漂移就会破坏复现。
-- 没有压力测试与稳定性检查，结果说服力不足。
-- 缺少标准化产物与审计链路时，升级决策不稳定。
-
-### 已解决的工程难点
-- 通过 seed + 输入/配置/代码哈希实现确定性复现。
-- 建立统一风险套件（Monte Carlo / stress / intrabar）。
-- 形成可用于评审与门禁的标准化产物打包流程。
-- 通过契约层集成实现公开框架与私有逻辑隔离。
-
-### 3 个最能打的工程点
-1. seed + 输入/配置/代码哈希，保证确定性复现。
-2. 私有策略边界隔离，只公开接口契约与 demo。
-3. 评估与风险产物自动打包，支撑上线前门禁流程。
-
-### 主系统入口
-通过单一入口运行整个系统：
-
-```powershell
-D:\qt\.python\python.exe runner/main.py --mode all
-```
-
-可选模式：
-- `--mode quant`
-- `--mode generic`
-- `--mode all`
-
-### 架构图
-```mermaid
-flowchart LR
-  A["策略适配层<br/>公开契约"] --> B["信号/评分层"]
-  B --> C[评估引擎]
-  C --> D["风险套件<br/>MC/Stress/Intrabar"]
-  D --> E["复现清单<br/>哈希+seed+配置"]
-  E --> F[产物打包]
-  F --> G[交付包]
-
-  P["私有策略代码<br/>本地保留"] -. 本地注入 .-> A
-```
-
-### 调用链（谁调用谁）
-`runner/main.py` -> `system/pipeline.py` -> `system/orchestrator.py` -> `open-core/scripts/run_*.ps1` -> `delivery/` 产物
-
-### 一键运行
-在 `open-core` 下执行：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_all.ps1
-```
-
-执行 signal demo + 评估 + zip 打包。
-
-### 非量化通用 Demo
-为了证明框架能力不局限于量化场景，额外提供通用评估 demo：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_generic_demo.ps1
-```
-
-输出目录 `delivery/generic-demo`：
-- `generic_manifest.json`
-- `generic_metrics.json`
-- `generic_report.md`
-
-### 公私边界
-公开：
-- 框架契约与 demo 实现
-- 评估方法与复现产物
-
-私有：
-- `real_test_v5/v6` 真实策略实现
-- 私有特征、阈值、参数与密钥
-
-### 当前公开结果（脱敏）
-#### v5 独立结果（数学/统计 Edge，v3+v4）
-| 指标 | 数值 |
-|---|---:|
-| 公开指标成本口径 | `16 bps` |
-| 年化收益 | `19.15%` |
-| 最大回撤 | `10.98%` |
-| Sharpe | `0.9376` |
-| 胜率 | `34.75%` |
-| Monte Carlo CAGR P50 | `12.18%` |
-| 压力测试最差场景收益 | `-23.36%` |
-
-#### v6 独立结果（新闻驱动 Edge）
-| 指标 | 数值 |
-|---|---:|
-| 成本假设 | `22 bps` |
-| 年化收益 | `40.55%` |
-| 最大回撤 | `-26.78%` |
-| Sharpe | `1.3789` |
-| 生存性结论（22 bps） | `是` |
-
-### 工程难点说明
-详见 `ENGINEERING_HARD_PARTS.md`（确定性设计、边界隔离、上线门禁流程）。
-补充文档：
-- `docs/PIPELINE_FLOW.md`（流程与调用关系）
-- `docs/PERFORMANCE_AND_SCALE.md`（性能与规模意识）
-- `docs/RELIABILITY.md`（重试/故障处理/日志）
-- `docs/INTERFACE_EXTENSIBILITY.md`（接口抽象与扩展）
-- `security/THREAT_MODEL.md`（威胁模型/攻击面/缓解）
-
-### 仓库结构
-- `open-core/`：公开框架与 demo
-- `delivery/`：产物、模板、runbook
-- `security/`：安全基线
-- `api-spec/`：接口草案
-- `private/`：本地私有接入说明
+- `docs/`: flow, reliability, extensibility, scale notes
