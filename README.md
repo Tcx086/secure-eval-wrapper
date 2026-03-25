@@ -75,6 +75,33 @@ Source: `delivery/demo-run/evaluation_metrics.json`
 - Take Profit Hit Rate: `0.371429`
 - Avg Intrabar PnL: `0.000817`
 
+### Private Edge Track Record (Sanitized: v5 vs v6)
+Based on `d:/qt/real_test_v5/README.md` and `d:/qt/real_test_v6/README.md`:
+
+- **v5** emphasizes parallel portfolio engineering (`v3 + v4`), risk-budget allocation (`0.8/0.2`), one-click reproducibility, checksum auditing, and Monte Carlo workflow.
+- **v6** emphasizes architecture hardening for isolated operation (signal layer vs execution layer), `sim`-first deployment policy, shared policy for backtest/live consistency, and risk-suite gating before runtime promotion.
+
+This means the edge evolution is not random iteration:
+1. freeze snapshot/config
+2. run backtest + risk suite
+3. verify reproducibility artifacts/checksums
+4. then promote to paper/sim execution
+
+Sanitized performance presentation format (recommended for public sharing):
+
+| Metric | v5 (Sanitized) | v6 (Sanitized) | Delta (v6-v5) |
+|---|---:|---:|---:|
+| Annualized Return | `[base]` | `[base + x%]` | `+x% to +y%` |
+| Max Drawdown | `[base]` | `[improved]` | `-(x to y) pp` |
+| Sharpe | `[base]` | `[base + x]` | `+x to +y` |
+| Win Rate | `[base]` | `[base + x pp]` | `+x to +y pp` |
+| Turnover | `[base]` | `[lower/higher]` | `-(x to y)%` or `+(x to y)%` |
+| Monte Carlo P50 Return | `[base]` | `[base + x%]` | `+x% to +y%` |
+| Stress Test Worst-Case Return | `[base]` | `[less negative]` | `+x% to +y%` |
+| Intrabar Stability Score | `[base]` | `[base + x]` | `+x to +y` |
+
+Note: publish only aggregated/normalized metrics (or percentage deltas), not private model parameters or factor internals.
+
 ### Important Note
 These published numbers are for the **demo strategy pipeline** and public methodology demonstration.
 They are not a disclosure of the proprietary real strategy implementation.
@@ -162,6 +189,33 @@ powershell -ExecutionPolicy Bypass -File scripts/run_all.ps1
 - Stop Hit Rate: `0.385714`
 - Take Profit Hit Rate: `0.371429`
 - Avg Intrabar PnL: `0.000817`
+
+### 私有 Edge 轨迹（脱敏版：v5 vs v6）
+依据 `d:/qt/real_test_v5/README.md` 与 `d:/qt/real_test_v6/README.md`：
+
+- **v5** 侧重并行组合工程化（`v3 + v4`）、风险预算分配（`0.8/0.2`）、一键复现、checksum 审计与 Monte Carlo 流程。
+- **v6** 侧重隔离式架构强化（信号层与执行层分离）、`sim` 优先部署原则、回测/实盘共用 policy、一致性与 risk suite 先行。
+
+这说明 edge 迭代是可审计流程，而非随机试错：
+1. 冻结 snapshot/config
+2. 执行 backtest + risk suite
+3. 校验复现证据（含 checksum/hash）
+4. 再进入 paper/sim 执行层
+
+建议公开展示采用脱敏聚合表：
+
+| 指标 | v5（脱敏） | v6（脱敏） | 变化（v6-v5） |
+|---|---:|---:|---:|
+| 年化收益 | `[基准]` | `[基准 + x%]` | `+x% ~ +y%` |
+| 最大回撤 | `[基准]` | `[改善后]` | `-(x ~ y) 个百分点` |
+| Sharpe | `[基准]` | `[基准 + x]` | `+x ~ +y` |
+| 胜率 | `[基准]` | `[基准 + x 个百分点]` | `+x ~ +y 个百分点` |
+| 换手率 | `[基准]` | `[更低/更高]` | `-(x ~ y)%` 或 `+(x ~ y)%` |
+| Monte Carlo P50 收益 | `[基准]` | `[基准 + x%]` | `+x% ~ +y%` |
+| 压力测试最差场景收益 | `[基准]` | `[更不负]` | `+x% ~ +y%` |
+| Intrabar 稳定性评分 | `[基准]` | `[基准 + x]` | `+x ~ +y` |
+
+说明：公开时建议只给聚合指标/百分比变化，不公开参数、阈值、因子内部实现。
 
 ### 重要说明
 以上数字用于展示 **公开 demo 策略流程** 与评估方法。
