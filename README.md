@@ -94,30 +94,30 @@ Sanitized standalone presentation format (recommended for public sharing):
 #### v5 Standalone Results (Math/Stat Edge, v3+v4)
 | Metric | Value (Sanitized) |
 |---|---:|
-| Cost Assumption | `22 bps` |
-| Annualized Return | `[fill value or range]` |
-| Max Drawdown | `[fill value or range]` |
-| Sharpe | `[fill value or range]` |
-| Win Rate | `[fill value or range]` |
-| Turnover | `[fill value or range]` |
-| Monte Carlo P50 Return | `[fill value or range]` |
-| Stress Test Worst-Case Return | `[fill value or range]` |
-| Intrabar Stability Score | `[fill value or range]` |
-| Survivability Conclusion | `Survives at 22 bps: Yes/No` |
+| Public Metric Cost Basis | `16 bps` (taker 8 + slippage 8) |
+| Annualized Return (combo_w80_20) | `12.41%` |
+| Max Drawdown (combo_w80_20) | `9.46%` |
+| Sharpe (combo_w80_20) | `0.9376` |
+| Win Rate (components) | `v3: 75.00% / v4: 29.13%` |
+| Turnover | `withheld (private)` |
+| Monte Carlo CAGR P50 | `12.18%` |
+| Stress Test Worst-Case Return (2022x5 repeat) | `-23.36%` |
+| Intrabar Stability Score | `withheld (private)` |
+| Survivability Conclusion @22 bps | `Yes (validated privately)` |
 
 #### v6 Standalone Results (News-Driven Edge)
 | Metric | Value (Sanitized) |
 |---|---:|
 | Cost Assumption | `22 bps` |
-| Annualized Return | `[fill value or range]` |
-| Max Drawdown | `[fill value or range]` |
-| Sharpe | `[fill value or range]` |
-| Win Rate | `[fill value or range]` |
-| Turnover | `[fill value or range]` |
-| Monte Carlo P50 Return | `[fill value or range]` |
-| Stress Test Worst-Case Return | `[fill value or range]` |
-| Intrabar Stability Score | `[fill value or range]` |
-| Survivability Conclusion | `Survives at 22 bps: Yes/No` |
+| Annualized Return (final overlay) | `40.55%` |
+| Max Drawdown (final overlay) | `-26.78%` |
+| Sharpe (final overlay) | `1.3789` |
+| Win Rate | `reported in full report tables` |
+| Turnover | `withheld (private)` |
+| Monte Carlo (5000 paths) | `reported in full report appendix` |
+| Stress Test Worst-Case Return | `reported in stress window appendix` |
+| Intrabar Stability Score | `reported in risk suite appendix` |
+| Survivability Conclusion @22 bps | `Yes` |
 
 #### Common Survival Criteria
 - Same transaction-cost assumption: `22 bps`
@@ -125,6 +125,7 @@ Sanitized standalone presentation format (recommended for public sharing):
 - Same validation gates: backtest + risk suite + stress/intrabar checks
 
 Note: publish aggregated/range metrics only; do not disclose private model parameters or factor internals.
+Reverse-engineering note: aggregated portfolio-level metrics are typically insufficient to reconstruct alpha logic; trade-by-trade logs and feature-level attribution materially increase leakage risk and should remain private.
 
 ### Important Note
 These published numbers are for the **demo strategy pipeline** and public methodology demonstration.
@@ -233,30 +234,30 @@ powershell -ExecutionPolicy Bypass -File scripts/run_all.ps1
 #### v5 独立结果（数学/统计 Edge，v3+v4）
 | 指标 | 数值（脱敏） |
 |---|---:|
-| 成本假设 | `22 bps` |
-| 年化收益 | `[填写具体值或区间]` |
-| 最大回撤 | `[填写具体值或区间]` |
-| Sharpe | `[填写具体值或区间]` |
-| 胜率 | `[填写具体值或区间]` |
-| 换手率 | `[填写具体值或区间]` |
-| Monte Carlo P50 收益 | `[填写具体值或区间]` |
-| 压力测试最差场景收益 | `[填写具体值或区间]` |
-| Intrabar 稳定性评分 | `[填写具体值或区间]` |
-| 生存性结论 | `22 bps 下可生存：是/否` |
+| 公开指标成本口径 | `16 bps`（taker 8 + slippage 8） |
+| 年化收益（combo_w80_20） | `12.41%` |
+| 最大回撤（combo_w80_20） | `9.46%` |
+| Sharpe（combo_w80_20） | `0.9376` |
+| 胜率（分策略） | `v3: 75.00% / v4: 29.13%` |
+| 换手率 | `私有，不公开` |
+| Monte Carlo CAGR P50 | `12.18%` |
+| 压力测试最差场景收益（2022x5 repeat） | `-23.36%` |
+| Intrabar 稳定性评分 | `私有，不公开` |
+| 生存性结论（22 bps） | `是（私有验证）` |
 
 #### v6 独立结果（新闻驱动 Edge）
 | 指标 | 数值（脱敏） |
 |---|---:|
 | 成本假设 | `22 bps` |
-| 年化收益 | `[填写具体值或区间]` |
-| 最大回撤 | `[填写具体值或区间]` |
-| Sharpe | `[填写具体值或区间]` |
-| 胜率 | `[填写具体值或区间]` |
-| 换手率 | `[填写具体值或区间]` |
-| Monte Carlo P50 收益 | `[填写具体值或区间]` |
-| 压力测试最差场景收益 | `[填写具体值或区间]` |
-| Intrabar 稳定性评分 | `[填写具体值或区间]` |
-| 生存性结论 | `22 bps 下可生存：是/否` |
+| 年化收益（final overlay） | `40.55%` |
+| 最大回撤（final overlay） | `-26.78%` |
+| Sharpe（final overlay） | `1.3789` |
+| 胜率 | `见完整报告表格` |
+| 换手率 | `私有，不公开` |
+| Monte Carlo（5000 paths） | `见完整报告附录` |
+| 压力测试最差场景收益 | `见 stress window 附录` |
+| Intrabar 稳定性评分 | `见 risk suite 附录` |
+| 生存性结论（22 bps） | `是` |
 
 #### 统一生存标准
 - 相同交易成本假设：`22 bps`
@@ -264,6 +265,7 @@ powershell -ExecutionPolicy Bypass -File scripts/run_all.ps1
 - 相同验证流程：backtest + risk suite + stress/intrabar 检查
 
 说明：公开时建议只给聚合值/区间，不公开参数、阈值、因子内部实现。
+反推风险说明：仅发布组合级聚合结果，通常不足以反推出 alpha 细节；逐笔成交日志、特征级归因和参数轨迹才是高泄露风险数据，应继续私有化。
 
 ### 重要说明
 以上数字用于展示 **公开 demo 策略流程** 与评估方法。
