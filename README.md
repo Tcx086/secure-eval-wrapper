@@ -81,7 +81,7 @@ Based on `d:/qt/real_test_v5/README.md` and `d:/qt/real_test_v6/README.md`:
 - **v5** is an independent math/stat edge line (`v3 + v4`), with engineering around parallel portfolio construction, reproducibility, checksum auditing, and Monte Carlo workflow.
 - **v6** is an independent news-driven edge line, with isolated architecture (signal vs execution), `sim`-first deployment policy, and risk-suite gating before runtime promotion.
 
-Both tracks are validated under the same cost-survival assumption (`22 bps`) and are presented as separate, reproducible research lines.
+The two tracks use different public cost assumptions and are presented as separate, reproducible research lines (`v5: 16 bps`, `v6: 22 bps`).
 
 This means the research process is not random iteration:
 1. freeze snapshot/config
@@ -89,12 +89,12 @@ This means the research process is not random iteration:
 3. verify reproducibility artifacts/checksums
 4. then promote to paper/sim execution
 
-Sanitized standalone presentation format (recommended for public sharing):
+Sanitized standalone presentation format:
 
 #### v5 Standalone Results (Math/Stat Edge, v3+v4)
 | Metric | Value (Sanitized) |
 |---|---:|
-| Public Metric Cost Basis | `16 bps` (taker 8 + slippage 8) |
+| Public Metric Cost Basis | `16 bps` |
 | Annualized Return | `19.15%` |
 | Max Drawdown | `10.98%` |
 | Sharpe | `0.9376` |
@@ -119,8 +119,8 @@ Sanitized standalone presentation format (recommended for public sharing):
 | Intrabar Stability Score | `reported in risk suite appendix` |
 | Survivability Conclusion @22 bps | `Yes` |
 
-#### Common Survival Criteria
-- Same transaction-cost assumption: `22 bps`
+#### Validation Criteria
+- Public cost assumptions: `v5 = 16 bps`, `v6 = 22 bps`
 - Same reproducibility requirements: snapshot/config freeze + hash/checksum audit
 - Same validation gates: backtest + risk suite + stress/intrabar checks
 
@@ -221,7 +221,7 @@ powershell -ExecutionPolicy Bypass -File scripts/run_all.ps1
 - **v5** 是一条独立的数学/统计 edge 线路（`v3 + v4`），重点在并行组合工程化、复现审计、Monte Carlo 验证。
 - **v6** 是一条独立的新闻驱动 edge 线路，重点在信号层/执行层隔离、`sim` 优先、risk suite 先行。
 
-两条线路都基于相同的成本生存假设（`22 bps`）进行验证，属于并行独立研究结果，不是同一策略的简单迭代替换。
+两条线路使用不同的公开成本口径并分别验证（`v5 = 16 bps`，`v6 = 22 bps`），属于并行独立研究结果，不是同一策略的简单迭代替换。
 
 这说明研究流程是可审计的，而非随机试错：
 1. 冻结 snapshot/config
@@ -229,12 +229,12 @@ powershell -ExecutionPolicy Bypass -File scripts/run_all.ps1
 3. 校验复现证据（含 checksum/hash）
 4. 再进入 paper/sim 执行层
 
-建议公开展示采用“各自独立结果表”：
+以下为展示用的各自独立结果表：
 
 #### v5 独立结果（数学/统计 Edge，v3+v4）
 | 指标 | 数值（脱敏） |
 |---|---:|
-| 公开指标成本口径 | `16 bps`（taker 8 + slippage 8） |
+| 公开指标成本口径 | `16 bps` |
 | 年化收益 | `19.15%` |
 | 最大回撤 | `10.98%` |
 | Sharpe | `0.9376` |
@@ -259,8 +259,8 @@ powershell -ExecutionPolicy Bypass -File scripts/run_all.ps1
 | Intrabar 稳定性评分 | `见 risk suite 附录` |
 | 生存性结论（22 bps） | `是` |
 
-#### 统一生存标准
-- 相同交易成本假设：`22 bps`
+#### 验证标准
+- 公开成本口径：`v5 = 16 bps`，`v6 = 22 bps`
 - 相同复现要求：snapshot/config 冻结 + hash/checksum 审计
 - 相同验证流程：backtest + risk suite + stress/intrabar 检查
 
