@@ -101,7 +101,7 @@ Sanitized standalone presentation format:
 | Win Rate | `34.75%` |
 | Turnover | `withheld (private)` |
 | Monte Carlo CAGR P50 | `12.18%` |
-| Stress Test Worst-Case Return (2022x5 repeat) | `-23.36%` |
+| Stress Test Worst-Case Return | `-23.36%` |
 | Intrabar Stability Score | `withheld (private)` |
 | Survivability Conclusion @22 bps | `Yes (validated privately)` |
 
@@ -241,7 +241,7 @@ powershell -ExecutionPolicy Bypass -File scripts/run_all.ps1
 | 胜率 | `34.75%` |
 | 换手率 | `私有，不公开` |
 | Monte Carlo CAGR P50 | `12.18%` |
-| 压力测试最差场景收益（2022x5 repeat） | `-23.36%` |
+| 压力测试最差场景收益 | `-23.36%` |
 | Intrabar 稳定性评分 | `私有，不公开` |
 | 生存性结论（22 bps） | `是（私有验证）` |
 
