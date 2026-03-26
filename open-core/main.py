@@ -83,7 +83,7 @@ def run_generic(repo_root: Path, python_exe_hint: str = "") -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description="System entrypoint for full evaluation pipeline")
     parser.add_argument("--mode", choices=["quant", "generic", "all"], default="all")
-    parser.add_argument("--python-exe", default=r"D:\qt\.python\python.exe")
+    parser.add_argument("--python-exe", default=sys.executable)
     args = parser.parse_args()
 
     open_core_root = OPEN_CORE_ROOT

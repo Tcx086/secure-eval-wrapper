@@ -1,11 +1,23 @@
-param(
+﻿param(
   [string]$InputPath = "data/sample/features.json",
   [string]$Strategy = "demo",
   [int]$Seed = 20260325,
-  [string]$PythonExe = "D:\qt\.python\python.exe",
+  [string]$PythonExe = "",
   [string]$DeliveryRoot = "delivery",
   [string]$RunName = "demo-run"
 )
+
+if ([string]::IsNullOrWhiteSpace($PythonExe)) {
+  if (Get-Command python -ErrorAction SilentlyContinue) {
+    $PythonExe = (Get-Command python).Source
+  } elseif (Get-Command py -ErrorAction SilentlyContinue) {
+    $PythonExe = (Get-Command py).Source
+  } elseif (Test-Path "D:\qt\.python\python.exe") {
+    $PythonExe = "D:\qt\.python\python.exe"
+  } else {
+    throw "Python executable not found. Set -PythonExe explicitly."
+  }
+}
 
 $scriptRoot = $PSScriptRoot
 $projectRoot = (Resolve-Path (Join-Path $scriptRoot "..")).Path

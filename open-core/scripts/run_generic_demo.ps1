@@ -2,8 +2,20 @@
   [string]$InputPath = "data/sample/generic_eval.json",
   [string]$OutputDir = "..\\delivery\\generic-demo",
   [int]$Seed = 20260325,
-  [string]$PythonExe = "D:\qt\.python\python.exe"
+  [string]$PythonExe = ""
 )
+
+if ([string]::IsNullOrWhiteSpace($PythonExe)) {
+  if (Get-Command python -ErrorAction SilentlyContinue) {
+    $PythonExe = (Get-Command python).Source
+  } elseif (Get-Command py -ErrorAction SilentlyContinue) {
+    $PythonExe = (Get-Command py).Source
+  } elseif (Test-Path "D:\qt\.python\python.exe") {
+    $PythonExe = "D:\qt\.python\python.exe"
+  } else {
+    throw "Python executable not found. Set -PythonExe explicitly."
+  }
+}
 
 if (-not (Test-Path $PythonExe)) {
   throw "Python executable not found: $PythonExe"

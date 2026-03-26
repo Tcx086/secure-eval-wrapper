@@ -70,14 +70,14 @@ Run full pipeline from `open-core`:
 
 ```powershell
 cd open-core
-D:\qt\.python\python.exe main.py
+powershell -ExecutionPolicy Bypass -File scripts/start.ps1 -Mode all
 ```
 
 Or run specific mode:
 
 ```powershell
-D:\qt\.python\python.exe main.py --mode quant
-D:\qt\.python\python.exe main.py --mode generic
+powershell -ExecutionPolicy Bypass -File scripts/start.ps1 -Mode quant
+powershell -ExecutionPolicy Bypass -File scripts/start.ps1 -Mode generic
 ```
 
 ---
