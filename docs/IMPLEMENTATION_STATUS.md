@@ -1,7 +1,20 @@
 # Implementation Status
 
-This file is the project control file. Every future update must mark completed work under
-`Completed`. Everything not done must remain under `Todo`.
+This file is the human-readable source of implementation progress. The machine-readable status file
+is `.project/implementation_status.json`.
+
+Every future functional PR must update both files in the same change:
+- `docs/IMPLEMENTATION_STATUS.md`
+- `.project/implementation_status.json`
+
+Completed work must be listed under `Completed`. Everything not done must remain under `Todo`.
+
+## Non-Negotiable Constraints
+- PostgreSQL is the only authoritative storage layer.
+- SQLite is explicitly disallowed as authoritative storage.
+- Live trading is disabled by default.
+- No secrets, API keys, private strategies, real account data, or real trade logs may be added.
+- Runtime features must not be implemented during documentation/control phases.
 
 ## Completed
 
@@ -17,6 +30,16 @@ This file is the project control file. Every future update must mark completed w
 - [x] Document local data governance and cleanup rules.
 - [x] Document public/private repository boundary.
 - [x] Update README with architecture direction and documentation links.
+
+### Phase 0: Project control files
+- [x] Add repository-wide Codex engineering rules in `AGENTS.md`.
+- [x] Establish `docs/IMPLEMENTATION_STATUS.md` as the human-readable status source.
+- [x] Add `.project/implementation_status.json` as the machine-readable status source.
+- [x] Add `.project/implementation_status.schema.json` for status-file validation.
+- [x] Document the requirement that future functional PRs update both status files.
+- [x] Document PostgreSQL as the only authoritative storage layer.
+- [x] Explicitly disallow SQLite as authoritative storage.
+- [x] Document that live trading is disabled by default.
 
 ## Todo
 

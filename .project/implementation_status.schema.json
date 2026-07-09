@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Tcx086/secure-eval-wrapper/.project/implementation_status.schema.json",
+  "title": "Secure Eval Wrapper Implementation Status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project",
+    "repository",
+    "status_source",
+    "schema",
+    "updated_at_utc",
+    "current_phase",
+    "rules",
+    "storage",
+    "live_trading",
+    "privacy",
+    "control_files",
+    "phases"
+  ],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "project": { "type": "string" },
+    "repository": { "type": "string" },
+    "status_source": { "type": "string" },
+    "schema": { "type": "string" },
+    "updated_at_utc": { "type": "string", "format": "date-time" },
+    "current_phase": { "type": "string" },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "future_functional_prs_must_update_markdown_status",
+        "future_functional_prs_must_update_json_status",
+        "runtime_features_allowed_in_current_phase"
+      ],
+      "properties": {
+        "future_functional_prs_must_update_markdown_status": { "const": true },
+        "future_functional_prs_must_update_json_status": { "const": true },
+        "runtime_features_allowed_in_current_phase": { "type": "boolean" }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authoritative_storage",
+        "postgresql_only_authoritative",
+        "sqlite_authoritative_storage_allowed",
+        "sqlite_policy"
+      ],
+      "properties": {
+        "authoritative_storage": { "const": "PostgreSQL" },
+        "postgresql_only_authoritative": { "const": true },
+        "sqlite_authoritative_storage_allowed": { "const": false },
+        "sqlite_policy": { "type": "string" }
+      }
+    },
+    "live_trading": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled_by_default", "current_status", "requirements_before_enablement"],
+      "properties": {
+        "enabled_by_default": { "const": false },
+        "current_status": { "enum": ["disabled", "paper_only", "guarded_live_future"] },
+        "requirements_before_enablement": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "secrets_allowed",
+        "api_keys_allowed",
+        "private_strategies_allowed",
+        "real_account_data_allowed",
+        "real_trade_logs_allowed"
+      ],
+      "properties": {
+        "secrets_allowed": { "const": false },
+        "api_keys_allowed": { "const": false },
+        "private_strategies_allowed": { "const": false },
+        "real_account_data_allowed": { "const": false },
+        "real_trade_logs_allowed": { "const": false }
+      }
+    },
+    "control_files": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agents_rules", "human_status", "machine_status", "machine_status_schema"],
+      "properties": {
+        "agents_rules": { "type": "string" },
+        "human_status": { "type": "string" },
+        "machine_status": { "type": "string" },
+        "machine_status_schema": { "type": "string" }
+      }
+    },
+    "phases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "status", "completed", "todo"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "status": { "enum": ["todo", "in_progress", "completed", "blocked"] },
+          "completed": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "todo": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

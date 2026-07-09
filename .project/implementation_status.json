@@ -1,0 +1,234 @@
+{
+  "schema_version": "1.0.0",
+  "project": "secure-eval-wrapper",
+  "repository": "Tcx086/secure-eval-wrapper",
+  "status_source": "docs/IMPLEMENTATION_STATUS.md",
+  "schema": ".project/implementation_status.schema.json",
+  "updated_at_utc": "2026-07-09T00:00:00Z",
+  "current_phase": "phase_0_project_control",
+  "rules": {
+    "future_functional_prs_must_update_markdown_status": true,
+    "future_functional_prs_must_update_json_status": true,
+    "runtime_features_allowed_in_current_phase": false
+  },
+  "storage": {
+    "authoritative_storage": "PostgreSQL",
+    "postgresql_only_authoritative": true,
+    "sqlite_authoritative_storage_allowed": false,
+    "sqlite_policy": "SQLite is explicitly disallowed as authoritative storage."
+  },
+  "live_trading": {
+    "enabled_by_default": false,
+    "current_status": "disabled",
+    "requirements_before_enablement": [
+      "explicit environment flag",
+      "local-only API keys",
+      "max notional limits",
+      "dry-run support",
+      "kill switch",
+      "pre-flight risk summary",
+      "post-run risk summary",
+      "audit manifest"
+    ]
+  },
+  "privacy": {
+    "secrets_allowed": false,
+    "api_keys_allowed": false,
+    "private_strategies_allowed": false,
+    "real_account_data_allowed": false,
+    "real_trade_logs_allowed": false
+  },
+  "control_files": {
+    "agents_rules": "AGENTS.md",
+    "human_status": "docs/IMPLEMENTATION_STATUS.md",
+    "machine_status": ".project/implementation_status.json",
+    "machine_status_schema": ".project/implementation_status.schema.json"
+  },
+  "phases": [
+    {
+      "id": "phase_0_architecture_docs",
+      "title": "Phase 0: Architecture docs",
+      "status": "completed",
+      "completed": [
+        "Define full crypto trading system architecture",
+        "Document layer-by-layer responsibilities",
+        "Document proposed folder structure",
+        "Document PostgreSQL-first storage design",
+        "Document multi-source crypto data collection and validation",
+        "Document shared execution contract and broker roadmap",
+        "Document simulated FIX-style monitoring design",
+        "Document live trading safety boundaries",
+        "Document local data governance and cleanup rules",
+        "Document public/private repository boundary",
+        "Update README with architecture direction and documentation links"
+      ],
+      "todo": []
+    },
+    {
+      "id": "phase_0_project_control",
+      "title": "Phase 0: Project control files",
+      "status": "completed",
+      "completed": [
+        "Add repository-wide Codex engineering rules in AGENTS.md",
+        "Establish docs/IMPLEMENTATION_STATUS.md as the human-readable status source",
+        "Add .project/implementation_status.json as the machine-readable status source",
+        "Add .project/implementation_status.schema.json for status-file validation",
+        "Document the requirement that future functional PRs update both status files",
+        "Document PostgreSQL as the only authoritative storage layer",
+        "Explicitly disallow SQLite as authoritative storage",
+        "Document that live trading is disabled by default"
+      ],
+      "todo": []
+    },
+    {
+      "id": "phase_1_postgresql_schema_migrations",
+      "title": "Phase 1: PostgreSQL + schema + migrations",
+      "status": "todo",
+      "completed": [],
+      "todo": [
+        "Add Dockerized PostgreSQL infrastructure",
+        "Add open-core/db/ migration layout",
+        "Create initial schema migrations",
+        "Add repository interfaces",
+        "Add local database setup documentation",
+        "Add migration verification workflow"
+      ]
+    },
+    {
+      "id": "phase_2_data_collection_validation",
+      "title": "Phase 2: data collection + validation",
+      "status": "todo",
+      "completed": [],
+      "todo": [
+        "Implement crypto market data provider interfaces",
+        "Implement OHLCV collection",
+        "Implement trade collection",
+        "Implement funding rate collection",
+        "Implement instrument metadata collection",
+        "Implement provenance and source hashing",
+        "Implement single-source validation checks",
+        "Implement cross-source reconciliation",
+        "Implement validation reports",
+        "Implement accepted/rejected data flow"
+      ]
+    },
+    {
+      "id": "phase_3_public_alpha_library",
+      "title": "Phase 3: public alpha library",
+      "status": "todo",
+      "completed": [],
+      "todo": [
+        "Create public alpha registry",
+        "Implement momentum demo alpha",
+        "Implement moving-average crossover demo alpha",
+        "Implement breakout demo alpha",
+        "Implement mean reversion demo alpha",
+        "Implement 101 Formulaic Alphas style examples",
+        "Implement funding-rate demo alpha",
+        "Add alpha documentation and tests"
+      ]
+    },
+    {
+      "id": "phase_4_signal_generation",
+      "title": "Phase 4: signal generation",
+      "status": "todo",
+      "completed": [],
+      "todo": [
+        "Define standardized signal schema",
+        "Implement signal ranking",
+        "Implement thresholding",
+        "Implement signal combination",
+        "Implement conflict resolution",
+        "Implement confidence scoring",
+        "Persist signal runs and signals"
+      ]
+    },
+    {
+      "id": "phase_5_simulated_execution_backtesting",
+      "title": "Phase 5: simulated execution + backtesting",
+      "status": "todo",
+      "completed": [],
+      "todo": [
+        "Define broker interface",
+        "Implement order intent schema",
+        "Implement SimulatedBroker",
+        "Implement fill model",
+        "Implement fee model",
+        "Implement slippage model",
+        "Implement risk guard",
+        "Implement position manager",
+        "Implement backtest event loop",
+        "Generate metrics from fills and positions, not direct signal equity mutation",
+        "Add crypto-specific backtest handling for fees, funding, 24/7 markets, and missing candles"
+      ]
+    },
+    {
+      "id": "phase_6_monitoring_simulated_fix_api",
+      "title": "Phase 6: monitoring + simulated FIX API",
+      "status": "todo",
+      "completed": [],
+      "todo": [
+        "Implement monitoring event schema",
+        "Implement data health monitoring",
+        "Implement signal health monitoring",
+        "Implement execution health monitoring",
+        "Implement risk health monitoring",
+        "Implement system health monitoring",
+        "Implement simulated FIX heartbeat",
+        "Implement simulated session state",
+        "Implement simulated order acknowledgement",
+        "Implement simulated execution report",
+        "Implement simulated cancel/reject flow",
+        "Implement latency measurement",
+        "Implement dropped connection simulation"
+      ]
+    },
+    {
+      "id": "phase_7_paper_trading",
+      "title": "Phase 7: paper trading",
+      "status": "todo",
+      "completed": [],
+      "todo": [
+        "Design paper broker adapter",
+        "Add paper-mode configuration",
+        "Add sandbox/paper reconciliation",
+        "Add paper trading run manifests",
+        "Add paper trading safety checks"
+      ]
+    },
+    {
+      "id": "phase_8_guarded_live_execution",
+      "title": "Phase 8: guarded live execution",
+      "status": "todo",
+      "completed": [],
+      "todo": [
+        "Design live broker adapter",
+        "Keep live trading disabled by default",
+        "Require explicit live enablement flag",
+        "Require local-only API keys",
+        "Require max notional limits",
+        "Require dry-run support",
+        "Require kill switch",
+        "Require pre-flight risk summary",
+        "Require post-run risk summary",
+        "Require live execution audit manifest"
+      ]
+    },
+    {
+      "id": "phase_9_reporting_public_delivery",
+      "title": "Phase 9: reporting + public delivery",
+      "status": "todo",
+      "completed": [],
+      "todo": [
+        "Build public report templates",
+        "Build private report templates",
+        "Implement artifact classification",
+        "Implement redaction workflow",
+        "Implement artifact hashing",
+        "Generate public-safe delivery bundles",
+        "Add release checklist",
+        "Add local sensitive file audit before delivery"
+      ]
+    }
+  ]
+}
