@@ -3,9 +3,10 @@
 ## Purpose
 The target data layer will collect crypto market data from public exchange APIs and provider APIs,
 preserve source provenance, validate quality, and only promote accepted datasets into research and
-backtesting. Phase 2 now includes contracts, offline preparation, sample OHLCV normalization,
-single-source validation/reporting, and PostgreSQL-backed offline persistence. No real provider API
-calls or cross-source reconciliation are implemented yet.
+backtesting. Phase 2 now includes contracts, offline preparation, sample and Binance Spot OHLCV
+normalization, single-source validation/reporting, and PostgreSQL-backed offline persistence.
+Cross-source reconciliation is not implemented. Automated tests remain offline; public-network
+access exists only through the explicitly enabled Binance smoke script.
 
 ## Collection Scope
 Initial crypto-only data types:
@@ -105,21 +106,22 @@ features in this increment.
 The framework should support multiple providers or exchanges for the same logical instrument:
 Binance, OKX, Bybit, Coinbase, and third-party aggregators where licensing permits.
 
-The Phase 2A registry records the following planning metadata only:
+The Phase 2 registry records the following current capability metadata:
 
 | Provider | OHLCV | Trades | Funding rates | Instruments |
 |---|---|---|---|---|
-| Binance | planned | planned | planned | planned |
+| Binance | implemented | planned | planned | planned |
 | OKX | planned | planned | planned | planned |
 | Bybit | planned | planned | planned | planned |
 | Coinbase | planned | planned | unknown | planned |
 
 `planned` does not mean implemented or verified. `unknown` means the capability must be resolved
 when a future provider adapter is designed. The registry deliberately contains no URLs, clients,
-authentication configuration, or credentials.
+authentication configuration, or credentials; fetch behavior stays in provider modules.
 
-The offline sample provider is a fixture reader, not a concrete exchange adapter. All Binance,
-OKX, Bybit, and Coinbase adapters remain planned or unknown.
+The offline sample provider remains a fixture reader rather than an exchange adapter. Binance Spot
+OHLCV is implemented in Phase 2E; Binance's other capabilities and all OKX, Bybit, and Coinbase
+capabilities remain planned or unknown.
 
 Provider adapters must normalize symbol naming, timestamp format, timezone to UTC, numeric
 precision, timeframe names, funding interval representation, and instrument metadata fields.
@@ -173,8 +175,8 @@ Validation stages:
 Phase 2A models these stages, Phase 2B supplies offline parsing guards and provenance helpers, and
 Phase 2C implements stages 1 through 3 plus in-memory report construction for sample OHLCV data.
 Phase 2D persists the offline sample-provider flow through PostgreSQL, including raw observations,
-reports, checks, accepted bars, and quarantine decisions. Cross-source reconciliation and real
-provider adapters remain future work.
+reports, checks, accepted bars, and quarantine decisions. Phase 2E feeds Binance Spot public OHLCV
+through the same normalization and validation path. Cross-source reconciliation remains future work.
 
 ## Single-Source Checks
 Implemented offline for normalized OHLCV in Phase 2C:
@@ -270,5 +272,31 @@ are promoted to `market_data.validated_bars`; failed source observations produce
 offline-only, accepts an injected repository/DB-API connection, and makes no network or exchange
 client calls.
 
-Only public-safe offline fixtures are in scope for this persistence path. Real provider adapters,
-network collection, and cross-source reconciliation are still future Phase 2 work.
+Only public-safe offline fixtures are in scope for this persistence path. Binance provider results
+are not persisted by Phase 2E. Additional provider collection and cross-source reconciliation remain
+future Phase 2 work.
+
+## Phase 2E Binance public OHLCV adapter
+
+Phase 2E adds `BinanceSpotOhlcvProvider` for Binance Spot's public
+`GET https://api.binance.com/api/v3/klines` endpoint only. It maps conservative, explicitly
+delimited symbols such as `BTC-USDT` to `BTCUSDT`, converts UTC request windows to milliseconds,
+caps `limit` at 1000, and converts the internal half-open end boundary to Binance's inclusive
+millisecond precision without requesting the exact exclusive boundary. Returned klines are filtered
+again to the requested half-open window.
+
+The adapter parses each 12-element kline into a `RawObservation`, preserves the original provider
+payload, keeps OHLCV numeric values as strings, records UTC-aware timestamps and request
+provenance, and computes the existing deterministic source SHA-256. Binance REST klines do not
+carry a final-candle flag, so the adapter does not guess one. The observations pass through the
+existing `normalize_ohlcv_observations` and `validate_ohlcv_bars` path.
+
+Network I/O is isolated behind the injectable `HttpTransport` contract. The standard-library
+`UrlLibHttpTransport` performs no work at import time and contains no credential or signing logic.
+Unit tests inject a fake transport, block socket creation, and make no real network calls. The
+adapter exposes no authenticated endpoints, API-key headers, account methods, order methods,
+websocket behavior, or trading logic; its non-OHLCV provider methods remain unimplemented.
+
+`open-core/scripts/binance_public_ohlcv_smoke.py` is the only optional public-network check. It is
+disabled unless `ENABLE_PUBLIC_NETWORK_SMOKE=true`, requests at most two completed public candles,
+writes no downloaded data, uses no credentials, and prints only a public-safe summary.

@@ -4,7 +4,7 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-09T21:00:00Z",
+  "updated_at_utc": "2026-07-09T21:27:32Z",
   "current_phase": "phase_2_data_collection_validation",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
@@ -132,15 +132,19 @@
         "Add domain-to-storage mappings that preserve source IDs, source hashes, report hashes, tolerance hashes, and provenance",
         "Add the offline accepted/rejected OHLCV persistence flow with transactional writes and deterministic quarantine decisions",
         "Add public-safe offline persistence tests and verification coverage",
-        "Return existing validation report IDs on uniqueness conflicts and define validated-bar queries with end-exclusive time windows"
+        "Return existing validation report IDs on uniqueness conflicts and define validated-bar queries with end-exclusive time windows",
+        "Add an injectable HTTP transport boundary with an optional standard-library implementation",
+        "Implement Binance Spot public /api/v3/klines request building and 12-field response parsing",
+        "Generate deterministic hashed RawObservation records that flow through existing normalization and validation",
+        "Add fully offline fake-transport tests and an explicitly disabled public-network smoke script"
       ],
       "todo": [
-        "Implement concrete public market data provider adapters without embedding credentials",
-        "Implement OHLCV collection",
+        "Implement additional concrete public market data provider adapters without embedding credentials",
+        "Expand OHLCV collection beyond Binance Spot",
         "Implement trade collection",
         "Implement funding rate collection",
         "Implement instrument metadata collection",
-        "Integrate source hashing and provenance into future concrete exchange adapters",
+        "Integrate source hashing and provenance into additional concrete exchange adapters",
         "Implement cross-source reconciliation"
       ]
     },

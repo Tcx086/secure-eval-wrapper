@@ -1,4 +1,4 @@
-"""Offline OHLCV normalization for raw sample-provider observations."""
+"""Offline OHLCV normalization for raw provider observations."""
 
 from __future__ import annotations
 
@@ -90,8 +90,19 @@ def normalize_ohlcv_observation(observation: RawObservation) -> NormalizedBar:
 
     raw_symbol = _required_text(payload, "symbol")
     symbol = normalize_symbol(raw_symbol)
-    if observation.raw_symbol is not None and normalize_symbol(observation.raw_symbol) != symbol:
-        raise ValueError("OHLCV payload symbol conflicts with raw symbol provenance")
+    if observation.raw_symbol is not None:
+        try:
+            normalized_raw_symbol = normalize_symbol(observation.raw_symbol)
+        except ValueError:
+            # Provider-native symbols such as Binance's concatenated BTCUSDT are opaque
+            # provenance. The adapter must separately supply a conservative normalized symbol.
+            normalized_raw_symbol = None
+            if observation.normalized_symbol is None:
+                raise ValueError(
+                    "opaque OHLCV raw symbol requires normalized symbol provenance"
+                )
+        if normalized_raw_symbol is not None and normalized_raw_symbol != symbol:
+            raise ValueError("OHLCV payload symbol conflicts with raw symbol provenance")
     if (
         observation.normalized_symbol is not None
         and normalize_symbol(observation.normalized_symbol) != symbol

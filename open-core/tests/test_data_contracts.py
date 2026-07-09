@@ -44,7 +44,7 @@ SHA256_ZERO = "0" * 64
 
 
 class CollectionContractTests(unittest.TestCase):
-    def test_planned_registry_contains_only_named_providers(self) -> None:
+    def test_registry_contains_named_providers_and_current_capabilities(self) -> None:
         self.assertEqual(
             set(PLANNED_PROVIDER_SPECS),
             {"binance", "okx", "bybit", "coinbase"},
@@ -54,15 +54,19 @@ class CollectionContractTests(unittest.TestCase):
             get_provider_spec("coinbase").capabilities[MarketDataType.FUNDING_RATES],
             ProviderCapabilityStatus.UNKNOWN,
         )
+        self.assertEqual(
+            get_provider_spec("binance").capabilities[MarketDataType.OHLCV],
+            ProviderCapabilityStatus.IMPLEMENTED,
+        )
         for spec in PLANNED_PROVIDER_SPECS.values():
             self.assertTrue(spec.public_market_data_only)
-            self.assertTrue(
-                set(spec.capabilities.values())
-                <= {
-                    ProviderCapabilityStatus.PLANNED,
-                    ProviderCapabilityStatus.UNKNOWN,
-                }
-            )
+            allowed = {
+                ProviderCapabilityStatus.PLANNED,
+                ProviderCapabilityStatus.UNKNOWN,
+            }
+            if spec.name == "binance":
+                allowed.add(ProviderCapabilityStatus.IMPLEMENTED)
+            self.assertTrue(set(spec.capabilities.values()) <= allowed)
 
     def test_collection_models_are_constructible_without_io(self) -> None:
         request = DataRequest(

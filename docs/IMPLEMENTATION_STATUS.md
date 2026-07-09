@@ -89,15 +89,23 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add the offline accepted/rejected OHLCV persistence flow with transactional writes and deterministic quarantine decisions.
 - [x] Add public-safe offline persistence tests and verification coverage.
 - [x] Return existing validation report IDs on uniqueness conflicts and define validated-bar queries with end-exclusive time windows.
+
+### Phase 2E: Binance public OHLCV provider adapter
+
+- [x] Add an injectable HTTP transport boundary with an optional standard-library implementation.
+- [x] Implement Binance Spot public `/api/v3/klines` request building and 12-field response parsing.
+- [x] Generate deterministic hashed `RawObservation` records that flow through existing normalization and validation.
+- [x] Add fully offline fake-transport tests and an explicitly disabled public-network smoke script.
+
 ## Todo
 
 ### Phase 2: data collection + validation (in progress)
-- [ ] Implement concrete public market data provider adapters without embedding credentials.
-- [ ] Implement OHLCV collection.
+- [ ] Implement additional concrete public market data provider adapters without embedding credentials.
+- [ ] Expand OHLCV collection beyond Binance Spot.
 - [ ] Implement trade collection.
 - [ ] Implement funding rate collection.
 - [ ] Implement instrument metadata collection.
-- [ ] Integrate source hashing and provenance into future concrete exchange adapters.
+- [ ] Integrate source hashing and provenance into additional concrete exchange adapters.
 - [ ] Implement cross-source reconciliation.
 
 ### Phase 3: public alpha library

@@ -1,7 +1,7 @@
-"""Planned provider registry for future public market-data adapters.
+"""Provider registry for public market-data adapters and planned capabilities.
 
-The registry contains names and capability planning states only. It does not contain URLs,
-credentials, API clients, or fetch behavior.
+The registry contains names and capability states only. It does not contain URLs, credentials,
+API clients, or fetch behavior.
 """
 
 from __future__ import annotations
@@ -33,13 +33,15 @@ def _capabilities(
     )
 
 
-PLANNED_PROVIDER_SPECS: Mapping[str, ProviderSpec] = MappingProxyType(
+PROVIDER_SPECS: Mapping[str, ProviderSpec] = MappingProxyType(
     {
         "binance": ProviderSpec(
             name="binance",
             display_name="Binance",
             exchange_name="Binance",
-            capabilities=_capabilities(),
+            capabilities=_capabilities(
+                ohlcv=ProviderCapabilityStatus.IMPLEMENTED,
+            ),
         ),
         "okx": ProviderSpec(
             name="okx",
@@ -64,14 +66,17 @@ PLANNED_PROVIDER_SPECS: Mapping[str, ProviderSpec] = MappingProxyType(
     }
 )
 
+# Backward-compatible Phase 2A export. The mapping now includes implemented capability states.
+PLANNED_PROVIDER_SPECS = PROVIDER_SPECS
+
 
 def get_provider_spec(name: str) -> ProviderSpec:
-    """Return a planned provider specification by canonical, case-insensitive name."""
+    """Return a provider specification by canonical, case-insensitive name."""
 
-    return PLANNED_PROVIDER_SPECS[name.strip().lower()]
+    return PROVIDER_SPECS[name.strip().lower()]
 
 
 def list_provider_specs() -> tuple[ProviderSpec, ...]:
-    """Return planned provider specifications in stable registry order."""
+    """Return provider specifications in stable registry order."""
 
-    return tuple(PLANNED_PROVIDER_SPECS.values())
+    return tuple(PROVIDER_SPECS.values())
