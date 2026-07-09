@@ -5,16 +5,19 @@ PostgreSQL is the authoritative storage layer for the target crypto trading fram
 not be used as the main design target. Local development should assume Dockerized PostgreSQL with
 runtime data stored under ignored local paths.
 
-## Phase 1A Foundation
-Phase 1A adds the first storage foundation only:
+## Phase 1 Foundation
+Phase 1 adds the PostgreSQL storage foundation only:
 - Dockerized local PostgreSQL in `infra/docker-compose.postgres.yml`.
 - Ordered migration assets under `open-core/db/migrations/`.
 - Human-readable schema notes under `open-core/db/schema/`.
-- A metadata-only schema verifier in `open-core/scripts/verify_postgres_schema.py`.
-- A local PowerShell helper in `open-core/scripts/postgres_local.ps1`.
+- Migration metadata in `audit.schema_migrations`.
+- Metadata-only schema verification in `open-core/scripts/verify_postgres_schema.py`.
+- Local migration helper in `open-core/scripts/postgres_local.ps1`.
+- Repository interface definitions under `open-core/src/secure_eval_wrapper/storage/repositories/`.
+- PostgreSQL-only config helpers under `open-core/src/secure_eval_wrapper/storage/postgres/`.
 
 This phase does not implement data collection, alpha logic, signal generation, execution,
-backtesting, monitoring runtime behavior, or live trading.
+backtesting, monitoring runtime behavior, paper trading, or live trading.
 
 ## Storage Principles
 - Raw source observations are preserved before transformation.
@@ -23,6 +26,7 @@ backtesting, monitoring runtime behavior, or live trading.
 - Every storage record used by research, backtesting, or delivery is traceable to a source, config, and manifest.
 - Public reports should reference storage IDs and hashes, not private payloads.
 - Repository classes own persistence details; domain code should not embed SQL directly.
+- PostgreSQL is the only supported authoritative storage target.
 
 ## Schema Groups
 - `market_data`: raw observations, validated bars, validated trades, funding rates, instrument metadata, future order book snapshots.
@@ -32,9 +36,9 @@ backtesting, monitoring runtime behavior, or live trading.
 - `execution`: order intents, orders, fills, positions, account snapshots.
 - `backtesting`: backtest runs, metrics, equity curves, stress results.
 - `monitoring`: monitoring events, FIX session events, execution health, risk events, system health.
-- `audit`: run manifests, artifacts, artifact hashes, redaction events.
+- `audit`: run manifests, artifacts, artifact hashes, redaction events, migration metadata.
 
-## Initial Migration
+## Migrations
 `open-core/db/migrations/0001_initial_schema.sql` creates PostgreSQL schemas for the storage groups
 above and defines the initial tables required by the public framework contract:
 - `market_data.raw_source_observations`
@@ -61,6 +65,10 @@ above and defines the initial tables required by the public framework contract:
 - `monitoring.risk_events`
 - `audit.run_manifests`
 - `audit.artifacts`
+
+`open-core/db/migrations/0002_schema_migrations.sql` creates `audit.schema_migrations`, which
+tracks `migration_id`, `filename`, `sha256`, `applied_at_utc`, and `description` for applied
+migration files.
 
 ## Table Responsibilities
 
@@ -114,10 +122,10 @@ Stores data/signal/execution/risk/system health events plus simulated FIX-style 
 heartbeats, session state transitions, acknowledgements, rejects, and execution reports. The initial
 `fix_session_events` table records simulated events only.
 
-### `run_manifests` and `artifacts`
-`run_manifests` stores run-level reproducibility metadata: `run_id`, `run_mode`, `data_sha256`,
-`config_sha256`, `code_sha256`, `artifact_sha256`, `seed`, `storage_ref`, and timestamp.
-`artifacts` stores artifact type, classification, path/URI, hash, and redaction status.
+### `run_manifests`, `artifacts`, and `schema_migrations`
+`run_manifests` stores run-level reproducibility metadata. `artifacts` stores artifact type,
+classification, path/URI, hash, and redaction status. `schema_migrations` records migration file
+identity and hashes so local schema state can be audited without private data.
 
 ## Design-Level Relationships
 - `validation_reports` reference raw observations through validation run metadata.
@@ -136,7 +144,9 @@ heartbeats, session state transitions, acknowledgements, rejects, and execution 
 ## Migration Strategy
 - Migrations live under `open-core/db/migrations/`.
 - Schema documentation lives under `open-core/db/schema/`.
-- Each migration must be ordered, deterministic, and reversible where practical.
+- Each migration must be ordered and deterministic.
+- Applied migration metadata must be recorded in `audit.schema_migrations`.
+- The verifier must check migration file SHA256 values against stored metadata.
 - Schema changes should include repository updates and implementation status updates.
 - Test data and local seed data must not include secrets or real account data.
 
@@ -176,5 +186,6 @@ Runtime code should access PostgreSQL through repositories:
 - `AuditRepository`
 - `ArtifactRepository`
 
-Repositories are responsible for SQL execution, transactions, row/domain mapping, and avoiding
-accidental public exposure of private fields. Repository interfaces remain a future Phase 1 item.
+Phase 1 defines these repository interfaces only. Concrete implementations, SQL execution,
+transactions, and row/domain mapping remain future work and must preserve the public/private
+boundary.

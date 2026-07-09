@@ -4,7 +4,7 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-09T12:00:00Z",
+  "updated_at_utc": "2026-07-09T13:00:00Z",
   "current_phase": "phase_1_postgresql_schema_migrations",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
@@ -83,18 +83,20 @@
     {
       "id": "phase_1_postgresql_schema_migrations",
       "title": "Phase 1: PostgreSQL + schema + migrations",
-      "status": "in_progress",
+      "status": "completed",
       "completed": [
         "Add Dockerized PostgreSQL infrastructure",
         "Add open-core/db/ migration layout",
         "Create initial schema migrations",
+        "Add repository interfaces",
         "Add local database setup documentation",
         "Add migration verification workflow",
+        "Add migration metadata tracking",
+        "Strengthen schema verification for required schemas, tables, columns, indexes, unique constraints, and migration hashes",
+        "Add PostgreSQL-only connection/config abstraction",
         "Replace docs/FOLDER_STRUCTURE.md mojibake tree with ASCII tree"
       ],
-      "todo": [
-        "Add repository interfaces"
-      ]
+      "todo": []
     },
     {
       "id": "phase_2_data_collection_validation",

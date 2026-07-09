@@ -49,10 +49,16 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add local PostgreSQL setup documentation and PowerShell helper.
 - [x] Replace `docs/FOLDER_STRUCTURE.md` mojibake tree characters with an ASCII tree.
 
-## Todo
+### Phase 1B: Repository interfaces and migration discipline
+- [x] Add `audit.schema_migrations` migration metadata table.
+- [x] Track migration ID, filename, SHA256, applied timestamp, and description.
+- [x] Strengthen schema verification for required schemas, tables, columns, indexes, unique constraints, and migration hashes.
+- [x] Add `secure_eval_wrapper.storage` package skeleton.
+- [x] Add PostgreSQL-only connection/config abstraction that does not connect during import.
+- [x] Add repository interface definitions for market data, data quality, alpha, signal, execution, backtest, monitoring, audit, and artifacts.
+- [x] Complete Phase 1 PostgreSQL schema, repository interface, and migration verification foundation.
 
-### Phase 1: PostgreSQL + schema + migrations
-- [ ] Add repository interfaces.
+## Todo
 
 ### Phase 2: data collection + validation
 - [ ] Implement crypto market data provider interfaces.
