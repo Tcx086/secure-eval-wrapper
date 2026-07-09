@@ -25,8 +25,9 @@ class MarketDataType(str, Enum):
 
 
 class ProviderCapabilityStatus(str, Enum):
-    """Planning state for a provider/data-type combination."""
+    """Availability or planning state for a provider/data-type combination."""
 
+    IMPLEMENTED = "implemented"
     PLANNED = "planned"
     UNKNOWN = "unknown"
 

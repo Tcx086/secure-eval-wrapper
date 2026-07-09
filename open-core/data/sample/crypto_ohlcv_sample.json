@@ -1,0 +1,38 @@
+{
+  "fixture_version": "1.0.0",
+  "classification": "synthetic_public_safe",
+  "notice": "Synthetic OHLCV values for offline contract and normalization tests only.",
+  "provider": "sample_file",
+  "exchange": "Synthetic Exchange",
+  "data_type": "ohlcv",
+  "timeframe": "1m",
+  "bars": [
+    {
+      "symbol": "BTC/USDT",
+      "open_time_utc": "2026-01-01T00:00:00Z",
+      "open": "100.00",
+      "high": "101.25",
+      "low": "99.50",
+      "close": "100.75",
+      "volume": "12.50"
+    },
+    {
+      "symbol": "BTC/USDT",
+      "open_time_utc": "2026-01-01T00:01:00Z",
+      "open": "100.75",
+      "high": "102.00",
+      "low": "100.25",
+      "close": "101.50",
+      "volume": "10.25"
+    },
+    {
+      "symbol": "BTC/USDT",
+      "open_time_utc": "2026-01-01T00:02:00Z",
+      "open": "101.50",
+      "high": "101.75",
+      "low": "100.50",
+      "close": "101.00",
+      "volume": "8.75"
+    }
+  ]
+}

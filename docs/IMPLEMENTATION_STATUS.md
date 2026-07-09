@@ -69,6 +69,13 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Define validation, reconciliation, quarantine, and dataset promotion contracts.
 - [x] Add offline construction, registry, abstract-interface, and Python compile checks.
 
+### Phase 2B: offline collection utilities
+- [x] Add deterministic canonical JSON and SHA-256 source hashing utilities.
+- [x] Add explicit UTC requirement and coercion guards that reject naive datetimes by default.
+- [x] Add conservative simple-pair symbol normalization helpers.
+- [x] Add an offline-only OHLCV sample provider restricted to public-safe fixtures under open-core/data/sample.
+- [x] Add synthetic OHLCV fixture data and offline hashing, UTC, symbol, and provider tests.
+
 ## Todo
 
 ### Phase 2: data collection + validation (in progress)
@@ -77,7 +84,7 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [ ] Implement trade collection.
 - [ ] Implement funding rate collection.
 - [ ] Implement instrument metadata collection.
-- [ ] Implement provenance and source hashing.
+- [ ] Integrate source hashing and provenance into future concrete exchange adapters.
 - [ ] Implement single-source validation checks.
 - [ ] Implement cross-source reconciliation.
 - [ ] Implement validation report generation and PostgreSQL persistence.

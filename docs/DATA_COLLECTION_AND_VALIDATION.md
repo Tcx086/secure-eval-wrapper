@@ -3,8 +3,8 @@
 ## Purpose
 The target data layer will collect crypto market data from public exchange APIs and provider APIs,
 preserve source provenance, validate quality, and only promote accepted datasets into research and
-backtesting. Phase 2A defines contracts only; no provider API calls, validation algorithms, or
-dataset promotion behavior are implemented yet.
+backtesting. Phase 2 now includes contracts and offline preparation utilities only; no real
+provider API calls, validation algorithms, or dataset promotion behavior are implemented yet.
 
 ## Collection Scope
 Initial crypto-only data types:
@@ -34,8 +34,9 @@ open-core/src/secure_eval_wrapper/
 The collection models cover provider specifications, provider-neutral requests, raw observations,
 normalized OHLCV bars, normalized trades, funding rates, instrument metadata, and collection run
 summaries. Decimal values are represented with `Decimal`, record and run identifiers with `UUID`,
-and time fields with timezone-capable `datetime` values. Future implementations remain responsible
-for enforcing UTC, calculating deterministic hashes, parsing payloads, and writing through the
+and time fields with timezone-capable `datetime` values. These Phase 2A dataclasses remain inert.
+Phase 2B adds explicit UTC guards and deterministic source hashing; future provider adapters must
+call those guards while parsing payloads. Persistent writes must use the existing
 PostgreSQL repository interfaces.
 
 `MarketDataProvider` is an abstract interface with `fetch_ohlcv`, `fetch_trades`,
@@ -50,6 +51,26 @@ reports, and cross-source reconciliation results. `DataValidator`, `CrossSourceR
 check outcome, while `ValidationStatus` describes the final dataset gate decision. Stable
 `QuarantineReason` values describe why a future promoter may reject an observation without
 promoting it to a validated table.
+
+## Phase 2B Offline Utilities
+Phase 2B adds reusable, network-free preparation code:
+
+- `hashing.py` emits compact canonical JSON and deterministic lowercase SHA-256 digests. Mapping
+  key order does not affect a digest, non-finite floats are rejected, and observation source hashes
+  cover both the payload and stable request metadata.
+- `time_utils.py` requires UTC-aware values at strict boundaries and converts explicitly offset
+  ISO-8601 values to UTC. Naive values fail unless the caller deliberately sets
+  `assume_naive_utc=True`; local timezone assumptions are never made.
+- `symbols.py` normalizes explicitly delimited simple pairs such as `btc/usdt` to `BTC-USDT`.
+  Concatenated or multi-part symbols are rejected instead of guessed.
+- `sample_provider.py` implements `MarketDataProvider` for synthetic OHLCV JSON fixtures under
+  `open-core/data/sample/` only. Fixture filenames cannot include paths, and the provider contains
+  no network client, URL, authentication, persistence, or exchange adapter code.
+
+The included `crypto_ohlcv_sample.json` fixture is classified `synthetic_public_safe`. Each
+returned `RawObservation` includes request provenance, explicit UTC timestamps, normalized symbol
+metadata, and a deterministic source hash matching `^[0-9a-f]{64}$`. The sample provider supports
+OHLCV only; trade, funding-rate, and instrument methods explicitly remain unimplemented.
 
 ## Provider Strategy
 The framework should support multiple providers or exchanges for the same logical instrument:
@@ -67,6 +88,9 @@ The Phase 2A registry records the following planning metadata only:
 `planned` does not mean implemented or verified. `unknown` means the capability must be resolved
 when a future provider adapter is designed. The registry deliberately contains no URLs, clients,
 authentication configuration, or credentials.
+
+The offline sample provider is a fixture reader, not a concrete exchange adapter. All Binance,
+OKX, Bybit, and Coinbase adapters remain planned or unknown.
 
 Provider adapters must normalize symbol naming, timestamp format, timezone to UTC, numeric
 precision, timeframe names, funding interval representation, and instrument metadata fields.
@@ -89,7 +113,9 @@ Every raw observation must include:
 The source hash should be computed from a deterministic representation of the raw payload and
 request metadata.
 
-Phase 2A carries the future hash value in the contracts but does not implement hash calculation.
+Phase 2B implements this calculation with canonical JSON and SHA-256. Digests are always lowercase
+64-character hexadecimal strings. Stable request parameters are hashed; collection run IDs and
+request/ingest timestamps remain provenance fields and do not make an identical source unstable.
 
 ## Timestamp Rules
 - Store all timestamps in UTC.
@@ -98,6 +124,9 @@ Phase 2A carries the future hash value in the contracts but does not implement h
 - Bars should use explicit open time and timeframe.
 - Trades should use event time and ingest time.
 - Funding rates should use funding interval time.
+
+Phase 2B guards reject naive datetimes by default. A caller may mark a known-naive source value as
+UTC only through an explicit opt-in at the normalization call site.
 
 ## Validation Gate
 Raw data is not research-ready. Data must pass validation before alpha research, backtesting, or
@@ -112,8 +141,8 @@ Validation stages:
 6. Promote accepted records to validated tables.
 7. Quarantine rejected records with reasons.
 
-Phase 2A models these stages and their handoff interfaces only. All seven runtime stages remain
-future work.
+Phase 2A models these stages, and Phase 2B supplies offline parsing guards and provenance helpers.
+The complete validation, reconciliation, promotion, and PostgreSQL-backed flow remains future work.
 
 ## Single-Source Checks
 Required checks:
