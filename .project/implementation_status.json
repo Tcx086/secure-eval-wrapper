@@ -4,7 +4,7 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-09T20:28:51Z",
+  "updated_at_utc": "2026-07-09T20:49:20Z",
   "current_phase": "phase_2_data_collection_validation",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
@@ -126,7 +126,12 @@
         "Normalize sample-provider OHLCV observations into Decimal-based UTC NormalizedBar records with conservative symbols and complete provenance",
         "Add deterministic missing-bar, duplicate timestamp, non-monotonic timestamp, OHLC, volume, and partial-candle checks",
         "Build hashed in-memory validation reports and deterministic quarantine reason mappings without persistence",
-        "Add offline normalization, validation, policy, quarantine, and report-hash tests guarded against network use"
+        "Add offline normalization, validation, policy, quarantine, and report-hash tests guarded against network use",
+        "Add the data-quality quarantine decisions migration and catalog verification coverage",
+        "Add PostgreSQL repositories for raw observations, validation reports, checks, validated bars, and quarantine decisions",
+        "Add domain-to-storage mappings that preserve source IDs, source hashes, report hashes, tolerance hashes, and provenance",
+        "Add the offline accepted/rejected OHLCV persistence flow with transactional writes and deterministic quarantine decisions",
+        "Add public-safe offline persistence tests and verification coverage"
       ],
       "todo": [
         "Implement concrete public market data provider adapters without embedding credentials",
@@ -135,9 +140,7 @@
         "Implement funding rate collection",
         "Implement instrument metadata collection",
         "Integrate source hashing and provenance into future concrete exchange adapters",
-        "Implement cross-source reconciliation",
-        "Persist validation reports and quarantine decisions through PostgreSQL repository interfaces",
-        "Implement PostgreSQL-backed accepted/rejected data flow"
+        "Implement cross-source reconciliation"
       ]
     },
     {

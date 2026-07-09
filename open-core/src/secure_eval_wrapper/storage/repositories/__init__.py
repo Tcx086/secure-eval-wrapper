@@ -9,6 +9,7 @@ from secure_eval_wrapper.storage.repositories.interfaces import (
     ExecutionRepository,
     MarketDataRepository,
     MonitoringRepository,
+    QuarantineRepository,
     SignalRepository,
 )
 
@@ -21,5 +22,6 @@ __all__ = [
     "ExecutionRepository",
     "MarketDataRepository",
     "MonitoringRepository",
+    "QuarantineRepository",
     "SignalRepository",
 ]

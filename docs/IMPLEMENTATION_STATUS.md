@@ -82,6 +82,12 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Build hashed in-memory validation reports and deterministic quarantine reason mappings without persistence.
 - [x] Add offline normalization, validation, policy, quarantine, and report-hash tests guarded against network use.
 
+### Phase 2D: PostgreSQL-backed offline validation persistence
+- [x] Add the data-quality quarantine decisions migration and catalog verification coverage.
+- [x] Add PostgreSQL repositories for raw observations, validation reports, checks, validated bars, and quarantine decisions.
+- [x] Add domain-to-storage mappings that preserve source IDs, source hashes, report hashes, tolerance hashes, and provenance.
+- [x] Add the offline accepted/rejected OHLCV persistence flow with transactional writes and deterministic quarantine decisions.
+- [x] Add public-safe offline persistence tests and verification coverage.
 ## Todo
 
 ### Phase 2: data collection + validation (in progress)
@@ -92,8 +98,6 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [ ] Implement instrument metadata collection.
 - [ ] Integrate source hashing and provenance into future concrete exchange adapters.
 - [ ] Implement cross-source reconciliation.
-- [ ] Persist validation reports and quarantine decisions through PostgreSQL repository interfaces.
-- [ ] Implement PostgreSQL-backed accepted/rejected data flow.
 
 ### Phase 3: public alpha library
 - [ ] Create public alpha registry.

@@ -15,6 +15,7 @@ Current migrations:
 
 - `0001_initial_schema.sql`: creates the initial schema groups, tables, indexes, and constraints.
 - `0002_schema_migrations.sql`: creates `audit.schema_migrations` for migration metadata.
+- `0003_data_quality_quarantine.sql`: adds indexed quarantine decisions for failed offline validation observations.
 
 Migration metadata tracks:
 

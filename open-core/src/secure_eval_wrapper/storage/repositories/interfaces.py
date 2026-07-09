@@ -69,6 +69,13 @@ class DataQualityRepository(ABC):
         """Fetch a validation report by identifier."""
 
 
+class QuarantineRepository(ABC):
+    """Persistence contract for source-observation quarantine decisions."""
+
+    @abstractmethod
+    def record_quarantine_decision(self, decision: StoragePayload) -> UUID:
+        """Record one failed-observation quarantine decision."""
+
 class AlphaRepository(ABC):
     """Persistence contract for public alpha registry metadata."""
 

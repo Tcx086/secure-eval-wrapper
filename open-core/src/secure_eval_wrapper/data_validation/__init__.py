@@ -30,6 +30,10 @@ from secure_eval_wrapper.data_validation.ohlcv import (
     default_ohlcv_checks,
     validate_ohlcv_bars,
 )
+from secure_eval_wrapper.data_validation.persistence import (
+    OfflinePersistenceSummary,
+    persist_offline_ohlcv_validation_flow,
+)
 from secure_eval_wrapper.data_validation.quarantine import map_quarantine_reasons
 from secure_eval_wrapper.data_validation.reporting import build_validation_report
 
@@ -45,6 +49,7 @@ __all__ = [
     "NON_MONOTONIC_TIMESTAMPS",
     "NormalizedRecord",
     "OfflineOhlcvValidator",
+    "OfflinePersistenceSummary",
     "OhlcvValidationConfig",
     "PARTIAL_CANDLE",
     "QuarantineReason",
@@ -59,5 +64,6 @@ __all__ = [
     "build_validation_report",
     "default_ohlcv_checks",
     "map_quarantine_reasons",
+    "persist_offline_ohlcv_validation_flow",
     "validate_ohlcv_bars",
 ]

@@ -3,9 +3,9 @@
 ## Purpose
 The target data layer will collect crypto market data from public exchange APIs and provider APIs,
 preserve source provenance, validate quality, and only promote accepted datasets into research and
-backtesting. Phase 2 now includes contracts, offline preparation, sample OHLCV normalization, and
-single-source validation/reporting. No real provider API calls, cross-source reconciliation,
-persistence, or dataset promotion behavior are implemented yet.
+backtesting. Phase 2 now includes contracts, offline preparation, sample OHLCV normalization,
+single-source validation/reporting, and PostgreSQL-backed offline persistence. No real provider API
+calls or cross-source reconciliation are implemented yet.
 
 ## Collection Scope
 Initial crypto-only data types:
@@ -172,8 +172,9 @@ Validation stages:
 
 Phase 2A models these stages, Phase 2B supplies offline parsing guards and provenance helpers, and
 Phase 2C implements stages 1 through 3 plus in-memory report construction for sample OHLCV data.
-Cross-source reconciliation, promotion, quarantine persistence, and the PostgreSQL-backed flow
-remain future work.
+Phase 2D persists the offline sample-provider flow through PostgreSQL, including raw observations,
+reports, checks, accepted bars, and quarantine decisions. Cross-source reconciliation and real
+provider adapters remain future work.
 
 ## Single-Source Checks
 Implemented offline for normalized OHLCV in Phase 2C:
@@ -258,3 +259,16 @@ timestamp. A backtest must record the dataset snapshot hash in its run manifest.
 Public artifacts may show aggregate data quality summaries, provider names where licensing permits,
 validation status, hashes, and dataset references. Public artifacts must not show private raw
 exports, account data, API keys, sensitive venue credentials, or private research signals.
+
+## Phase 2D PostgreSQL-backed offline persistence
+
+Phase 2D connects the offline sample-provider OHLCV path to the PostgreSQL storage contracts. The
+`persist_offline_ohlcv_validation_flow` service writes raw source observations first, then the
+hashed validation report and each check result. Bars whose source observations pass the report
+are promoted to `market_data.validated_bars`; failed source observations produce deterministic
+`data_quality.quarantine_decisions` rows linked to the report and validation run. The service is
+offline-only, accepts an injected repository/DB-API connection, and makes no network or exchange
+client calls.
+
+Only public-safe offline fixtures are in scope for this persistence path. Real provider adapters,
+network collection, and cross-source reconciliation are still future Phase 2 work.

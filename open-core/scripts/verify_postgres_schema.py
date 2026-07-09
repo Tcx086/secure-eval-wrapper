@@ -48,6 +48,7 @@ REQUIRED_TABLES: dict[str, tuple[str, ...]] = {
     "data_quality": (
         "data_quality_checks",
         "validation_reports",
+        "quarantine_decisions",
     ),
     "alpha": (
         "alpha_registry",
@@ -185,6 +186,19 @@ REQUIRED_COLUMNS: dict[tuple[str, str], tuple[str, ...]] = {
         "warning_count",
         "status",
         "report_sha256",
+    ),
+    ("data_quality", "quarantine_decisions"): (
+        "quarantine_id",
+        "validation_report_id",
+        "validation_run_id",
+        "observation_id",
+        "quarantine_reason",
+        "symbol",
+        "exchange",
+        "timeframe",
+        "source_sha256",
+        "details_jsonb",
+        "created_at_utc",
     ),
     ("alpha", "alpha_registry"): (
         "alpha_id",
@@ -328,6 +342,10 @@ REQUIRED_INDEXES = (
     ("market_data", "funding_rates", "idx_funding_rates_symbol_time"),
     ("data_quality", "data_quality_checks", "idx_data_quality_checks_validation_run"),
     ("data_quality", "validation_reports", "idx_validation_reports_validation_run"),
+    ("data_quality", "quarantine_decisions", "idx_quarantine_decisions_validation_report"),
+    ("data_quality", "quarantine_decisions", "idx_quarantine_decisions_validation_run"),
+    ("data_quality", "quarantine_decisions", "idx_quarantine_decisions_observation"),
+    ("data_quality", "quarantine_decisions", "idx_quarantine_decisions_reason"),
     ("signals", "signal_runs", "idx_signal_runs_run_id"),
     ("signals", "signals", "idx_signals_run_symbol_time"),
     ("execution", "order_intents", "idx_order_intents_run_id"),

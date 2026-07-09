@@ -16,3 +16,17 @@ __all__ = [
     "build_connection_kwargs",
     "load_postgres_config",
 ]
+
+from secure_eval_wrapper.storage.postgres.repositories import (
+    PostgresDataQualityRepository,
+    PostgresMarketDataRepository,
+    PostgresOfflineValidationRepository,
+    PostgresQuarantineRepository,
+)
+
+__all__ = [
+    'PostgresDataQualityRepository',
+    'PostgresMarketDataRepository',
+    'PostgresOfflineValidationRepository',
+    'PostgresQuarantineRepository',
+]

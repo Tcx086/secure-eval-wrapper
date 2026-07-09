@@ -30,7 +30,7 @@ backtesting, monitoring runtime behavior, paper trading, or live trading.
 
 ## Schema Groups
 - `market_data`: raw observations, validated bars, validated trades, funding rates, instrument metadata, future order book snapshots.
-- `data_quality`: checks, reconciliation runs/results, validation reports, rejected observations.
+- `data_quality`: checks, reconciliation runs/results, validation reports, quarantine decisions, and rejected observations.
 - `alpha`: public alpha registry, alpha versions, alpha parameters.
 - `signals`: signal runs, signals, signal components, signal conflicts.
 - `execution`: order intents, orders, fills, positions, account snapshots.
@@ -69,6 +69,9 @@ above and defines the initial tables required by the public framework contract:
 `open-core/db/migrations/0002_schema_migrations.sql` creates `audit.schema_migrations`, which
 tracks `migration_id`, `filename`, `sha256`, `applied_at_utc`, and `description` for applied
 migration files.
+`open-core/db/migrations/0003_data_quality_quarantine.sql` adds the indexed data-quality
+quarantine decision table used by Phase 2D offline persistence.
+
 
 ## Table Responsibilities
 
@@ -186,6 +189,22 @@ Runtime code should access PostgreSQL through repositories:
 - `AuditRepository`
 - `ArtifactRepository`
 
-Phase 1 defines these repository interfaces only. Concrete implementations, SQL execution,
-transactions, and row/domain mapping remain future work and must preserve the public/private
-boundary.
+Phase 2D adds concrete PostgreSQL implementations, parameterized SQL execution, transactions, and
+row/domain mappings for offline validation persistence. Future implementations must preserve the
+public/private boundary.
+
+### `quarantine_decisions`
+
+`data_quality.quarantine_decisions` records an offline rejection decision for each failed source
+observation. It links `quarantine_id`, `validation_report_id`, `validation_run_id`, and
+`observation_id`, and stores the stable `quarantine_reason`, symbol/exchange/timeframe provenance,
+optional source hash, quality details, and creation time. Indexes support report, run, observation,
+and reason lookups. The table stores quality metadata only and never duplicates raw payloads.
+
+### Phase 2D persistence boundary
+
+The Phase 2D repository implementations accept an injected PostgreSQL DB-API connection and use
+parameterized SQL. The offline flow persists raw observations, reports, check results, accepted
+bars, and quarantine decisions in one transaction when the unified repository is used. No driver
+is imported or connection opened at module import time; PostgreSQL remains the sole authoritative
+storage target.
