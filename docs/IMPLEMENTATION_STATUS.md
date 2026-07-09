@@ -61,10 +61,18 @@ Completed work must be listed under `Completed`. Everything not done must remain
 ### Pre-Phase 2: migration runner hardening
 - [x] Harden `open-core/scripts/postgres_local.ps1` so migration metadata is recorded immediately after each successful migration, matching recorded migrations are skipped, hash mismatches fail clearly, and failed migrations stop without silently leaving untracked partial state.
 
+### Phase 2A: data collection and validation contracts
+- [x] Add importable data collection and data validation package skeletons.
+- [x] Define provider, request, raw observation, normalized market data, instrument metadata, and collection run contracts.
+- [x] Define the abstract crypto market data provider interface.
+- [x] Register Binance, OKX, Bybit, and Coinbase as planned provider specifications without clients or credentials.
+- [x] Define validation, reconciliation, quarantine, and dataset promotion contracts.
+- [x] Add offline construction, registry, abstract-interface, and Python compile checks.
+
 ## Todo
 
-### Phase 2: data collection + validation
-- [ ] Implement crypto market data provider interfaces.
+### Phase 2: data collection + validation (in progress)
+- [ ] Implement concrete public market data provider adapters without embedding credentials.
 - [ ] Implement OHLCV collection.
 - [ ] Implement trade collection.
 - [ ] Implement funding rate collection.
@@ -72,8 +80,8 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [ ] Implement provenance and source hashing.
 - [ ] Implement single-source validation checks.
 - [ ] Implement cross-source reconciliation.
-- [ ] Implement validation reports.
-- [ ] Implement accepted/rejected data flow.
+- [ ] Implement validation report generation and PostgreSQL persistence.
+- [ ] Implement PostgreSQL-backed accepted/rejected data flow.
 
 ### Phase 3: public alpha library
 - [ ] Create public alpha registry.

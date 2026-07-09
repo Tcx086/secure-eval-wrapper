@@ -1,9 +1,10 @@
 # Data Collection and Validation
 
 ## Purpose
-The data layer collects crypto market data from public exchange APIs and provider APIs, preserves
-source provenance, validates quality, and only promotes accepted datasets into research and
-backtesting.
+The target data layer will collect crypto market data from public exchange APIs and provider APIs,
+preserve source provenance, validate quality, and only promote accepted datasets into research and
+backtesting. Phase 2A defines contracts only; no provider API calls, validation algorithms, or
+dataset promotion behavior are implemented yet.
 
 ## Collection Scope
 Initial crypto-only data types:
@@ -16,9 +17,56 @@ Future data types:
 - Order book snapshots.
 - Account snapshots for paper/live account monitoring.
 
+## Phase 2A Contract Baseline
+Phase 2 is in progress. The first increment adds importable, inert contracts under:
+
+```text
+open-core/src/secure_eval_wrapper/
+|-- data_collection/
+|   |-- models.py
+|   |-- providers.py
+|   `-- registry.py
+`-- data_validation/
+    |-- models.py
+    `-- interfaces.py
+```
+
+The collection models cover provider specifications, provider-neutral requests, raw observations,
+normalized OHLCV bars, normalized trades, funding rates, instrument metadata, and collection run
+summaries. Decimal values are represented with `Decimal`, record and run identifiers with `UUID`,
+and time fields with timezone-capable `datetime` values. Future implementations remain responsible
+for enforcing UTC, calculating deterministic hashes, parsing payloads, and writing through the
+PostgreSQL repository interfaces.
+
+`MarketDataProvider` is an abstract interface with `fetch_ohlcv`, `fetch_trades`,
+`fetch_funding_rates`, and `fetch_instruments` methods. The methods return raw observation
+contracts so source payloads and request provenance can be preserved before normalization. Phase
+2A includes no concrete subclass, HTTP library, endpoint URL, credential field, retry behavior, or
+network test.
+
+The validation package separates declarative checks, individual check results, dataset-level
+reports, and cross-source reconciliation results. `DataValidator`, `CrossSourceReconciler`, and
+`DatasetPromoter` are abstract boundaries only. `ValidationCheckStatus` describes an individual
+check outcome, while `ValidationStatus` describes the final dataset gate decision. Stable
+`QuarantineReason` values describe why a future promoter may reject an observation without
+promoting it to a validated table.
+
 ## Provider Strategy
 The framework should support multiple providers or exchanges for the same logical instrument:
 Binance, OKX, Bybit, Coinbase, and third-party aggregators where licensing permits.
+
+The Phase 2A registry records the following planning metadata only:
+
+| Provider | OHLCV | Trades | Funding rates | Instruments |
+|---|---|---|---|---|
+| Binance | planned | planned | planned | planned |
+| OKX | planned | planned | planned | planned |
+| Bybit | planned | planned | planned | planned |
+| Coinbase | planned | planned | unknown | planned |
+
+`planned` does not mean implemented or verified. `unknown` means the capability must be resolved
+when a future provider adapter is designed. The registry deliberately contains no URLs, clients,
+authentication configuration, or credentials.
 
 Provider adapters must normalize symbol naming, timestamp format, timezone to UTC, numeric
 precision, timeframe names, funding interval representation, and instrument metadata fields.
@@ -41,6 +89,8 @@ Every raw observation must include:
 The source hash should be computed from a deterministic representation of the raw payload and
 request metadata.
 
+Phase 2A carries the future hash value in the contracts but does not implement hash calculation.
+
 ## Timestamp Rules
 - Store all timestamps in UTC.
 - Keep provider timestamps as source metadata when useful.
@@ -61,6 +111,9 @@ Validation stages:
 5. Write validation report.
 6. Promote accepted records to validated tables.
 7. Quarantine rejected records with reasons.
+
+Phase 2A models these stages and their handoff interfaces only. All seven runtime stages remain
+future work.
 
 ## Single-Source Checks
 Required checks:
