@@ -2,61 +2,65 @@
 
 ## Purpose
 This document defines the target repository layout for the crypto trading framework rebuild. The
-layout is documentation-first in Phase 0; folders do not need runtime implementations yet.
+layout is documentation-first in Phase 0 and is being implemented incrementally in later phases.
 
 ## Proposed Layout
 ```text
 secure-eval-wrapper/
-â”œâ”€ README.md
-â”œâ”€ docs/
-â”‚  â”œâ”€ ARCHITECTURE_CRYPTO_TRADING_SYSTEM.md
-â”‚  â”œâ”€ FOLDER_STRUCTURE.md
-â”‚  â”œâ”€ POSTGRESQL_STORAGE_DESIGN.md
-â”‚  â”œâ”€ DATA_COLLECTION_AND_VALIDATION.md
-â”‚  â”œâ”€ EXECUTION_AND_FIX_MONITORING.md
-â”‚  â”œâ”€ LOCAL_DATA_GOVERNANCE.md
-â”‚  â””â”€ IMPLEMENTATION_STATUS.md
-â”œâ”€ security/
-â”œâ”€ api-spec/
-â”œâ”€ infra/
-â”‚  â”œâ”€ docker-compose.postgres.yml
-â”‚  â””â”€ postgres/
-â”œâ”€ open-core/
-â”‚  â”œâ”€ main.py
-â”‚  â”œâ”€ db/
-â”‚  â”‚  â”œâ”€ migrations/
-â”‚  â”‚  â”œâ”€ schema/
-â”‚  â”‚  â””â”€ README.md
-â”‚  â”œâ”€ scripts/
-â”‚  â”œâ”€ data/
-â”‚  â”‚  â””â”€ sample/
-â”‚  â””â”€ src/
-â”‚     â””â”€ secure_eval_wrapper/
-â”‚        â”œâ”€ data_collection/
-â”‚        â”œâ”€ data_validation/
-â”‚        â”œâ”€ alpha_library/
-â”‚        â”œâ”€ signal_generation/
-â”‚        â”œâ”€ execution/
-â”‚        â”‚  â”œâ”€ brokers/
-â”‚        â”‚  â”œâ”€ fix_simulator/
-â”‚        â”‚  â””â”€ risk/
-â”‚        â”œâ”€ backtesting/
-â”‚        â”œâ”€ monitoring/
-â”‚        â”œâ”€ storage/
-â”‚        â”‚  â”œâ”€ postgres/
-â”‚        â”‚  â””â”€ repositories/
-â”‚        â”œâ”€ audit/
-â”‚        â”œâ”€ reporting/
-â”‚        â””â”€ cli/
-â”œâ”€ runner/
-â”œâ”€ system/
-â”œâ”€ delivery/
-â””â”€ var/
-   â”œâ”€ cache/
-   â”œâ”€ raw/
-   â”œâ”€ tmp/
-   â”œâ”€ logs/
-   â””â”€ postgres/
+|-- README.md
+|-- docs/
+|   |-- ARCHITECTURE_CRYPTO_TRADING_SYSTEM.md
+|   |-- FOLDER_STRUCTURE.md
+|   |-- POSTGRESQL_STORAGE_DESIGN.md
+|   |-- DATA_COLLECTION_AND_VALIDATION.md
+|   |-- EXECUTION_AND_FIX_MONITORING.md
+|   |-- LOCAL_DATA_GOVERNANCE.md
+|   `-- IMPLEMENTATION_STATUS.md
+|-- security/
+|-- api-spec/
+|-- infra/
+|   |-- docker-compose.postgres.yml
+|   `-- postgres/
+|-- open-core/
+|   |-- main.py
+|   |-- db/
+|   |   |-- migrations/
+|   |   |   `-- 0001_initial_schema.sql
+|   |   |-- schema/
+|   |   |   `-- README.md
+|   |   `-- README.md
+|   |-- scripts/
+|   |   |-- postgres_local.ps1
+|   |   `-- verify_postgres_schema.py
+|   |-- data/
+|   |   `-- sample/
+|   `-- src/
+|       `-- secure_eval_wrapper/
+|           |-- data_collection/
+|           |-- data_validation/
+|           |-- alpha_library/
+|           |-- signal_generation/
+|           |-- execution/
+|           |   |-- brokers/
+|           |   |-- fix_simulator/
+|           |   `-- risk/
+|           |-- backtesting/
+|           |-- monitoring/
+|           |-- storage/
+|           |   |-- postgres/
+|           |   `-- repositories/
+|           |-- audit/
+|           |-- reporting/
+|           `-- cli/
+|-- runner/
+|-- system/
+|-- delivery/
+`-- var/
+    |-- cache/
+    |-- raw/
+    |-- tmp/
+    |-- logs/
+    `-- postgres/
 ```
 
 ## Top-Level Responsibilities

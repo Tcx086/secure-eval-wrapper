@@ -41,15 +41,18 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Explicitly disallow SQLite as authoritative storage.
 - [x] Document that live trading is disabled by default.
 
+### Phase 1A: PostgreSQL infrastructure and schema foundation
+- [x] Add Dockerized local PostgreSQL infrastructure in `infra/docker-compose.postgres.yml`.
+- [x] Add `open-core/db/` migration and schema documentation layout.
+- [x] Create initial PostgreSQL schema migration in `open-core/db/migrations/0001_initial_schema.sql`.
+- [x] Add metadata-only schema verification script in `open-core/scripts/verify_postgres_schema.py`.
+- [x] Add local PostgreSQL setup documentation and PowerShell helper.
+- [x] Replace `docs/FOLDER_STRUCTURE.md` mojibake tree characters with an ASCII tree.
+
 ## Todo
 
 ### Phase 1: PostgreSQL + schema + migrations
-- [ ] Add Dockerized PostgreSQL infrastructure.
-- [ ] Add `open-core/db/` migration layout.
-- [ ] Create initial schema migrations.
 - [ ] Add repository interfaces.
-- [ ] Add local database setup documentation.
-- [ ] Add migration verification workflow.
 
 ### Phase 2: data collection + validation
 - [ ] Implement crypto market data provider interfaces.

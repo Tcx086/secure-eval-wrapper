@@ -5,6 +5,17 @@ PostgreSQL is the authoritative storage layer for the target crypto trading fram
 not be used as the main design target. Local development should assume Dockerized PostgreSQL with
 runtime data stored under ignored local paths.
 
+## Phase 1A Foundation
+Phase 1A adds the first storage foundation only:
+- Dockerized local PostgreSQL in `infra/docker-compose.postgres.yml`.
+- Ordered migration assets under `open-core/db/migrations/`.
+- Human-readable schema notes under `open-core/db/schema/`.
+- A metadata-only schema verifier in `open-core/scripts/verify_postgres_schema.py`.
+- A local PowerShell helper in `open-core/scripts/postgres_local.ps1`.
+
+This phase does not implement data collection, alpha logic, signal generation, execution,
+backtesting, monitoring runtime behavior, or live trading.
+
 ## Storage Principles
 - Raw source observations are preserved before transformation.
 - Validated datasets are separate from raw observations.
@@ -23,6 +34,34 @@ runtime data stored under ignored local paths.
 - `monitoring`: monitoring events, FIX session events, execution health, risk events, system health.
 - `audit`: run manifests, artifacts, artifact hashes, redaction events.
 
+## Initial Migration
+`open-core/db/migrations/0001_initial_schema.sql` creates PostgreSQL schemas for the storage groups
+above and defines the initial tables required by the public framework contract:
+- `market_data.raw_source_observations`
+- `market_data.validated_bars`
+- `market_data.validated_trades`
+- `market_data.funding_rates`
+- `market_data.instruments`
+- `data_quality.data_quality_checks`
+- `data_quality.validation_reports`
+- `alpha.alpha_registry`
+- `signals.signal_runs`
+- `signals.signals`
+- `execution.order_intents`
+- `execution.orders`
+- `execution.fills`
+- `execution.positions`
+- `execution.account_snapshots`
+- `backtesting.backtest_runs`
+- `backtesting.backtest_metrics`
+- `backtesting.equity_curves`
+- `backtesting.stress_results`
+- `monitoring.monitoring_events`
+- `monitoring.fix_session_events`
+- `monitoring.risk_events`
+- `audit.run_manifests`
+- `audit.artifacts`
+
 ## Table Responsibilities
 
 ### `raw_source_observations`
@@ -34,8 +73,8 @@ Stores one raw provider response or provider-normalized observation per row. Key
 ### `validated_bars`
 Stores accepted OHLCV bars after validation. Key fields: `bar_id`, `symbol`, `exchange`,
 `timeframe`, `bar_open_time_utc`, `open`, `high`, `low`, `close`, `volume`,
-`validation_status`, `validation_report_id`, and `source_observation_ids`. A unique key should
-cover `symbol`, `exchange`, `timeframe`, and `bar_open_time_utc`.
+`validation_status`, `validation_report_id`, and `source_observation_ids`. A unique key covers
+`symbol`, `exchange`, `timeframe`, and `bar_open_time_utc`.
 
 ### `data_quality_checks`
 Stores individual check results. Key fields: `check_id`, `validation_run_id`, `check_type`,
@@ -72,7 +111,8 @@ scenario/stress outputs.
 
 ### `monitoring_events` and `fix_session_events`
 Stores data/signal/execution/risk/system health events plus simulated FIX-style messages such as
-heartbeats, session state transitions, acknowledgements, rejects, and execution reports.
+heartbeats, session state transitions, acknowledgements, rejects, and execution reports. The initial
+`fix_session_events` table records simulated events only.
 
 ### `run_manifests` and `artifacts`
 `run_manifests` stores run-level reproducibility metadata: `run_id`, `run_mode`, `data_sha256`,
@@ -100,6 +140,30 @@ heartbeats, session state transitions, acknowledgements, rejects, and execution 
 - Schema changes should include repository updates and implementation status updates.
 - Test data and local seed data must not include secrets or real account data.
 
+## Local PostgreSQL Workflow
+Local PostgreSQL is configured in `infra/docker-compose.postgres.yml`.
+
+Expected defaults:
+- PostgreSQL 16 or later.
+- Local-only port binding to `127.0.0.1`.
+- Database name: `secure_eval_wrapper`.
+- User and password loaded from local `.env`.
+- Data directory under `var/postgres/`, ignored by Git.
+
+Start, apply, and verify locally with:
+
+```powershell
+.\open-core\scripts\postgres_local.ps1 start
+.\open-core\scripts\postgres_local.ps1 apply
+.\open-core\scripts\postgres_local.ps1 verify
+```
+
+The verifier checks migration contents and PostgreSQL catalog metadata. It does not require private
+data and does not insert records.
+
+Local database state is disposable unless explicitly backed up. Backups containing private data are
+private-only. CI should use ephemeral PostgreSQL containers, not developer local data.
+
 ## Repository Pattern
 Runtime code should access PostgreSQL through repositories:
 - `MarketDataRepository`
@@ -113,17 +177,4 @@ Runtime code should access PostgreSQL through repositories:
 - `ArtifactRepository`
 
 Repositories are responsible for SQL execution, transactions, row/domain mapping, and avoiding
-accidental public exposure of private fields.
-
-## Dockerized Local PostgreSQL Plan
-The planned local service should live in `infra/docker-compose.postgres.yml`.
-
-Expected defaults:
-- PostgreSQL 16 or later.
-- Local-only port binding.
-- Database name: `secure_eval_wrapper`.
-- User and password loaded from local `.env`.
-- Data directory under `var/postgres/`, ignored by Git.
-
-Local database state is disposable unless explicitly backed up. Backups containing private data are
-private-only. CI should use ephemeral PostgreSQL containers, not developer local data.
+accidental public exposure of private fields. Repository interfaces remain a future Phase 1 item.
