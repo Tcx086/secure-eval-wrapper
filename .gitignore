@@ -73,6 +73,18 @@ Desktop.ini
 *.temp
 *.pid
 open-core/output/
+var/cache/
+var/raw/
+var/tmp/
+var/logs/
+var/postgres/
+var/private/
+*.api-key
+*.apikey
+*.secret
+*.secrets
+raw_private_exports/
+private_exports/
 
 # ==============================
 # Delivery artifacts (optional)

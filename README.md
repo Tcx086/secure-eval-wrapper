@@ -1,7 +1,24 @@
 ﻿# Secure Eval Wrapper
 
 ## What this is
-Production-grade evaluation system for deterministic validation and secure artifact delivery.
+Secure Eval Wrapper is being rebuilt into a public crypto-focused trading system framework.
+The target system demonstrates complete trading infrastructure design while keeping private
+strategies, secrets, real account data, and sensitive trade logs outside the public repository.
+
+The current runnable demo is still available under `open-core/`. The new architecture direction
+is documented first, before runtime implementation.
+
+## Architecture Direction
+- [Crypto Trading System Architecture](docs/ARCHITECTURE_CRYPTO_TRADING_SYSTEM.md)
+- [Folder Structure](docs/FOLDER_STRUCTURE.md)
+- [PostgreSQL Storage Design](docs/POSTGRESQL_STORAGE_DESIGN.md)
+- [Data Collection and Validation](docs/DATA_COLLECTION_AND_VALIDATION.md)
+- [Execution and FIX-Style Monitoring](docs/EXECUTION_AND_FIX_MONITORING.md)
+- [Local Data Governance](docs/LOCAL_DATA_GOVERNANCE.md)
+- [Implementation Status](docs/IMPLEMENTATION_STATUS.md)
+
+## Current Public Demo
+Production-style evaluation system for deterministic validation and secure artifact delivery.
 
 Built for systems where logic cannot be open-sourced.
 
