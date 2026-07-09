@@ -60,6 +60,9 @@ Completed work must be listed under `Completed`. Everything not done must remain
 
 ## Todo
 
+### Pre-Phase 2: migration runner hardening
+- [ ] Harden `open-core/scripts/postgres_local.ps1` so migration metadata is recorded immediately after each successful migration or through a transaction-level migration runner; failed migrations must stop without silently leaving untracked partial state.
+
 ### Phase 2: data collection + validation
 - [ ] Implement crypto market data provider interfaces.
 - [ ] Implement OHLCV collection.

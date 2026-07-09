@@ -1,4 +1,4 @@
-﻿# Engineering Hard Parts
+# Engineering Hard Parts
 
 ## 1) Deterministic Reproducibility
 - Every demo run is tied to a fixed seed.
@@ -30,3 +30,8 @@ This repository focuses on system trustworthiness:
 - secure delivery boundaries.
 
 The goal is to demonstrate software architecture and evaluation rigor, not only strategy outcomes.
+
+## 6) Migration Runner Discipline
+- Current local migration metadata is recorded after all migrations apply successfully.
+- Before Phase 2, harden the runner so each migration is tracked immediately after success or applied through a transaction-level migration runner.
+- Failed migrations should stop clearly without leaving silent untracked partial state.
