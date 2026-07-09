@@ -3,8 +3,9 @@
 ## Purpose
 The target data layer will collect crypto market data from public exchange APIs and provider APIs,
 preserve source provenance, validate quality, and only promote accepted datasets into research and
-backtesting. Phase 2 now includes contracts and offline preparation utilities only; no real
-provider API calls, validation algorithms, or dataset promotion behavior are implemented yet.
+backtesting. Phase 2 now includes contracts, offline preparation, sample OHLCV normalization, and
+single-source validation/reporting. No real provider API calls, cross-source reconciliation,
+persistence, or dataset promotion behavior are implemented yet.
 
 ## Collection Scope
 Initial crypto-only data types:
@@ -46,11 +47,11 @@ contracts so source payloads and request provenance can be preserved before norm
 network test.
 
 The validation package separates declarative checks, individual check results, dataset-level
-reports, and cross-source reconciliation results. `DataValidator`, `CrossSourceReconciler`, and
-`DatasetPromoter` are abstract boundaries only. `ValidationCheckStatus` describes an individual
-check outcome, while `ValidationStatus` describes the final dataset gate decision. Stable
-`QuarantineReason` values describe why a future promoter may reject an observation without
-promoting it to a validated table.
+reports, and cross-source reconciliation results. `OfflineOhlcvValidator` is the Phase 2C concrete,
+network-free `DataValidator`; `CrossSourceReconciler` and `DatasetPromoter` remain abstract future
+boundaries. `ValidationCheckStatus` describes an individual check outcome, while
+`ValidationStatus` describes the final dataset gate decision. Stable `QuarantineReason` values
+classify failed observations without promoting or persisting them.
 
 ## Phase 2B Offline Utilities
 Phase 2B adds reusable, network-free preparation code:
@@ -71,6 +72,34 @@ The included `crypto_ohlcv_sample.json` fixture is classified `synthetic_public_
 returned `RawObservation` includes request provenance, explicit UTC timestamps, normalized symbol
 metadata, and a deterministic source hash matching `^[0-9a-f]{64}$`. The sample provider supports
 OHLCV only; trade, funding-rate, and instrument methods explicitly remain unimplemented.
+
+## Phase 2C Offline Normalization and Single-Source Validation
+
+Phase 2C adds deterministic, offline-only behavior under the existing contracts:
+
+- `data_collection/normalization.py` converts sample-provider `RawObservation` values into
+  `NormalizedBar` values. It parses OHLCV fields as exact `Decimal` values, requires explicit UTC
+  timestamps, re-applies conservative `BASE-QUOTE` symbol normalization, creates deterministic bar
+  IDs, and preserves source observation IDs plus request/source provenance. Optional
+  `close_time_utc`, `is_final`, and `is_partial` fields are handled when present; contradictory
+  final/partial flags fail normalization.
+- `data_validation/ohlcv.py` implements missing-bar, duplicated-timestamp, non-monotonic-order,
+  invalid-OHLC, invalid-volume, and partial-candle checks. Checks are grouped by symbol, exchange,
+  and timeframe where appropriate. A missing interval is a warning by default and can be configured
+  to reject the dataset. Explicitly partial candles reject by default; absent finality metadata is
+  not guessed. An optional exact-`Decimal` maximum volume supplies a dataset-specific impossible
+  volume ceiling.
+- `data_validation/reporting.py` builds `ValidationResult` and `ValidationReport` objects. Accepted
+  and rejected counts are bar counts; warning count is the number of warning results. Source hashes
+  are unique and sorted, the tolerance configuration has its own SHA-256 digest, and the report
+  digest excludes wall-clock creation timestamps and generated IDs so identical logical reports
+  hash identically.
+- `data_validation/quarantine.py` maps source observation IDs from failed results to stable
+  `QuarantineReason` values in check order. It does not create or persist quarantine records.
+
+All Phase 2C tests use the synthetic public-safe fixture and explicitly guard against socket use.
+There are no HTTP clients, exchange adapters, credentials, database writes, or runtime trading
+features in this increment.
 
 ## Provider Strategy
 The framework should support multiple providers or exchanges for the same logical instrument:
@@ -141,21 +170,25 @@ Validation stages:
 6. Promote accepted records to validated tables.
 7. Quarantine rejected records with reasons.
 
-Phase 2A models these stages, and Phase 2B supplies offline parsing guards and provenance helpers.
-The complete validation, reconciliation, promotion, and PostgreSQL-backed flow remains future work.
+Phase 2A models these stages, Phase 2B supplies offline parsing guards and provenance helpers, and
+Phase 2C implements stages 1 through 3 plus in-memory report construction for sample OHLCV data.
+Cross-source reconciliation, promotion, quarantine persistence, and the PostgreSQL-backed flow
+remain future work.
 
 ## Single-Source Checks
-Required checks:
+Implemented offline for normalized OHLCV in Phase 2C:
 - Missing bars.
 - Duplicated timestamps.
 - Non-monotonic timestamps.
 - Invalid OHLC relationships.
-- Negative or impossible volume.
+- Negative or configured-impossible volume.
+- Partial candles when an explicit finality flag is available.
+
+Still planned for later Phase 2 increments:
 - Price outliers.
-- Volume anomalies.
+- Volume anomalies beyond an explicit maximum.
 - Stale data.
-- Partial candles where final candles are required.
-- Symbol mapping inconsistencies.
+- Symbol mapping consistency across provider metadata.
 - Funding timestamp gaps.
 - Instrument metadata drift.
 
@@ -204,9 +237,11 @@ research, alpha library, backtesting
 ```
 
 ## Validation Reports
-Each validation report should include validation run ID, dataset reference, provider set, time
-range, symbols, timeframes, check summary, accepted count, rejected count, warning count, tolerance
-config hash, source hashes, report hash, and final status.
+Each validation report includes validation run ID, dataset reference, provider set, time range,
+symbols, timeframes, check results, accepted bar count, rejected bar count, warning-result count,
+tolerance config hash, source hashes, report hash, and final status. Phase 2C constructs these
+objects in memory only. Its stable report hash covers logical report content and deliberately omits
+creation time and generated IDs.
 
 Statuses:
 - `accepted`

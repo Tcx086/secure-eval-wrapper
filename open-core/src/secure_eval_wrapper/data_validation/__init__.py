@@ -1,4 +1,4 @@
-"""Public validation contracts; no validation algorithms are implemented."""
+"""Public validation contracts and offline-only OHLCV checks."""
 
 from secure_eval_wrapper.data_validation.interfaces import (
     CrossSourceReconciler,
@@ -17,12 +17,36 @@ from secure_eval_wrapper.data_validation.models import (
     ValidationSeverity,
     ValidationStatus,
 )
+from secure_eval_wrapper.data_validation.ohlcv import (
+    DUPLICATED_TIMESTAMPS,
+    INVALID_OHLC_RELATIONSHIP,
+    INVALID_VOLUME,
+    MISSING_BARS,
+    NON_MONOTONIC_TIMESTAMPS,
+    PARTIAL_CANDLE,
+    FindingPolicy,
+    OfflineOhlcvValidator,
+    OhlcvValidationConfig,
+    default_ohlcv_checks,
+    validate_ohlcv_bars,
+)
+from secure_eval_wrapper.data_validation.quarantine import map_quarantine_reasons
+from secure_eval_wrapper.data_validation.reporting import build_validation_report
 
 __all__ = [
     "CrossSourceReconciler",
     "DataValidator",
     "DatasetPromoter",
+    "DUPLICATED_TIMESTAMPS",
+    "FindingPolicy",
+    "INVALID_OHLC_RELATIONSHIP",
+    "INVALID_VOLUME",
+    "MISSING_BARS",
+    "NON_MONOTONIC_TIMESTAMPS",
     "NormalizedRecord",
+    "OfflineOhlcvValidator",
+    "OhlcvValidationConfig",
+    "PARTIAL_CANDLE",
     "QuarantineReason",
     "ReconciliationResult",
     "ValidationCheck",
@@ -32,4 +56,8 @@ __all__ = [
     "ValidationResult",
     "ValidationSeverity",
     "ValidationStatus",
+    "build_validation_report",
+    "default_ohlcv_checks",
+    "map_quarantine_reasons",
+    "validate_ohlcv_bars",
 ]

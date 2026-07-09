@@ -4,7 +4,7 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-09T20:10:10Z",
+  "updated_at_utc": "2026-07-09T20:28:51Z",
   "current_phase": "phase_2_data_collection_validation",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
@@ -122,7 +122,11 @@
         "Add explicit UTC requirement and coercion guards that reject naive datetimes by default",
         "Add conservative simple-pair symbol normalization helpers",
         "Add an offline-only OHLCV sample provider restricted to public-safe fixtures under open-core/data/sample",
-        "Add synthetic OHLCV fixture data and offline hashing, UTC, symbol, and provider tests"
+        "Add synthetic OHLCV fixture data and offline hashing, UTC, symbol, and provider tests",
+        "Normalize sample-provider OHLCV observations into Decimal-based UTC NormalizedBar records with conservative symbols and complete provenance",
+        "Add deterministic missing-bar, duplicate timestamp, non-monotonic timestamp, OHLC, volume, and partial-candle checks",
+        "Build hashed in-memory validation reports and deterministic quarantine reason mappings without persistence",
+        "Add offline normalization, validation, policy, quarantine, and report-hash tests guarded against network use"
       ],
       "todo": [
         "Implement concrete public market data provider adapters without embedding credentials",
@@ -131,9 +135,8 @@
         "Implement funding rate collection",
         "Implement instrument metadata collection",
         "Integrate source hashing and provenance into future concrete exchange adapters",
-        "Implement single-source validation checks",
         "Implement cross-source reconciliation",
-        "Implement validation report generation and PostgreSQL persistence",
+        "Persist validation reports and quarantine decisions through PostgreSQL repository interfaces",
         "Implement PostgreSQL-backed accepted/rejected data flow"
       ]
     },

@@ -76,6 +76,12 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add an offline-only OHLCV sample provider restricted to public-safe fixtures under open-core/data/sample.
 - [x] Add synthetic OHLCV fixture data and offline hashing, UTC, symbol, and provider tests.
 
+### Phase 2C: offline normalization and single-source validation
+- [x] Normalize sample-provider OHLCV observations into Decimal-based UTC `NormalizedBar` records with conservative symbols and complete provenance.
+- [x] Add deterministic missing-bar, duplicate timestamp, non-monotonic timestamp, OHLC, volume, and partial-candle checks.
+- [x] Build hashed in-memory validation reports and deterministic quarantine reason mappings without persistence.
+- [x] Add offline normalization, validation, policy, quarantine, and report-hash tests guarded against network use.
+
 ## Todo
 
 ### Phase 2: data collection + validation (in progress)
@@ -85,9 +91,8 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [ ] Implement funding rate collection.
 - [ ] Implement instrument metadata collection.
 - [ ] Integrate source hashing and provenance into future concrete exchange adapters.
-- [ ] Implement single-source validation checks.
 - [ ] Implement cross-source reconciliation.
-- [ ] Implement validation report generation and PostgreSQL persistence.
+- [ ] Persist validation reports and quarantine decisions through PostgreSQL repository interfaces.
 - [ ] Implement PostgreSQL-backed accepted/rejected data flow.
 
 ### Phase 3: public alpha library

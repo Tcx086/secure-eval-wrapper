@@ -5,7 +5,6 @@ from secure_eval_wrapper.data_collection.hashing import (
     sha256_observation_source,
     sha256_payload,
 )
-
 from secure_eval_wrapper.data_collection.models import (
     CollectionRunSummary,
     CollectionStatus,
@@ -21,6 +20,10 @@ from secure_eval_wrapper.data_collection.models import (
     ProviderSpec,
     RawObservation,
     TradeSide,
+)
+from secure_eval_wrapper.data_collection.normalization import (
+    normalize_ohlcv_observation,
+    normalize_ohlcv_observations,
 )
 from secure_eval_wrapper.data_collection.providers import MarketDataProvider
 from secure_eval_wrapper.data_collection.registry import (
@@ -57,6 +60,8 @@ __all__ = [
     "SampleProvider",
     "canonical_json_dumps",
     "coerce_utc_datetime",
+    "normalize_ohlcv_observation",
+    "normalize_ohlcv_observations",
     "normalize_symbol",
     "require_utc_datetime",
     "sha256_observation_source",
