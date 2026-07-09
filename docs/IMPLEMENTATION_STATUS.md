@@ -58,10 +58,10 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add repository interface definitions for market data, data quality, alpha, signal, execution, backtest, monitoring, audit, and artifacts.
 - [x] Complete Phase 1 PostgreSQL schema, repository interface, and migration verification foundation.
 
-## Todo
-
 ### Pre-Phase 2: migration runner hardening
-- [ ] Harden `open-core/scripts/postgres_local.ps1` so migration metadata is recorded immediately after each successful migration or through a transaction-level migration runner; failed migrations must stop without silently leaving untracked partial state.
+- [x] Harden `open-core/scripts/postgres_local.ps1` so migration metadata is recorded immediately after each successful migration, matching recorded migrations are skipped, hash mismatches fail clearly, and failed migrations stop without silently leaving untracked partial state.
+
+## Todo
 
 ### Phase 2: data collection + validation
 - [ ] Implement crypto market data provider interfaces.

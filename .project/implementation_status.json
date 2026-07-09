@@ -4,8 +4,8 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-09T14:00:00Z",
-  "current_phase": "pre_phase_2_migration_runner_hardening",
+  "updated_at_utc": "2026-07-09T15:00:00Z",
+  "current_phase": "phase_2_data_collection_validation",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
     "future_functional_prs_must_update_json_status": true,
@@ -101,11 +101,11 @@
     {
       "id": "pre_phase_2_migration_runner_hardening",
       "title": "Pre-Phase 2: migration runner hardening",
-      "status": "todo",
-      "completed": [],
-      "todo": [
-        "Harden open-core/scripts/postgres_local.ps1 so migration metadata is recorded immediately after each successful migration or through a transaction-level migration runner; failed migrations must stop without silently leaving untracked partial state"
-      ]
+      "status": "completed",
+      "completed": [
+        "Harden open-core/scripts/postgres_local.ps1 so migration metadata is recorded immediately after each successful migration, matching recorded migrations are skipped, hash mismatches fail clearly, and failed migrations stop without silently leaving untracked partial state"
+      ],
+      "todo": []
     },
     {
       "id": "phase_2_data_collection_validation",

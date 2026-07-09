@@ -24,10 +24,12 @@ Migration metadata tracks:
 - `applied_at_utc`
 - `description`
 
-The local helper applies all `*.sql` files in lexical order and records metadata after the metadata
-table exists. It defaults to `.env`; pass `-EnvFilePath` for an explicit local env file. The
-verifier checks local migration SHA256 values against `audit.schema_migrations` when connected to
-PostgreSQL, using either a local Python PostgreSQL driver or the helper's Docker psql backend.
+The local helper bootstraps the metadata table, applies `*.sql` files in lexical order, and records
+each migration immediately after it succeeds. Already-recorded migrations are skipped only when the
+stored SHA256 matches the local file; hash mismatches fail clearly. The helper defaults to `.env`;
+pass `-EnvFilePath` for an explicit local env file. The verifier checks local migration SHA256
+values against `audit.schema_migrations` when connected to PostgreSQL, using either a local Python
+PostgreSQL driver or the helper's Docker psql backend.
 
 ## Local PostgreSQL
 

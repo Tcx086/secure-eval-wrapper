@@ -145,8 +145,8 @@ identity and hashes so local schema state can be audited without private data.
 - Migrations live under `open-core/db/migrations/`.
 - Schema documentation lives under `open-core/db/schema/`.
 - Each migration must be ordered and deterministic.
-- Applied migration metadata must be recorded in `audit.schema_migrations`.
-- The verifier must check migration file SHA256 values against stored metadata.
+- Applied migration metadata must be recorded in `audit.schema_migrations` immediately after each migration succeeds.
+- The verifier must check migration file SHA256 values against stored metadata, and the local runner must fail on recorded/local hash mismatches.
 - Schema changes should include repository updates and implementation status updates.
 - Test data and local seed data must not include secrets or real account data.
 

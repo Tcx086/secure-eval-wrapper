@@ -32,6 +32,7 @@ This repository focuses on system trustworthiness:
 The goal is to demonstrate software architecture and evaluation rigor, not only strategy outcomes.
 
 ## 6) Migration Runner Discipline
-- Current local migration metadata is recorded after all migrations apply successfully.
-- Before Phase 2, harden the runner so each migration is tracked immediately after success or applied through a transaction-level migration runner.
-- Failed migrations should stop clearly without leaving silent untracked partial state.
+- Local migration metadata is bootstrapped before migration application.
+- Each migration is tracked immediately after successful application.
+- Previously recorded migrations are skipped only when their stored SHA256 matches the local file.
+- Failed migrations stop clearly without silently leaving untracked partial state.

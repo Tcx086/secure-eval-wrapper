@@ -111,6 +111,40 @@ function Invoke-PsqlCommand {
     Assert-LastExitCode "docker psql command"
 }
 
+function Invoke-PsqlScalar {
+    param([string]$Sql)
+
+    $psql = Get-LocalPsql
+    if ($null -ne $psql) {
+        $env:PGPASSWORD = $env:POSTGRES_PASSWORD
+        $output = & $psql.Source `
+            "--host=$($env:POSTGRES_HOST)" `
+            "--port=$($env:POSTGRES_PORT)" `
+            "--username=$($env:POSTGRES_USER)" `
+            "--dbname=$($env:POSTGRES_DB)" `
+            "--set=ON_ERROR_STOP=1" `
+            "--no-align" `
+            "--tuples-only" `
+            "--command=$Sql"
+        Assert-LastExitCode "psql scalar query"
+        $first = $output | Select-Object -First 1
+        if ($null -eq $first) { return "" }
+        return $first.Trim()
+    }
+
+    $output = & docker exec -i $ContainerName psql `
+        "--username=$($env:POSTGRES_USER)" `
+        "--dbname=$($env:POSTGRES_DB)" `
+        "--set=ON_ERROR_STOP=1" `
+        "--no-align" `
+        "--tuples-only" `
+        "--command=$Sql"
+    Assert-LastExitCode "docker psql scalar query"
+    $first = $output | Select-Object -First 1
+    if ($null -eq $first) { return "" }
+    return $first.Trim()
+}
+
 function Escape-SqlLiteral {
     param([string]$Value)
     $Value -replace "'", "''"
@@ -126,18 +160,53 @@ function Get-MigrationDescription {
     return $description
 }
 
-function Record-MigrationMetadata {
+function Get-MigrationSha256 {
+    param([System.IO.FileInfo]$Migration)
+    (Get-FileHash -LiteralPath $Migration.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Initialize-MigrationMetadataTable {
+    $sql = @"
+CREATE SCHEMA IF NOT EXISTS audit;
+
+CREATE TABLE IF NOT EXISTS audit.schema_migrations (
+    migration_id TEXT PRIMARY KEY,
+    filename TEXT NOT NULL UNIQUE,
+    sha256 CHAR(64) NOT NULL CHECK (sha256 ~ '^[0-9a-f]{64}$'),
+    applied_at_utc TIMESTAMPTZ NOT NULL DEFAULT now(),
+    description TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_schema_migrations_sha256
+    ON audit.schema_migrations (sha256);
+
+CREATE INDEX IF NOT EXISTS idx_schema_migrations_applied_at
+    ON audit.schema_migrations (applied_at_utc);
+"@
+    Invoke-PsqlCommand $sql
+}
+
+function Get-RecordedMigrationSha256 {
     param([System.IO.FileInfo]$Migration)
 
     $migrationId = Escape-SqlLiteral $Migration.BaseName
+    $sql = "SELECT sha256 FROM audit.schema_migrations WHERE migration_id = '$migrationId';"
+    Invoke-PsqlScalar $sql
+}
+
+function Record-MigrationMetadata {
+    param(
+        [System.IO.FileInfo]$Migration,
+        [string]$Sha256
+    )
+
+    $migrationId = Escape-SqlLiteral $Migration.BaseName
     $filename = Escape-SqlLiteral $Migration.Name
-    $sha256 = (Get-FileHash -LiteralPath $Migration.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
     $description = Escape-SqlLiteral (Get-MigrationDescription $Migration)
 
     $sql = @"
 INSERT INTO audit.schema_migrations (migration_id, filename, sha256, description)
-VALUES ('$migrationId', '$filename', '$sha256', '$description')
-ON CONFLICT (migration_id) DO NOTHING;
+VALUES ('$migrationId', '$filename', '$Sha256', '$description');
 "@
     Invoke-PsqlCommand $sql
 }
@@ -148,6 +217,30 @@ function Get-MigrationFiles {
         throw "No SQL migrations found in $MigrationDirectory."
     }
     $migrations
+}
+
+function Invoke-Migrations {
+    $migrations = Get-MigrationFiles
+    Initialize-MigrationMetadataTable
+
+    foreach ($migration in $migrations) {
+        $sha256 = Get-MigrationSha256 $migration
+        $recordedSha256 = Get-RecordedMigrationSha256 $migration
+
+        if (-not [string]::IsNullOrWhiteSpace($recordedSha256)) {
+            if ($recordedSha256 -ne $sha256) {
+                throw "Recorded migration hash mismatch for $($migration.Name). Recorded $recordedSha256 but local file is $sha256."
+            }
+            Write-Host "Skipping $($migration.Name); metadata already records matching SHA256."
+            continue
+        }
+
+        Write-Host "Applying $($migration.Name)"
+        Invoke-PsqlFile $migration.FullName
+
+        Write-Host "Recording $($migration.Name) metadata"
+        Record-MigrationMetadata $migration $sha256
+    }
 }
 
 switch ($Action) {
@@ -169,15 +262,7 @@ switch ($Action) {
     "apply" {
         Import-LocalEnv
         Assert-PostgresEnv
-        $migrations = Get-MigrationFiles
-        foreach ($migration in $migrations) {
-            Write-Host "Applying $($migration.Name)"
-            Invoke-PsqlFile $migration.FullName
-        }
-        foreach ($migration in $migrations) {
-            Write-Host "Recording $($migration.Name) metadata"
-            Record-MigrationMetadata $migration
-        }
+        Invoke-Migrations
     }
     "verify" {
         Import-LocalEnv
