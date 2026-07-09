@@ -4,7 +4,7 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-09T20:49:20Z",
+  "updated_at_utc": "2026-07-09T21:00:00Z",
   "current_phase": "phase_2_data_collection_validation",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
@@ -131,7 +131,8 @@
         "Add PostgreSQL repositories for raw observations, validation reports, checks, validated bars, and quarantine decisions",
         "Add domain-to-storage mappings that preserve source IDs, source hashes, report hashes, tolerance hashes, and provenance",
         "Add the offline accepted/rejected OHLCV persistence flow with transactional writes and deterministic quarantine decisions",
-        "Add public-safe offline persistence tests and verification coverage"
+        "Add public-safe offline persistence tests and verification coverage",
+        "Return existing validation report IDs on uniqueness conflicts and define validated-bar queries with end-exclusive time windows"
       ],
       "todo": [
         "Implement concrete public market data provider adapters without embedding credentials",

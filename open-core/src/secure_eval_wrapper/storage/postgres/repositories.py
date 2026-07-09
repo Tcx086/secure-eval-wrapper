@@ -64,6 +64,30 @@ class _PostgresRepositoryBase:
         if self.commit_on_write and hasattr(self.connection, "commit"):
             self.connection.commit()
 
+    def _execute_returning_uuid(self, sql: str, params: Sequence[object] = ()) -> UUID:
+        """Execute a write with ``RETURNING`` and return the database-selected UUID."""
+
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(sql, tuple(params))
+            row = cursor.fetchone()
+            if row is None:
+                raise RuntimeError("PostgreSQL write returned no UUID")
+            value = row[0]
+            if not isinstance(value, UUID):
+                value = UUID(str(value))
+        except Exception:
+            if self.commit_on_write and hasattr(self.connection, "rollback"):
+                self.connection.rollback()
+            raise
+        finally:
+            close = getattr(cursor, "close", None)
+            if close is not None:
+                close()
+        if self.commit_on_write and hasattr(self.connection, "commit"):
+            self.connection.commit()
+        return value
+
     def _fetchone(self, sql: str, params: Sequence[object] = ()) -> StorageRecord | None:
         cursor = self.connection.cursor()
         try:
@@ -169,6 +193,8 @@ class PostgresMarketDataRepository(_PostgresRepositoryBase, MarketDataRepository
         start_utc: datetime,
         end_utc: datetime,
     ) -> Sequence[StorageRecord]:
+        """List bars in the half-open ``[start_utc, end_utc)`` interval."""
+
         cursor = self.connection.cursor()
         try:
             cursor.execute(
@@ -178,7 +204,7 @@ class PostgresMarketDataRepository(_PostgresRepositoryBase, MarketDataRepository
                        validation_report_id, source_observation_ids, provenance_jsonb
                 FROM market_data.validated_bars
                 WHERE symbol = %s AND exchange = %s AND timeframe = %s
-                  AND bar_open_time_utc >= %s AND bar_open_time_utc <= %s
+                  AND bar_open_time_utc >= %s AND bar_open_time_utc < %s
                 ORDER BY bar_open_time_utc
                 """,
                 (symbol, exchange, timeframe, start_utc, end_utc),
@@ -209,14 +235,16 @@ class PostgresDataQualityRepository(_PostgresRepositoryBase, DataQualityReposito
 
     def record_validation_report(self, report: StoragePayload) -> UUID:
         report_id = report["validation_report_id"]
-        self._execute(
+        return self._execute_returning_uuid(
             """
             INSERT INTO data_quality.validation_reports (
                 validation_report_id, validation_run_id, dataset_ref,
                 accepted_count, rejected_count, warning_count, status,
                 report_sha256, report_jsonb, created_at_utc
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
-            ON CONFLICT (validation_run_id, dataset_ref) DO NOTHING
+            ON CONFLICT (validation_run_id, dataset_ref) DO UPDATE
+                SET dataset_ref = EXCLUDED.dataset_ref
+            RETURNING validation_report_id
             """,
             (
                 report_id,
@@ -231,7 +259,6 @@ class PostgresDataQualityRepository(_PostgresRepositoryBase, DataQualityReposito
                 report["created_at_utc"],
             ),
         )
-        return report_id  # type: ignore[return-value]
 
     def record_data_quality_check(self, check: StoragePayload) -> UUID:
         check_id = check["check_id"]

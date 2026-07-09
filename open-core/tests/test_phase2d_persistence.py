@@ -27,6 +27,8 @@ from secure_eval_wrapper.storage.postgres.mappers import (
     validation_report_to_row,
 )
 from secure_eval_wrapper.storage.postgres.repositories import (
+    PostgresDataQualityRepository,
+    PostgresMarketDataRepository,
     PostgresOfflineValidationRepository,
 )
 
@@ -78,6 +80,42 @@ class NoConnectConnection:
     def cursor(self):
         self.cursor_calls += 1
         raise AssertionError("connection opened during repository import/initialization")
+
+
+class ReturningCursor:
+    def __init__(self, row=None) -> None:
+        self.row = row
+        self.sql = ""
+        self.params = ()
+        self.description = None
+
+    def execute(self, sql, params):
+        self.sql = sql
+        self.params = params
+
+    def fetchone(self):
+        return self.row
+
+    def fetchall(self):
+        return ()
+
+    def close(self):
+        return None
+
+
+class ReturningConnection:
+    def __init__(self, row=None) -> None:
+        self.cursor_instance = ReturningCursor(row)
+        self.commits = 0
+
+    def cursor(self):
+        return self.cursor_instance
+
+    def commit(self):
+        self.commits += 1
+
+    def rollback(self):
+        return None
 
 
 class Phase2DPersistenceTests(unittest.TestCase):
@@ -162,6 +200,35 @@ class Phase2DPersistenceTests(unittest.TestCase):
         connection = NoConnectConnection()
         PostgresOfflineValidationRepository(connection)
         self.assertEqual(connection.cursor_calls, 0)
+
+    def test_report_conflict_returns_existing_database_id(self) -> None:
+        existing_id = UUID("30000000-0000-0000-0000-000000000099")
+        connection = ReturningConnection((existing_id,))
+        repository = PostgresDataQualityRepository(connection)
+        row = validation_report_to_row(self.report)
+        row["validation_report_id"] = UUID("30000000-0000-0000-0000-000000000098")
+
+        returned_id = repository.record_validation_report(row)
+
+        self.assertEqual(returned_id, existing_id)
+        self.assertIn("RETURNING validation_report_id", connection.cursor_instance.sql)
+        self.assertEqual(connection.commits, 1)
+
+    def test_validated_bar_query_uses_end_exclusive_window(self) -> None:
+        connection = ReturningConnection()
+        repository = PostgresMarketDataRepository(connection)
+
+        repository.list_validated_bars(
+            symbol="BTC-USDT",
+            exchange="sample",
+            timeframe="1m",
+            start_utc=FIXED_NOW,
+            end_utc=FIXED_NOW,
+        )
+
+        sql = connection.cursor_instance.sql
+        self.assertIn("bar_open_time_utc >= %s AND bar_open_time_utc < %s", sql)
+        self.assertNotIn("bar_open_time_utc <= %s", sql)
 
 
 if __name__ == "__main__":

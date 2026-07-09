@@ -205,6 +205,8 @@ and reason lookups. The table stores quality metadata only and never duplicates 
 
 The Phase 2D repository implementations accept an injected PostgreSQL DB-API connection and use
 parameterized SQL. The offline flow persists raw observations, reports, check results, accepted
-bars, and quarantine decisions in one transaction when the unified repository is used. No driver
+bars, and quarantine decisions in one transaction when the unified repository is used.
+Validated-bar range queries use the half-open interval [start_utc, end_utc), matching the
+offline collection and validation window convention. No driver
 is imported or connection opened at module import time; PostgreSQL remains the sole authoritative
 storage target.

@@ -88,6 +88,7 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add domain-to-storage mappings that preserve source IDs, source hashes, report hashes, tolerance hashes, and provenance.
 - [x] Add the offline accepted/rejected OHLCV persistence flow with transactional writes and deterministic quarantine decisions.
 - [x] Add public-safe offline persistence tests and verification coverage.
+- [x] Return existing validation report IDs on uniqueness conflicts and define validated-bar queries with end-exclusive time windows.
 ## Todo
 
 ### Phase 2: data collection + validation (in progress)
