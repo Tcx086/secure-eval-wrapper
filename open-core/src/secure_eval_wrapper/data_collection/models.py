@@ -190,6 +190,7 @@ class NormalizedBar:
     bar_close_time_utc: datetime | None = None
     is_final: bool | None = None
     provenance: Mapping[str, object] = field(default_factory=dict)
+    instrument_key: InstrumentKey | None = None
 
 
 @dataclass(frozen=True)

@@ -30,7 +30,7 @@ class PublicAlphaRegistry:
         key = (definition.name, definition.version)
         existing = self._implementations.get(key)
         if existing is not None:
-            if existing.definition.implementation_sha256 != definition.implementation_sha256:
+            if existing.definition.implementation_code_sha256 != definition.implementation_code_sha256:
                 raise AlphaRegistryError("implementation hash conflict for alpha name/version")
             raise AlphaRegistryError("duplicate alpha name/version registration")
         existing_key = self._ids.get(definition.alpha_id)

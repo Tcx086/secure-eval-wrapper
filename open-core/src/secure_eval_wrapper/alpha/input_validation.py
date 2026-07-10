@@ -8,6 +8,13 @@ from decimal import Decimal
 from typing import Sequence
 from uuid import UUID
 
+from secure_eval_wrapper.alpha.identity import (
+    SeriesIdentity,
+    eligible_input_sha256,
+    record_available_at_utc,
+    series_identity_from_record,
+    stable_economic_record,
+)
 from secure_eval_wrapper.data_collection.hashing import sha256_payload
 from secure_eval_wrapper.data_collection.models import (
     FundingIntervalSource,
@@ -17,13 +24,14 @@ from secure_eval_wrapper.data_collection.models import (
 )
 from secure_eval_wrapper.data_collection.time_utils import require_utc_datetime
 
-
 AlphaInputRecord = NormalizedBar | FundingRate
 _ACCEPTED_STATUSES = {"accepted", "accepted_with_warnings"}
 
 
 def record_timestamp(record: AlphaInputRecord) -> datetime:
-    return record.bar_open_time_utc if isinstance(record, NormalizedBar) else record.funding_time_utc
+    """Economic availability timestamp used by point-in-time evaluation."""
+
+    return record_available_at_utc(record)
 
 
 def record_symbol(record: AlphaInputRecord) -> str:
@@ -56,58 +64,26 @@ class AlphaDataSet:
             raise ValueError("alpha input requires validation report lineage")
         if not self.dataset_ref.strip():
             raise ValueError("dataset_ref must be non-empty")
-        for record in self.records:
-            if not isinstance(record, (NormalizedBar, FundingRate)):
-                raise TypeError("alpha inputs must be normalized bars or funding rates")
+        if any(not isinstance(record, (NormalizedBar, FundingRate)) for record in self.records):
+            raise TypeError("alpha inputs must be normalized bars or funding rates")
 
     @property
     def dataset_sha256(self) -> str:
-        rows = []
-        for record in sorted(
-            self.records,
-            key=lambda item: (record_symbol(item), record_timestamp(item), str(record_source_ids(item))),
-        ):
-            if isinstance(record, NormalizedBar):
-                content = {
-                    "type": "ohlcv",
-                    "symbol": record.symbol,
-                    "exchange": record.exchange,
-                    "timeframe": record.timeframe,
-                    "timestamp_utc": record.bar_open_time_utc,
-                    "open": record.open,
-                    "high": record.high,
-                    "low": record.low,
-                    "close": record.close,
-                    "volume": record.volume,
-                    "is_final": record.is_final,
-                    "source_observation_ids": record.source_observation_ids,
-                }
-            else:
-                key = record.instrument_key
-                content = {
-                    "type": "funding_rates",
-                    "symbol": record.symbol,
-                    "exchange": record.exchange,
-                    "timestamp_utc": record.funding_time_utc,
-                    "rate": record.rate,
-                    "funding_interval": record.funding_interval,
-                    "funding_interval_source": record.funding_interval_source,
-                    "instrument_identity": key.identity_sha256 if key is not None else None,
-                    "source_observation_ids": record.source_observation_ids,
-                }
-            rows.append(content)
-        return sha256_payload(
-            {
-                "dataset_ref": self.dataset_ref,
-                "validation_status": self.validation_status,
-                "validation_report_ids": tuple(sorted(self.validation_report_ids, key=str)),
-                "records": rows,
-            }
+        """Collection-independent economic dataset digest retained as run provenance."""
+
+        rows = sorted(
+            (stable_economic_record(record) for record in self.records),
+            key=lambda row: (
+                str(row["series_identity"]),
+                str(row.get("bar_available_at_utc") or row.get("funding_time_utc")),
+                sha256_payload(row),
+            ),
         )
+        return sha256_payload({"validation_status": self.validation_status, "records": rows})
 
 
 class PointInTimeSeries:
-    """Immutable, deterministically sorted single-symbol history with trailing-only access."""
+    """Immutable, deterministically sorted history for exactly one complete series identity."""
 
     def __init__(self, records: Sequence[AlphaInputRecord]) -> None:
         materialized = tuple(records)
@@ -115,50 +91,56 @@ class PointInTimeSeries:
             raise ValueError("point-in-time series cannot be empty")
         if any(not isinstance(item, type(materialized[0])) for item in materialized):
             raise ValueError("point-in-time series cannot mix data types")
-        symbols = {record_symbol(item) for item in materialized}
-        if len(symbols) != 1:
-            raise ValueError("point-in-time series requires exactly one symbol")
+        identities = {series_identity_from_record(item) for item in materialized}
+        if len(identities) != 1:
+            raise ValueError("point-in-time series requires exactly one complete series identity")
         if isinstance(materialized[0], NormalizedBar):
-            timeframes = {item.timeframe for item in materialized if isinstance(item, NormalizedBar)}
-            if len(timeframes) != 1:
-                raise ValueError("point-in-time series cannot mix timeframes")
-            exchanges = {item.exchange for item in materialized if isinstance(item, NormalizedBar)}
-            if len(exchanges) != 1:
-                raise ValueError("point-in-time series cannot mix exchanges")
             if any(item.is_final is False for item in materialized if isinstance(item, NormalizedBar)):
                 raise ValueError("non-final bars are not eligible for alpha evaluation")
         else:
-            instrument_identities = set()
             for item in materialized:
                 assert isinstance(item, FundingRate)
                 key = item.instrument_key
-                if key is not None:
-                    instrument_identities.add(key.identity_sha256)
                 if key is None or key.instrument_type is not InstrumentType.PERPETUAL_SWAP:
                     raise ValueError("funding alpha requires an unambiguous perpetual instrument")
                 if item.funding_interval_source is FundingIntervalSource.UNAVAILABLE:
                     raise ValueError("funding alpha requires grounded funding interval evidence")
-            if len(instrument_identities) != 1:
-                raise ValueError("funding alpha cannot mix instrument identities")
-        ordered = tuple(sorted(materialized, key=lambda item: record_timestamp(item)))
+        ordered = tuple(sorted(materialized, key=record_timestamp))
         timestamps = tuple(record_timestamp(item) for item in ordered)
-        for timestamp in timestamps:
-            require_utc_datetime(timestamp, field_name="alpha input timestamp")
         if len(set(timestamps)) != len(timestamps):
-            raise ValueError("duplicate logical timestamps are not allowed")
+            raise ValueError("duplicate logical availability timestamps are not allowed")
+        if isinstance(materialized[0], NormalizedBar):
+            open_times = tuple(item.bar_open_time_utc for item in ordered if isinstance(item, NormalizedBar))
+            if len(set(open_times)) != len(open_times):
+                raise ValueError("duplicate bar open timestamps are not allowed")
         self._records = ordered
+        self._series_identity = next(iter(identities))
 
     @property
     def records(self) -> tuple[AlphaInputRecord, ...]:
         return self._records
 
     @property
+    def series_identity(self) -> SeriesIdentity:
+        return self._series_identity
+
+    @property
     def symbol(self) -> str:
-        return record_symbol(self._records[0])
+        return self._series_identity.canonical_symbol
 
     @property
     def data_type(self) -> str:
         return record_data_type(self._records[0])
+
+    def eligible_as_of(self, as_of_utc: datetime) -> "PointInTimeSeries":
+        as_of = require_utc_datetime(as_of_utc, field_name="as_of_utc")
+        eligible = tuple(item for item in self._records if record_timestamp(item) <= as_of)
+        if not eligible:
+            raise ValueError(f"no records are available at {as_of.isoformat()}")
+        return PointInTimeSeries(eligible)
+
+    def eligible_input_sha256(self, as_of_utc: datetime) -> str:
+        return eligible_input_sha256(self._records, as_of_utc=as_of_utc)
 
     def prior(self, index: int, offset: int = 1) -> AlphaInputRecord:
         if offset <= 0:
@@ -168,13 +150,7 @@ class PointInTimeSeries:
             raise IndexError("insufficient prior history")
         return self._records[target]
 
-    def trailing(
-        self,
-        index: int,
-        length: int,
-        *,
-        include_current: bool = True,
-    ) -> tuple[AlphaInputRecord, ...]:
+    def trailing(self, index: int, length: int, *, include_current: bool = True) -> tuple[AlphaInputRecord, ...]:
         if length <= 0:
             raise ValueError("trailing window length must be positive")
         end = index + 1 if include_current else index
@@ -198,21 +174,47 @@ class PointInTimeSeries:
         return tuple(values)
 
 
+def series_identities_for_dataset(
+    dataset: AlphaDataSet,
+    *,
+    symbols: Sequence[str],
+    required_data_type: str,
+) -> tuple[SeriesIdentity, ...]:
+    requested = set(symbols)
+    identities = {
+        series_identity_from_record(item)
+        for item in dataset.records
+        if record_symbol(item) in requested and record_data_type(item) == required_data_type
+    }
+    return tuple(sorted(identities, key=lambda item: item.series_identity_sha256))
+
+
 def prepare_point_in_time_series(
     dataset: AlphaDataSet,
     *,
-    symbol: str,
     required_data_type: str,
+    series_identity: SeriesIdentity | None = None,
+    symbol: str | None = None,
 ) -> PointInTimeSeries:
     if not isinstance(dataset, AlphaDataSet):
         raise TypeError("dataset must be an AlphaDataSet validation-gate boundary")
-    records = tuple(
-        item
-        for item in dataset.records
-        if record_symbol(item) == symbol and record_data_type(item) == required_data_type
-    )
+    if series_identity is None and symbol is None:
+        raise ValueError("series_identity or symbol is required")
+    records = []
+    for item in dataset.records:
+        if record_data_type(item) != required_data_type:
+            continue
+        if isinstance(item, NormalizedBar) and item.is_final is False:
+            continue
+        identity = series_identity_from_record(item)
+        if series_identity is not None and identity != series_identity:
+            continue
+        if series_identity is None and identity.canonical_symbol != symbol:
+            continue
+        records.append(item)
     if not records:
-        raise ValueError(f"no {required_data_type} records available for {symbol}")
+        label = series_identity.series_identity_sha256 if series_identity is not None else symbol
+        raise ValueError(f"no eligible {required_data_type} records available for {label}")
     return PointInTimeSeries(records)
 
 
@@ -225,4 +227,5 @@ __all__ = [
     "record_source_ids",
     "record_symbol",
     "record_timestamp",
+    "series_identities_for_dataset",
 ]

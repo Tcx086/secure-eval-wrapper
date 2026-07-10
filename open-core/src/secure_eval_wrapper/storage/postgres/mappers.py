@@ -25,7 +25,6 @@ from secure_eval_wrapper.data_collection.models import (
     NormalizedTrade,
     RawObservation,
 )
-from secure_eval_wrapper.data_validation.gating import accepted_ohlcv_bars
 from secure_eval_wrapper.data_validation.models import (
     QuarantineReason,
     ValidationCheckStatus,
@@ -92,6 +91,8 @@ def normalized_bar_to_row(
         "exchange": bar.exchange,
         "timeframe": bar.timeframe,
         "bar_open_time_utc": bar.bar_open_time_utc,
+        "bar_close_time_utc": bar.bar_close_time_utc,
+        "is_final": bar.is_final,
         "open": bar.open,
         "high": bar.high,
         "low": bar.low,
@@ -103,6 +104,28 @@ def normalized_bar_to_row(
         "provenance_jsonb": provenance,
     }
 
+
+def normalized_bar_from_row(row: Mapping[str, object]) -> NormalizedBar:
+    """Map a PostgreSQL validated-bar row back to the close-aware domain contract."""
+
+    if not isinstance(row, Mapping):
+        raise TypeError("validated bar row must be a mapping")
+    return NormalizedBar(
+        bar_id=UUID(str(row["bar_id"])),
+        symbol=str(row["symbol"]),
+        exchange=str(row["exchange"]),
+        timeframe=str(row["timeframe"]),
+        bar_open_time_utc=row["bar_open_time_utc"],
+        open=Decimal(str(row["open"])),
+        high=Decimal(str(row["high"])),
+        low=Decimal(str(row["low"])),
+        close=Decimal(str(row["close"])),
+        volume=Decimal(str(row["volume"])),
+        source_observation_ids=tuple(UUID(str(value)) for value in row.get("source_observation_ids", ())),
+        bar_close_time_utc=row.get("bar_close_time_utc"),
+        is_final=row.get("is_final"),
+        provenance=dict(row.get("provenance_jsonb", {})),
+    )
 
 def _result_severity(result: ValidationResult) -> str:
     if result.status is ValidationCheckStatus.FAILED:
@@ -206,6 +229,8 @@ def quarantine_decision_rows(
     for bar in bars:
         for observation_id in bar.source_observation_ids:
             bar_by_observation_id.setdefault(observation_id, bar)
+    from secure_eval_wrapper.data_validation.gating import accepted_ohlcv_bars
+
     accepted_bar_ids = {bar.bar_id for bar in accepted_ohlcv_bars(bars, report)}
     rejected_source_observation_ids = tuple(
         observation_id
@@ -526,6 +551,7 @@ __all__ = [
     "funding_rate_to_row",
     "instrument_metadata_from_row",
     "instrument_metadata_to_row",
+    "normalized_bar_from_row",
     "normalized_bar_to_row",
     "normalized_trade_to_row",
     "quarantine_decision_rows_for_records",

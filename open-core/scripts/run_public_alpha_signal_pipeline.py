@@ -171,8 +171,8 @@ def main(argv: list[str] | None = None) -> int:
                 dataset_refs=(dataset.dataset_ref,),
                 dataset_sha256=dataset.dataset_sha256,
                 parameters=definition.default_parameters,
-                code_sha256=definition.implementation_sha256,
-                persistence_enabled=args.persist,
+                code_sha256=definition.implementation_code_sha256,
+                persistence_enabled=False,
             )
             result = engine.evaluate(alpha_request, dataset)
             results[definition.name] = result
@@ -182,6 +182,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"rejected={result.run.rejected_count} hashes_valid={bool(_SHA256.fullmatch(result.run.config_sha256))}"
             )
 
+        signal_results = []
         for name, alpha_result in results.items():
             is_funding = name == "funding_rate_contrarian"
             threshold = AbsoluteThreshold(Decimal("0.00005"), Decimal("-0.00005")) if is_funding else AbsoluteThreshold(Decimal("0.01"), Decimal("-0.01"))
@@ -193,9 +194,10 @@ def main(argv: list[str] | None = None) -> int:
                 window_end_utc=alpha_result.run.window_end_utc,
                 ranking_config=RankingConfig(),
                 threshold_policy=threshold,
-                persistence_enabled=args.persist,
+                persistence_enabled=False,
             )
             signal_result = SignalPipeline(repository=repository, clock=lambda: OFFLINE_CLOCK).run(signal_request, (alpha_result.run,), alpha_result.values)
+            signal_results.append(signal_result)
             print(
                 f"signals={name} status={signal_result.run.status.value} count={signal_result.run.output_count} "
                 f"long={signal_result.run.long_count} short={signal_result.run.short_count} flat={signal_result.run.flat_count}"
@@ -213,9 +215,18 @@ def main(argv: list[str] | None = None) -> int:
             ranking_config=RankingConfig(),
             threshold_policy=AbsoluteThreshold(Decimal("0.01"), Decimal("-0.01")),
             combination_config=CombinationConfig(minimum_contributors=3, minimum_coverage_ratio=Decimal("0.75")),
-            persistence_enabled=args.persist,
+            persistence_enabled=False,
         )
         combined = SignalPipeline(repository=repository, clock=lambda: OFFLINE_CLOCK).run(combined_request, combined_runs, combined_values)
+        signal_results.append(combined)
+        if args.persist:
+            from secure_eval_wrapper.storage.alpha_signal_bundle import persist_alpha_signal_bundle
+            persist_alpha_signal_bundle(
+                repository,
+                definitions=registry.definitions(),
+                alpha_results=tuple(results.values()),
+                signal_results=tuple(signal_results),
+            )
         print(
             f"signals=combined status={combined.run.status.value} count={combined.run.output_count} "
             f"long={combined.run.long_count} short={combined.run.short_count} flat={combined.run.flat_count} "

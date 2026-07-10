@@ -2,9 +2,9 @@
 
 A public, auditable, and reproducible framework for building crypto trading systems without exposing private alpha, credentials, account data, or sensitive trade records.
 
-The project is being developed in explicit phases. The completed foundation currently covers architecture, PostgreSQL migrations, and a hardened public market-data layer. Public alpha, standardized signals, simulated execution, and event-driven backtesting are planned next.
+The project is developed in explicit, auditable phases. Architecture, PostgreSQL foundations, the public market-data layer, and the repaired public alpha and standardized-signal milestone are complete. Simulated execution and backtesting have not started.
 
-> **Current status:** Phase 2 is complete. Phase 3, the Public Alpha Library, is the next implementation phase.
+> **Current status:** Phase 3 and Phase 4 are complete after the mandatory independent-audit repair and PostgreSQL validation. Phase 5 remains todo and has not been implemented.
 
 ## Why this project exists
 
@@ -63,9 +63,9 @@ Signals are not fills. Future backtests must create order intents, pass them thr
 | 0 | Architecture, project controls, public/private boundary | Completed |
 | 1 | PostgreSQL infrastructure, migrations, repository interfaces | Completed |
 | 2 | Public market-data collection, validation, reconciliation, persistence | Completed |
-| 3 | Public Alpha Library | Next |
-| 4 | Standardized Signal Generation | Planned |
-| 5 | Simulated Execution and Event-Driven Backtesting | Planned |
+| 3 | Public Alpha Library | Completed; audit repair accepted |
+| 4 | Standardized Signal Generation | Completed; audit repair accepted |
+| 5 | Simulated Execution and Event-Driven Backtesting | Todo; not started |
 | 6 | Monitoring and Simulated FIX-Style Events | Planned |
 | 7 | Paper Trading | Future |
 | 8 | Guarded Live Execution | Future; disabled by default |

@@ -156,7 +156,7 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Separate concrete `binance`, `binance_usdm`, and `okx` component capabilities from exchange-level summaries.
 - [x] Ground funding intervals in verified public metadata, preserve typed interval sources, and skip gap checks explicitly when unavailable.
 
-### Phase 3: public alpha library
+### Phase 3: public alpha library (audit repair accepted)
 
 - [x] Define alpha metadata, evaluation request, run, value, failure, and public implementation contracts.
 - [x] Add a deterministic versioned public registry with duplicate and implementation-hash conflict protection.
@@ -170,8 +170,16 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add alpha documentation, exact calculation tests, parameter tests, persistence tests, and import/socket boundary tests.
 - [x] Add future-append, future-mutation, breakout-current-bar, rolling-window, and funding leakage regression tests.
 - [x] Complete the Phase 3 exit review without adding execution, backtesting, paper, or live trading.
+- [x] Enforce close-time and finality-based point-in-time bar availability with explicit fixed-timeframe legacy derivation.
+- [x] Introduce one complete immutable series identity across alpha requests, inputs, values, signals, hashes, and PostgreSQL persistence.
+- [x] Make eligible-input, alpha-value, and signal identities invariant to future data and mutable collection provenance.
+- [x] Correct mean reversion to use a prior-only comparison window with explicit warmup and zero-variance behavior.
+- [x] Correct funding contrarian to use a bounded rolling mean of realized rates with grounded interval evidence.
+- [x] Persist typed alpha evaluation status, reasons, as-of bounds, lookback bounds, stable input hashes, and complete lineage.
+- [x] Separate formula identity, implementation code identity, and repository commit identity.
+- [x] Add the required exact, point-in-time, identity, provenance, and PostgreSQL regression coverage.
 
-### Phase 4: signal generation
+### Phase 4: standardized signal generation (audit repair accepted)
 
 - [x] Define standardized signal and signal-run contracts with research-only lineage and hashes.
 - [x] Implement deterministic timestamp-scoped ascending/descending dense/ordinal ranking and percentiles.
@@ -185,7 +193,12 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add ranking, threshold, combination, confidence, pipeline, persistence, CLI, and security-boundary tests.
 - [x] Document the exact signal formulas and that confidence is not a probability of profit.
 - [x] Complete the Phase 4 exit review and advance current work to Phase 5 while leaving Phase 5 todo.
-
+- [x] Implement average-rank tie semantics for ascending and descending rankings.
+- [x] Add and persist an explicit top/bottom N overlap policy and resolution reason.
+- [x] Add the immutable SignalComponent domain contract and normalized PostgreSQL persistence.
+- [x] Add one atomic bundled alpha-to-signal persistence boundary with rollback coverage at every child failure point.
+- [x] Complete clean-install, 0007-to-0008 upgrade, schema, migration-hash, full-suite, offline, and security-boundary validation.
+- [x] Re-accept Phase 3 and Phase 4 only after every mandatory audit repair and validation passes.
 ## Todo
 
 ### Future provider enhancements

@@ -4,7 +4,7 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-10T04:00:00Z",
+  "updated_at_utc": "2026-07-10T05:21:03Z",
   "current_phase": "phase_5_simulated_execution_backtesting",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
@@ -194,7 +194,15 @@
         "Add the classified synthetic fixture and fully offline alpha-to-signal CLI",
         "Add alpha documentation, exact calculation tests, parameter tests, persistence tests, and import/socket boundary tests",
         "Add future-append, future-mutation, breakout-current-bar, rolling-window, and funding leakage regression tests",
-        "Complete the Phase 3 exit review without adding execution, backtesting, paper, or live trading"
+        "Complete the Phase 3 exit review without adding execution, backtesting, paper, or live trading",
+        "Enforce close-time and finality-based point-in-time bar availability with explicit fixed-timeframe legacy derivation",
+        "Introduce one complete immutable series identity across alpha requests, inputs, values, signals, hashes, and PostgreSQL persistence",
+        "Make eligible-input, alpha-value, and signal identities invariant to future data and mutable collection provenance",
+        "Correct mean reversion to use a prior-only comparison window with explicit warmup and zero-variance behavior",
+        "Correct funding contrarian to use a bounded rolling mean of realized rates with grounded interval evidence",
+        "Persist typed alpha evaluation status, reasons, as-of bounds, lookback bounds, stable input hashes, and complete lineage",
+        "Separate formula identity, implementation code identity, and repository commit identity",
+        "Add the required exact, point-in-time, identity, provenance, and PostgreSQL regression coverage"
       ],
       "todo": []
     },
@@ -214,7 +222,13 @@
         "Extend ordered migrations and catalog verification for alpha/signal tables, columns, indexes, constraints, foreign keys, checks, and hashes",
         "Add ranking, threshold, combination, confidence, pipeline, persistence, CLI, and security-boundary tests",
         "Document the exact signal formulas and that confidence is not a probability of profit",
-        "Complete the Phase 4 exit review and advance current work to Phase 5 while leaving Phase 5 todo"
+        "Complete the Phase 4 exit review and advance current work to Phase 5 while leaving Phase 5 todo",
+        "Implement average-rank tie semantics for ascending and descending rankings",
+        "Add and persist an explicit top/bottom N overlap policy and resolution reason",
+        "Add the immutable SignalComponent domain contract and normalized PostgreSQL persistence",
+        "Add one atomic bundled alpha-to-signal persistence boundary with rollback coverage at every child failure point",
+        "Complete clean-install, 0007-to-0008 upgrade, schema, migration-hash, full-suite, offline, and security-boundary validation",
+        "Re-accept Phase 3 and Phase 4 only after every mandatory audit repair and validation passes"
       ],
       "todo": []
     },

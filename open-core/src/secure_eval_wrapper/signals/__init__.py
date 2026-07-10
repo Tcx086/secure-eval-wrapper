@@ -8,10 +8,12 @@ from secure_eval_wrapper.signals.combination import (
 )
 from secure_eval_wrapper.signals.confidence import ConfidenceConfig, score_confidence
 from secure_eval_wrapper.signals.models import (
+    ComponentDisposition,
     RankMethod,
     RankOrder,
     RankedAlphaValue,
     RankingConfig,
+    SignalComponent,
     SignalDirection,
     SignalPipelineError,
     SignalRun,
@@ -24,6 +26,7 @@ from secure_eval_wrapper.signals.thresholding import (
     AbsoluteThreshold,
     PercentileThreshold,
     TopBottomNThreshold,
+    TopBottomOverlapPolicy,
     apply_threshold_policy,
 )
 
@@ -31,12 +34,14 @@ __all__ = [
     "AbsoluteThreshold",
     "CombinationConfig",
     "ConfidenceConfig",
+    "ComponentDisposition",
     "InsufficientCoveragePolicy",
     "PercentileThreshold",
     "RankMethod",
     "RankOrder",
     "RankedAlphaValue",
     "RankingConfig",
+    "SignalComponent",
     "SignalDirection",
     "SignalPipeline",
     "SignalPipelineError",
@@ -45,6 +50,7 @@ __all__ = [
     "SignalRunStatus",
     "StandardizedSignal",
     "TopBottomNThreshold",
+    "TopBottomOverlapPolicy",
     "WeightingMode",
     "apply_threshold_policy",
     "combine_thresholded_values",

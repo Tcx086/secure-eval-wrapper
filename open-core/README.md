@@ -83,7 +83,7 @@ metadata. Missing interval evidence is reported as skipped; it is never silently
 
 ## Public alpha and standardized signals (Phase 3-4)
 
-The public core now includes eleven transparent Decimal-based alphas, a shared trailing-only point-in-time input layer, deterministic registry and AlphaEngine, ranking, three threshold policies, explicit multi-alpha combination/conflict rules, bounded heuristic confidence, and PostgreSQL-only optional persistence. These are research outputs only; no order, sizing, position, PnL, backtest, paper, or live-trading runtime was added.
+The public core includes eleven transparent Decimal-based alphas, close/finality-based point-in-time inputs, complete provider/instrument/timeframe series identities, per-as-of stable hashes, a deterministic registry and AlphaEngine, average-rank ties, three threshold policies with explicit top/bottom overlap behavior, normalized SignalComponent lineage, bounded heuristic confidence, and PostgreSQL-only bundled persistence. These are research outputs only; no order, sizing, position, PnL, backtest, paper, or live-trading runtime was added.
 
 Run the socket-free, persistence-free fixture demo:
 

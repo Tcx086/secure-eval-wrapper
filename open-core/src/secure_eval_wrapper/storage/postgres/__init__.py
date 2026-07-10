@@ -30,6 +30,7 @@ _LAZY_EXPORTS = {
     "alpha_definition_to_row": ("secure_eval_wrapper.storage.postgres.alpha_signal_mappers", "alpha_definition_to_row"),
     "alpha_run_to_row": ("secure_eval_wrapper.storage.postgres.alpha_signal_mappers", "alpha_run_to_row"),
     "alpha_value_to_row": ("secure_eval_wrapper.storage.postgres.alpha_signal_mappers", "alpha_value_to_row"),
+    "signal_component_to_row": ("secure_eval_wrapper.storage.postgres.alpha_signal_mappers", "signal_component_to_row"),
     "signal_run_to_row": ("secure_eval_wrapper.storage.postgres.alpha_signal_mappers", "signal_run_to_row"),
     "standardized_signal_to_row": ("secure_eval_wrapper.storage.postgres.alpha_signal_mappers", "standardized_signal_to_row"),
 }

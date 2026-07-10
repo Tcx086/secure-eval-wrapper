@@ -207,6 +207,14 @@ class SignalRepository(ABC):
         """Record one standardized signal."""
 
     @abstractmethod
+    def record_signal_component(self, component: StoragePayload) -> UUID:
+        """Record one immutable normalized signal contribution."""
+
+    @abstractmethod
+    def list_signal_components(self, *, signal_id: UUID) -> Sequence[StorageRecord]:
+        """List normalized contributions for one signal."""
+
+    @abstractmethod
     def list_signals(self, *, signal_run_id: UUID) -> Sequence[StorageRecord]:
         """List signals for a signal run."""
 

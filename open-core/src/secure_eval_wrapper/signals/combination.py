@@ -9,6 +9,7 @@ from typing import Mapping, Sequence
 
 from secure_eval_wrapper.signals.models import (
     CombinationOutcome,
+    ComponentDisposition,
     SignalContribution,
     SignalDirection,
     ThresholdedAlphaValue,
@@ -122,6 +123,16 @@ def combine_thresholded_values(
                 configured_weight=base_weight,
                 effective_weight=effective,
                 signed_contribution=signed_contribution,
+                component_disposition=(
+                    ComponentDisposition.INSUFFICIENT_COVERAGE_FLAT
+                    if insufficient and config.insufficient_coverage_policy is InsufficientCoveragePolicy.FLAT
+                    else item.component_disposition
+                ),
+                resolution_reason=(
+                    "insufficient_coverage_force_flat"
+                    if insufficient and config.insufficient_coverage_policy is InsufficientCoveragePolicy.FLAT
+                    else item.resolution_reason
+                ),
             )
         )
     aggregate_raw = Decimal(0) if total_effective_weight == 0 else weighted_raw / total_effective_weight

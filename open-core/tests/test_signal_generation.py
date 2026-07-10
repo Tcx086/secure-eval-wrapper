@@ -22,6 +22,7 @@ from secure_eval_wrapper.signals import (
     SignalPipeline,
     SignalPipelineRequest,
     TopBottomNThreshold,
+    TopBottomOverlapPolicy,
     WeightingMode,
     apply_threshold_policy,
     combine_thresholded_values,
@@ -112,7 +113,7 @@ class RankingTests(unittest.TestCase):
             (value("a", "ETH-USDT", "2"), value("a", "BTC-USDT", "2"), value("a", "SOL-USDT", "1")),
             RankingConfig(method=RankMethod.DENSE),
         )
-        self.assertEqual([(item.alpha_value.symbol, item.rank) for item in ranked], [("BTC-USDT", 1), ("ETH-USDT", 1), ("SOL-USDT", 2)])
+        self.assertEqual([(item.alpha_value.symbol, item.rank) for item in ranked], [("BTC-USDT", Decimal("1.5")), ("ETH-USDT", Decimal("1.5")), ("SOL-USDT", Decimal(3))])
 
     def test_invalid_missing_and_one_symbol_behavior(self):
         ranked = rank_alpha_values((value("a", "BTC-USDT", "1"), value("a", "ETH-USDT", "0", valid=False, warmup=False)), RankingConfig())
@@ -146,7 +147,7 @@ class ThresholdTests(unittest.TestCase):
     def test_top_bottom_n_and_small_universe_overlap(self):
         outputs = apply_threshold_policy(self.ranked, TopBottomNThreshold(1, 1))
         self.assertEqual(sum(item.direction is SignalDirection.LONG for item in outputs), 1)
-        one = apply_threshold_policy(self.ranked[:1], TopBottomNThreshold(2, 2))
+        one = apply_threshold_policy(self.ranked[:1], TopBottomNThreshold(2, 2, TopBottomOverlapPolicy.FORCE_FLAT))
         self.assertEqual(one[0].direction, SignalDirection.FLAT)
 
     def test_invalid_threshold_configs(self):
@@ -229,6 +230,7 @@ class FakeRepository:
         self.transactions = 0
         self.runs = []
         self.signals = []
+        self.components = []
         self.fail_child = fail_child
 
     @contextmanager
@@ -239,6 +241,7 @@ class FakeRepository:
         except Exception:
             self.runs.clear()
             self.signals.clear()
+            self.components.clear()
             raise
 
     def record_signal_run(self, run):
@@ -250,6 +253,10 @@ class FakeRepository:
             raise RuntimeError("child failed")
         self.signals.append(signal)
         return signal.signal_id
+
+    def record_signal_component(self, component):
+        self.components.append(component)
+        return component.signal_component_id
 
 
 class SignalPipelineTests(unittest.TestCase):
@@ -306,6 +313,7 @@ class SignalPipelineTests(unittest.TestCase):
         self.assertEqual(repository.transactions, 1)
         self.assertEqual(len(repository.runs), 1)
         self.assertEqual(len(repository.signals), len(result.signals))
+        self.assertEqual(len(repository.components), len(result.components))
 
     def test_child_persistence_failure_rolls_back_and_is_typed(self):
         repository = FakeRepository(fail_child=True)
@@ -314,6 +322,7 @@ class SignalPipelineTests(unittest.TestCase):
             SignalPipeline(repository=repository, clock=lambda: NOW).run(req, (alpha_run("a"),), (value("a", "BTC-USDT", "1"),))
         self.assertEqual(repository.runs, [])
         self.assertEqual(repository.signals, [])
+        self.assertEqual(repository.components, [])
 
 
 if __name__ == "__main__":

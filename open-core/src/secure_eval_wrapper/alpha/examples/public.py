@@ -6,7 +6,9 @@ sizes, or claims of profitability.
 
 from __future__ import annotations
 
+import hashlib
 from decimal import Decimal
+from pathlib import Path
 from typing import Mapping, Sequence
 from uuid import NAMESPACE_URL, uuid5
 
@@ -25,8 +27,17 @@ from secure_eval_wrapper.data_collection.hashing import sha256_payload
 from secure_eval_wrapper.data_collection.models import FundingRate, NormalizedBar
 
 
-def _implementation_hash(name: str, formula: str, version: str = "1.0.0") -> str:
-    return sha256_payload({"public_alpha": name, "version": version, "formula": formula})
+def _implementation_hash() -> str:
+    """Hash the actual implementation module, including shared behavioral helpers."""
+
+    digest = hashlib.sha256()
+    alpha_root = Path(__file__).parents[1]
+    for path in sorted(alpha_root.rglob("*.py"), key=lambda item: item.relative_to(alpha_root).as_posix()):
+        digest.update(path.relative_to(alpha_root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def _definition(
@@ -43,7 +54,7 @@ def _definition(
     formula: str,
     data_type: str = "ohlcv",
 ) -> AlphaDefinition:
-    version = "1.0.0"
+    version = "1.1.0"
     return AlphaDefinition(
         alpha_id=uuid5(NAMESPACE_URL, f"public-alpha:{name}:{version}"),
         name=name,
@@ -59,7 +70,10 @@ def _definition(
         horizon=horizon,
         public_example=True,
         status=AlphaStatus.ACTIVE,
-        implementation_sha256=_implementation_hash(name, formula, version),
+        implementation_sha256=_implementation_hash(),
+        formula_sha256=sha256_payload({"public_alpha": name, "version": version, "formula": formula}),
+        implementation_code_sha256=_implementation_hash(),
+        repository_commit_sha=f"source-tree:{_implementation_hash()[:16]}",
     )
 
 
@@ -258,19 +272,19 @@ class BreakoutAlpha(_BaseAlpha):
 
 
 class MeanReversionAlpha(_BaseAlpha):
-    """Negative trailing population z-score of close."""
+    """Negative z-score of current close against a prior-only population window."""
 
     DEFINITION = _definition(
         name="trailing_mean_reversion",
-        description="Negative trailing population z-score of close using observations available at t.",
+        description="Negative current-close z-score against a prior-only close baseline.",
         category="mean_reversion",
         fields=("close",),
         parameter_schema={"window": {"type": "integer", "minimum": 2, "maximum": 10000}},
         defaults={"window": 5},
-        warmup=4,
-        semantics="Negative trailing close z-score; zero is emitted when trailing variance is zero.",
+        warmup=5,
+        semantics="Negative current-close z-score against a prior-only population window; zero when prior variance is zero.",
         horizon="next_observation_research_input",
-        formula="-(close[t] - trailing_mean[t]) / trailing_population_std[t]",
+        formula="-(close[t] - mean(close[t-window:t])) / population_std(close[t-window:t])",
     )
 
     def validate_parameters(self, parameters: Mapping[str, object]) -> Mapping[str, object]:
@@ -282,15 +296,15 @@ class MeanReversionAlpha(_BaseAlpha):
         points = []
         for index, current in enumerate(series.records):
             assert isinstance(current, NormalizedBar)
-            if index + 1 < window:
-                points.append(_point(current, score=None, warmup_complete=False, valid=False, sources=(current,), provenance={"reason": "warmup"}))
+            if index < window:
+                points.append(_point(current, score=None, warmup_complete=False, valid=False, sources=(current,), provenance={"reason": "warmup", "required_prior_points": window}))
                 continue
-            trailing = series.trailing(index, window)
-            closes = PointInTimeSeries.decimals(trailing, "close")
+            prior = series.trailing(index, window, include_current=False)
+            closes = PointInTimeSeries.decimals(prior, "close")
             average = _mean(closes)
             standard_deviation = _population_std(closes)
             score = Decimal(0) if standard_deviation == 0 else -(current.close - average) / standard_deviation
-            points.append(_point(current, score=score, warmup_complete=True, valid=True, sources=trailing, provenance={"window": window, "trailing_only": True, "zero_variance_score": "0"}))
+            points.append(_point(current, score=score, warmup_complete=True, valid=True, sources=(*prior, current), provenance={"window": window, "current_observation_excluded": True, "standard_deviation": "population", "zero_variance_score": "0"}))
         return tuple(points)
 
 
@@ -515,29 +529,34 @@ class SignedVolumePressureAlpha(_BaseAlpha):
 class FundingRateContrarianAlpha(_BaseAlpha):
     DEFINITION = _definition(
         name="funding_rate_contrarian",
-        description="Negative realized perpetual funding rate as a public carry-style input.",
+        description="Negative rolling mean of realized perpetual funding rates over an explicit lookback.",
         category="funding",
         fields=("rate", "funding_interval", "instrument_key"),
-        parameter_schema={},
-        defaults={},
-        warmup=0,
-        semantics="Negative realized funding rate. This score alone is not a complete strategy.",
+        parameter_schema={"lookback": {"type": "integer", "minimum": 1, "maximum": 10000}},
+        defaults={"lookback": 3},
+        warmup=2,
+        semantics="Negative mean of realized funding rates in the bounded trailing lookback.",
         horizon="next_funding_observation_research_input",
-        formula="-realized_funding_rate[t]",
+        formula="-mean(realized_funding_rate[t-lookback+1:t])",
         data_type="funding_rates",
     )
 
     def validate_parameters(self, parameters: Mapping[str, object]) -> Mapping[str, object]:
-        _validate_keys(parameters, set())
-        return {}
+        _validate_keys(parameters, {"lookback"})
+        return {"lookback": _bounded_int(parameters, self.DEFINITION.default_parameters, "lookback")}
 
     def evaluate(self, series: PointInTimeSeries, parameters: Mapping[str, object]):
+        lookback = int(parameters["lookback"])
         points = []
-        for current in series.records:
+        for index, current in enumerate(series.records):
             assert isinstance(current, FundingRate)
-            points.append(_point(current, score=-current.rate, warmup_complete=True, valid=True, sources=(current,), provenance={"funding_interval": current.funding_interval, "funding_interval_source": current.funding_interval_source.value, "instrument_identity_sha256": current.instrument_key.identity_sha256 if current.instrument_key is not None else None, "provider_instrument_id": current.instrument_key.provider_instrument_id if current.instrument_key is not None else None, "complete_strategy": False}))
+            if index + 1 < lookback:
+                points.append(_point(current, score=None, warmup_complete=False, valid=False, sources=(current,), provenance={"reason": "warmup", "lookback": lookback}))
+                continue
+            trailing = series.trailing(index, lookback)
+            rates = PointInTimeSeries.decimals(trailing, "rate")
+            points.append(_point(current, score=-_mean(rates), warmup_complete=True, valid=True, sources=trailing, provenance={"lookback": lookback, "realized_funding_only": True, "funding_intervals": tuple(item.funding_interval for item in trailing if isinstance(item, FundingRate)), "funding_interval_sources": tuple(item.funding_interval_source.value for item in trailing if isinstance(item, FundingRate)), "instrument_identity_sha256": current.instrument_key.identity_sha256 if current.instrument_key is not None else None, "provider_instrument_id": current.instrument_key.provider_instrument_id if current.instrument_key is not None else None, "complete_strategy": False}))
         return tuple(points)
-
 
 PUBLIC_ALPHA_TYPES = (
     MomentumAlpha,

@@ -10,11 +10,12 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 import secure_eval_wrapper.data_validation  # initialize existing package before PostgreSQL modules
 from secure_eval_wrapper.alpha.examples import MomentumAlpha
 from secure_eval_wrapper.alpha.models import AlphaRun, AlphaRunStatus, AlphaValue
-from secure_eval_wrapper.signals.models import SignalDirection, SignalRun, SignalRunStatus, StandardizedSignal
+from secure_eval_wrapper.signals.models import ComponentDisposition, SignalComponent, SignalDirection, SignalRun, SignalRunStatus, StandardizedSignal
 from secure_eval_wrapper.storage.postgres.alpha_signal_mappers import (
     alpha_definition_to_row,
     alpha_run_to_row,
     alpha_value_to_row,
+    signal_component_to_row,
     signal_run_to_row,
     standardized_signal_to_row,
 )
@@ -162,6 +163,22 @@ def signal():
     )
 
 
+def signal_component():
+    definition = MomentumAlpha().definition
+    return SignalComponent(
+        signal_component_id=UUID("71000000-0000-0000-0000-000000000006"),
+        signal_id=signal().signal_id,
+        alpha_value_id=alpha_value().alpha_value_id,
+        alpha_id=definition.alpha_id,
+        raw_value=Decimal("0.1"),
+        normalized_value=Decimal(1),
+        configured_weight=Decimal(1),
+        effective_weight=Decimal(1),
+        signed_contribution=Decimal(1),
+        component_disposition=ComponentDisposition.CONTRIBUTED,
+        public_metadata={"classification": "synthetic_public_safe"},
+    )
+
 class AlphaSignalMappingTests(unittest.TestCase):
     def test_mappings_preserve_hashes_and_research_only_fields(self):
         definition_row = alpha_definition_to_row(MomentumAlpha().definition)
@@ -169,10 +186,12 @@ class AlphaSignalMappingTests(unittest.TestCase):
         value_row = alpha_value_to_row(alpha_value())
         signal_run_row = signal_run_to_row(signal_run())
         signal_row = standardized_signal_to_row(signal())
+        component_row = signal_component_to_row(signal_component())
         self.assertEqual(definition_row["implementation_sha256"], MomentumAlpha().definition.implementation_sha256)
         self.assertEqual(value_row["content_sha256"], alpha_value().content_sha256)
         self.assertEqual(signal_run_row["run_id"], SIGNAL_RUN_ID)
         self.assertEqual(signal_row["source_alpha_value_ids"], [alpha_value().alpha_value_id])
+        self.assertEqual(component_row["component_sha256"], signal_component().component_sha256)
         for forbidden in ("quantity", "leverage", "account_id", "broker_order_ref"):
             self.assertNotIn(forbidden, signal_row)
         self.assertRegex(run_row["content_sha256"], r"^[0-9a-f]{64}$")
@@ -211,6 +230,7 @@ class AlphaSignalRepositoryTests(unittest.TestCase):
             (PostgresAlphaRepository, "record_alpha_value", alpha_value(), alpha_value().alpha_value_id),
             (PostgresSignalRepository, "record_signal_run", signal_run(), SIGNAL_RUN_ID),
             (PostgresSignalRepository, "record_signal", signal(), signal().signal_id),
+            (PostgresSignalRepository, "record_signal_component", signal_component(), signal_component().signal_component_id),
         )
         for repository_type, method, domain, expected in cases:
             connection = ReplayConnection(((expected,),))
@@ -228,6 +248,9 @@ class AlphaSignalRepositoryTests(unittest.TestCase):
         signal_sql = signal_connection.cursor_instance.executions[0][0]
         self.assertIn("timestamp_utc >= %s", signal_sql)
         self.assertIn("timestamp_utc < %s", signal_sql)
+        component_connection = ReplayConnection()
+        PostgresSignalRepository(component_connection).list_signal_components(signal_id=signal().signal_id)
+        self.assertIn("signals.signal_components", component_connection.cursor_instance.executions[0][0])
 
     def test_transaction_rolls_back_child_failure(self):
         connection = ReplayConnection()
@@ -246,6 +269,10 @@ class AlphaSignalRepositoryTests(unittest.TestCase):
         self.assertIn("on alpha.alpha_values", migration)
         self.assertNotIn("sqlite", migration)
         self.assertTrue((root / "open-core/db/migrations/0006_phase2_final_hardening.sql").exists())
+        repair = (root / "open-core/db/migrations/0008_phase3_phase4_audit_repairs.sql").read_text(encoding="utf-8-sig").lower()
+        self.assertIn("create table if not exists signals.signal_components", repair)
+        self.assertIn("bar_close_time_utc", repair)
+        self.assertNotIn("sqlite", repair)
 
 
 if __name__ == "__main__":

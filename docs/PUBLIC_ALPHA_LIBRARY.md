@@ -4,75 +4,84 @@
 
 Phase 3 provides deterministic public research examples over Phase 2 validation-gated data. An
 alpha returns continuous `AlphaValue` scores. It cannot produce signal direction, orders, position
-sizes, execution instructions, PnL, or portfolio state. The implementations use pure Python,
-`Decimal`, frozen dataclasses, injected repositories, and no network or database activity during
-import or calculation.
+sizes, execution instructions, PnL, or portfolio state. Calculations use `Decimal`, frozen domain
+records, injected repositories, and no network or database activity during import or evaluation.
 
-## Contracts
+## Stable series identity
 
-- `AlphaDefinition` records stable identity/version, category, inputs, parameter schema/defaults,
-  warmup, output semantics, horizon, status, and implementation SHA-256.
-- `AlphaEvaluationRequest` declares a half-open UTC window, symbols, parameters, dataset lineage,
-  run identity, and hashes.
-- `AlphaValue` records an explicit valid or invalid/warmup point with source observation IDs and
-  dataset/config/implementation hashes.
-- `AlphaRun` records operational status and valid, rejected, and warmup-skipped counts.
-- `PublicAlpha` separates parameter validation and pure calculation from orchestration and storage.
-- `AlphaEngine` resolves the registry, validates and prepares point-in-time data, validates outputs,
-  creates deterministic IDs, and optionally persists one run in one outer PostgreSQL transaction.
+Every alpha request, point-in-time series, `AlphaValue`, and downstream signal uses one immutable
+`SeriesIdentity` containing:
 
-The in-memory registry rejects duplicate name/version pairs and implementation-hash conflicts,
-lists definitions in stable order, resolves explicit versions, and retains deprecated definitions
-for historical lineage.
+- provider name and exchange;
+- provider instrument ID and canonical symbol;
+- instrument type and settlement asset where applicable;
+- timeframe; and
+- a deterministic SHA-256 over those fields.
 
-## Point-in-time controls
+Symbol alone is never the logical key. Binance and OKX `BTC-USDT`, one-minute and five-minute
+`BTC-USDT`, and Spot and perpetual `BTC-USDT` are separate series. PostgreSQL uniqueness uses the
+run, `series_identity_sha256`, as-of timestamp, and horizon.
 
-`AlphaDataSet` is the explicit boundary for accepted or accepted-with-warnings Phase 2 data and
-requires validation-report lineage. `PointInTimeSeries` sorts deterministically and rejects naive
-timestamps, duplicate logical timestamps, mixed symbols, mixed timeframes, non-final bars,
-ambiguous funding instruments, and funding records without grounded interval evidence.
+## Point-in-time availability
 
-All window access is trailing. Prior windows can explicitly exclude the current observation. The
-engine verifies that no source timestamp is later than its output timestamp. Missing warmup is an
-invalid/warmup `AlphaValue`; it is never backfilled from future data. Zero denominators or other
-undefined calculations follow each alpha's documented explicit policy.
+OHLCV eligibility is based on `bar_available_at_utc <= as_of_utc`, never bar open time.
+`bar_available_at_utc` is the persisted `bar_close_time_utc` when present. A legacy null close can
+be derived only for explicit fixed-duration `s`, `m`, `h`, or `d` timeframes. Unsupported and
+calendar-dependent values fail. Naive datetimes fail, a close at or before open fails, and
+`is_final = false` is always ineligible.
+
+For a declared `as_of_utc`, the emitted `AlphaValue.timestamp_utc` equals that as-of time. Thus a
+bar opening at 12:00 and closing at 12:01 cannot be used at 12:00. Trailing windows are built only
+from records available at the evaluation boundary.
+
+## Contracts and hashes
+
+- `AlphaDefinition` separates `formula_sha256`, actual `implementation_code_sha256`, and a
+  repository commit or equivalent source-tree identity.
+- `AlphaEvaluationRequest` may select complete series identities and may declare one `as_of_utc`.
+- `AlphaValue` persists typed status (`emitted`, `warmup`, `skipped`, `invalid`, or `failed`), reason,
+  as-of time, lookback bounds, complete series identity, eligible-input hash, and record hash.
+- Source observation IDs, validation report IDs, dataset references, and other collection lineage
+  remain available as audit provenance but are excluded from stable logical hashes.
+- `eligible_input_sha256` covers only stable economic fields available at that point. Later append,
+  mutation, or deletion and a legitimate re-collection with new source IDs cannot change an
+  earlier value ID, score, eligible-input hash, or record hash.
+
+`AlphaRun` retains run-level operational lineage and valid, rejected, and warmup/skipped counts.
+`AlphaEngine` resolves registry versions, validates complete identities and availability, performs
+pure calculation, validates output lineage, creates deterministic point IDs, and can persist one
+run transactionally.
 
 ## Public examples
 
-| Name | Category | Exact score semantics |
-|---|---|---|
-| `momentum` | momentum | `close[t] / close[t-L] - 1` |
-| `moving_average_crossover` | trend | `short trailing mean / long trailing mean - 1` |
-| `prior_channel_breakout` | breakout | distance outside the prior-only high/low channel, divided by prior range; zero inside |
-| `trailing_mean_reversion` | mean reversion | negative trailing population z-score of close; zero when variance is zero |
-| `short_term_return_reversal` | formulaic | negative trailing return |
-| `prior_range_close_position` | formulaic | `2 * (close - prior low) / prior range - 1`; current bar excluded |
-| `volatility_adjusted_momentum` | formulaic | trailing return divided by trailing one-period return volatility |
-| `price_volume_divergence` | formulaic | trailing price return minus trailing volume return |
-| `rolling_range_expansion` | formulaic | current high-low range divided by prior mean range minus one |
-| `signed_volume_pressure` | formulaic | `sign(close-open) * volume / trailing mean volume` |
-| `funding_rate_contrarian` | funding | negative realized funding rate with preserved grounded interval evidence |
+The repaired public implementations use version `1.1.0`; legacy `1.0.0` registry rows remain historical and cannot be mistaken for the repaired code.
 
-The formulaic examples are a small transparent educational set inspired by public formulaic
-research conventions. They are not the complete “101 Formulaic Alphas” library, do not copy opaque
-or proprietary formulas, use no private parameters, and make no profitability claim. The funding
-score alone is not a complete strategy.
+| Name | Exact score semantics |
+|---|---|
+| `momentum` | `close[t] / close[t-L] - 1` |
+| `moving_average_crossover` | short trailing mean divided by long trailing mean, minus one |
+| `prior_channel_breakout` | distance outside a prior-only high/low channel divided by prior range |
+| `trailing_mean_reversion` | negative z-score of current close against a prior-only close window using population standard deviation; zero for prior zero variance |
+| `short_term_return_reversal` | negative trailing return |
+| `prior_range_close_position` | prior-only range location scaled around zero |
+| `volatility_adjusted_momentum` | trailing return divided by trailing one-period return volatility |
+| `price_volume_divergence` | trailing price return minus trailing volume return |
+| `rolling_range_expansion` | current range divided by prior-only mean range, minus one |
+| `signed_volume_pressure` | signed current volume divided by trailing mean volume |
+| `funding_rate_contrarian` | negative mean of realized perpetual funding rates over an explicit bounded lookback |
+
+Funding evaluation requires a complete perpetual instrument identity and grounded interval evidence;
+it does not assume an eight-hour interval. The funding score is an educational research input, not
+a complete strategy. The formulaic examples are a small public set, not a complete 101-alpha
+library, and contain no proprietary formulas or private parameters.
 
 ## PostgreSQL persistence
 
-Migration `0007_alpha_signal_library.sql` extends `alpha.alpha_registry` and adds
-`alpha.alpha_runs` and `alpha.alpha_values`. Logical retries return database-selected IDs when
-content hashes match and fail on identity/content conflicts. Reads are deterministic and half-open.
-PostgreSQL is the only authoritative target; there is no SQLite or file-database fallback.
+Migration `0008_phase3_phase4_audit_repairs.sql` adds persisted bar close/finality, complete alpha
+series identity, explicit evaluation status and bounds, eligible-input and record hashes, separate
+formula/code provenance, and series-based uniqueness. Migrations `0001` through `0007` remain
+unchanged. PostgreSQL is the only authoritative target; there is no SQLite fallback.
 
-## Offline demo
-
-From the repository root:
-
-```powershell
-python open-core\scripts\run_public_alpha_signal_pipeline.py
-```
-
-The default fixture is `synthetic_public_safe`, opens no sockets, touches no database, and prints
-only aggregate counts and hash validity. Persistence requires both `--persist` and
-`ENABLE_POSTGRES_PERSISTENCE=true`.
+The fixture-default CLI evaluates without writes, then—only when explicitly enabled—persists all
+alpha definitions, runs, values, signal runs, signals, and signal components through one bundled
+outer transaction.

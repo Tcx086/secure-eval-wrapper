@@ -174,6 +174,7 @@ def normalize_ohlcv_observation(observation: RawObservation) -> NormalizedBar:
         bar_close_time_utc=bar_close_time_utc,
         is_final=is_final,
         provenance=provenance,
+        instrument_key=observation.instrument_key,
     )
 
 

@@ -143,14 +143,14 @@ class AlphaRegistryContractTests(unittest.TestCase):
         registry.register(original)
 
         class Conflicting(MomentumAlpha):
-            DEFINITION = replace(original.definition, implementation_sha256="f" * 64)
+            DEFINITION = replace(original.definition, implementation_sha256="f" * 64, implementation_code_sha256="f" * 64)
 
         with self.assertRaisesRegex(AlphaRegistryError, "hash conflict"):
             registry.register(Conflicting())
 
     def test_resolve_version_and_unknown(self):
         registry = build_public_alpha_registry()
-        self.assertEqual(registry.resolve("momentum").definition.version, "1.0.0")
+        self.assertEqual(registry.resolve("momentum").definition.version, "1.1.0")
         with self.assertRaises(AlphaRegistryError):
             registry.resolve("momentum", "9.9.9")
 
@@ -178,9 +178,9 @@ class AlphaCalculationTests(unittest.TestCase):
         self.assertTrue(points[-1].provenance["current_bar_excluded"])
 
     def test_mean_reversion_trailing_z_score_and_zero_variance(self):
-        points = scores(MeanReversionAlpha(), bars(closes=("1", "2", "3")), {"window": 3})
+        points = scores(MeanReversionAlpha(), bars(closes=("1", "2", "3", "4")), {"window": 3})
         self.assertLess(points[-1].raw_score, 0)
-        flat = scores(MeanReversionAlpha(), bars(closes=("2", "2", "2")), {"window": 3})
+        flat = scores(MeanReversionAlpha(), bars(closes=("2", "2", "2", "2")), {"window": 3})
         self.assertEqual(flat[-1].raw_score, Decimal(0))
         self.assertTrue(flat[-1].valid)
 
@@ -200,7 +200,7 @@ class AlphaCalculationTests(unittest.TestCase):
             self.assertTrue(all(item.raw_score is not None and item.raw_score.is_finite() for item in valid))
 
     def test_funding_positive_negative_and_zero(self):
-        points = scores(FundingRateContrarianAlpha(), funding_rates(), {})
+        points = scores(FundingRateContrarianAlpha(), funding_rates(), {"lookback": 1})
         self.assertEqual(tuple(item.raw_score for item in points), (Decimal("-0.001"), Decimal("0.002"), Decimal("0")))
 
     def test_input_order_is_deterministically_sorted(self):
@@ -223,9 +223,9 @@ class PointInTimeControlTests(unittest.TestCase):
             PointInTimeSeries((records[0], replace(records[1], bar_open_time_utc=records[0].bar_open_time_utc)))
 
     def test_mixed_symbols_and_timeframes_rejected(self):
-        with self.assertRaisesRegex(ValueError, "one symbol"):
+        with self.assertRaisesRegex(ValueError, "series identity"):
             PointInTimeSeries((bars("BTC-USDT")[0], bars("ETH-USDT")[1]))
-        with self.assertRaisesRegex(ValueError, "timeframes"):
+        with self.assertRaisesRegex(ValueError, "series identity"):
             PointInTimeSeries((bars(timeframe="1m")[0], bars(timeframe="5m")[1]))
 
     def test_nonfinal_and_naive_timestamps_rejected(self):
@@ -252,10 +252,10 @@ class AntiLookaheadEngineTests(unittest.TestCase):
 
     def test_append_extreme_future_bar_does_not_change_history(self):
         base = bars(closes=("10", "11", "12", "13", "14", "15"))
-        future = replace(bars(closes=("1000000",))[0], bar_id=uuid5(NAMESPACE_URL, "future"), bar_open_time_utc=START + timedelta(minutes=6), source_observation_ids=(uuid5(NAMESPACE_URL, "future-obs"),))
+        future = replace(bars(closes=("1000000",))[0], bar_id=uuid5(NAMESPACE_URL, "future"), bar_open_time_utc=START + timedelta(minutes=6), bar_close_time_utc=START + timedelta(minutes=7), source_observation_ids=(uuid5(NAMESPACE_URL, "future-obs"),))
         first = self._run("momentum", base, {"lookback": 2}, "future-a")
         second = self._run("momentum", (*base, future), {"lookback": 2}, "future-b")
-        cutoff = base[-1].bar_open_time_utc
+        cutoff = base[-1].bar_close_time_utc
         self.assertEqual(
             [(item.timestamp_utc, item.raw_score) for item in first.values if item.timestamp_utc <= cutoff],
             [(item.timestamp_utc, item.raw_score) for item in second.values if item.timestamp_utc <= cutoff],

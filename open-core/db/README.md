@@ -20,6 +20,8 @@ Current migrations:
 - `0005_trade_funding_instrument_hardening.sql`: adds explicit trade/funding identity, immutable
   instrument metadata versions, conflict hashes, indexes, uniqueness, and foreign-key verification.
 - `0006_phase2_final_hardening.sql`: normalizes legacy instrument types and enforces complete identities/hashes for new Phase 2 rows with upgrade-safe check constraints.
+- `0007_alpha_signal_library.sql`: adds the original Phase 3-4 alpha and signal research schema.
+- `0008_phase3_phase4_audit_repairs.sql`: adds close/finality availability, complete series identity, stable per-point hashes, explicit evaluation status and code provenance, average-rank storage, overlap policy, and normalized signal components.
 
 Migration metadata tracks:
 
@@ -80,6 +82,7 @@ The service binds PostgreSQL only to `127.0.0.1`.
 
 ## Phase 3-4 migration and repositories
 
-- `0007_alpha_signal_library.sql`: versions the public alpha registry, adds alpha runs/values, and hardens standardized signal runs/signals with deterministic hashes, lineage, constraints, and indexes.
+- `0007_alpha_signal_library.sql`: versions the public alpha registry, adds alpha runs/values, and hardens standardized signal runs/signals.
+- `0008_phase3_phase4_audit_repairs.sql`: repairs the audited Phase 3-4 contracts without changing migrations `0001` through `0007`. It adds bar close/finality, complete series identity and series-based uniqueness, typed alpha status and lookback bounds, eligible-input/record hashes, formula/code/source-tree provenance, average-rank-compatible numeric storage, explicit overlap policy, and `signals.signal_components`.
 
-The Phase 3-4 repositories use injected PostgreSQL DB-API connections, parameterized SQL, conflict-hash protection, database-selected IDs, half-open reads, and caller-owned outer transactions. No SQLite fallback exists.
+The Phase 3-4 repositories use injected PostgreSQL DB-API connections, parameterized SQL, conflict-hash protection, database-selected IDs, half-open reads, and caller-owned outer transactions. The CLI uses one milestone-wide transaction for definitions, alpha runs/values, signal runs/signals, and signal components. No SQLite fallback exists.

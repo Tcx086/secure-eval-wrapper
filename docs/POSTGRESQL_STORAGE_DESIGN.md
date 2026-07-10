@@ -85,7 +85,7 @@ Stores one raw provider response or provider-normalized observation per row. Key
 
 ### `validated_bars`
 Stores accepted OHLCV bars after validation. Key fields: `bar_id`, `symbol`, `exchange`,
-`timeframe`, `bar_open_time_utc`, `open`, `high`, `low`, `close`, `volume`,
+`timeframe`, `bar_open_time_utc`, `bar_close_time_utc`, `is_final`, `open`, `high`, `low`, `close`, `volume`,
 `validation_status`, `validation_report_id`, and `source_observation_ids`. A unique key covers
 `symbol`, `exchange`, `timeframe`, and `bar_open_time_utc`.
 
@@ -299,8 +299,8 @@ validation state for all four hardening checks.
 
 ## Phase 3-4 alpha and signal storage
 
-Migration `0007_alpha_signal_library.sql` extends `alpha.alpha_registry`, adds `alpha.alpha_runs` and `alpha.alpha_values`, and hardens `signals.signal_runs` and `signals.signals`. The schema preserves versions, exact configurations, UTC half-open windows, source observation/alpha-value lineage, data/config/code/implementation/content hashes, warmup validity, ranking, confidence, coverage, conflicts, counts, and deterministic logical uniqueness.
+Migration `0007_alpha_signal_library.sql` establishes the original alpha/signal tables. Migration `0008_phase3_phase4_audit_repairs.sql` adds close/finality bar availability, complete series identities, typed alpha evaluation status and lookback bounds, stable per-as-of eligible-input/record hashes, separate formula/code/source-tree provenance, numeric average ranks, explicit overlap policy and reasons, series-based uniqueness, and normalized `signals.signal_components` rows with signal/alpha-value/alpha foreign keys. Migrations `0001` through `0007` are unchanged.
 
-`PostgresAlphaRepository` and `PostgresSignalRepository` accept an injected DB-API PostgreSQL connection, use `%s` parameters, connect nowhere during import, return database-selected IDs, and reject same-identity/different-content retries. Alpha-value and signal reads are deterministic and end-exclusive. `PostgresAlphaSignalRepository` shares one connection when a caller needs both domains. There is no SQLite or file-database fallback.
+`PostgresAlphaRepository` and `PostgresSignalRepository` accept an injected DB-API PostgreSQL connection, use `%s` parameters, connect nowhere during import, return database-selected IDs, and reject same-identity/different-content retries. Alpha-value and signal reads are deterministic and end-exclusive. `PostgresAlphaSignalRepository` shares one connection when a caller needs both domains. `persist_alpha_signal_bundle` owns one outer transaction for registry definitions, alpha runs/values, signal runs/signals, and signal components; any child failure rolls back the whole milestone. There is no SQLite or file-database fallback.
 
 Persistence remains disabled in the offline alpha-to-signal CLI unless both `--persist` and `ENABLE_POSTGRES_PERSISTENCE=true` are present.

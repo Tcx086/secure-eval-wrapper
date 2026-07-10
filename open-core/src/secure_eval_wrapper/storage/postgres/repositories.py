@@ -197,9 +197,9 @@ class PostgresMarketDataRepository(_PostgresRepositoryBase, MarketDataRepository
             """
             INSERT INTO market_data.validated_bars (
                 bar_id, symbol, exchange, timeframe, bar_open_time_utc,
-                open, high, low, close, volume, validation_status,
+                bar_close_time_utc, is_final, open, high, low, close, volume, validation_status,
                 validation_report_id, source_observation_ids, provenance_jsonb
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
             ON CONFLICT (symbol, exchange, timeframe, bar_open_time_utc) DO NOTHING
             """,
             (
@@ -208,6 +208,8 @@ class PostgresMarketDataRepository(_PostgresRepositoryBase, MarketDataRepository
                 bar["exchange"],
                 bar["timeframe"],
                 bar["bar_open_time_utc"],
+                bar.get("bar_close_time_utc"),
+                bar.get("is_final"),
                 bar["open"],
                 bar["high"],
                 bar["low"],
@@ -237,7 +239,7 @@ class PostgresMarketDataRepository(_PostgresRepositoryBase, MarketDataRepository
             cursor.execute(
                 """
                 SELECT bar_id, symbol, exchange, timeframe, bar_open_time_utc,
-                       open, high, low, close, volume, validation_status,
+                       bar_close_time_utc, is_final, open, high, low, close, volume, validation_status,
                        validation_report_id, source_observation_ids, provenance_jsonb
                 FROM market_data.validated_bars
                 WHERE symbol = %s AND exchange = %s AND timeframe = %s
