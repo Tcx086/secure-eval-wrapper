@@ -14,10 +14,20 @@
         {"instId": "BTC-USDT", "side": "buy", "sz": "0.25", "source": "0", "px": "100.00", "tradeId": "3001", "ts": "1767225600000"}
       ]
     },
+    "binance_usdm_funding_info": [
+      {"symbol": "BTCUSDT", "adjustedFundingRateCap": "0.025", "adjustedFundingRateFloor": "-0.025", "fundingIntervalHours": 8, "disclaimer": false}
+    ],
     "binance_usdm_funding": [
       {"symbol": "BTCUSDT", "fundingRate": "0.0001", "fundingTime": 1767225600000, "markPrice": "100.50"},
       {"symbol": "BTCUSDT", "fundingRate": "-0.0002", "fundingTime": 1767254400000, "markPrice": "101.50"}
     ],
+    "okx_swap_current_funding": {
+      "code": "0",
+      "msg": "",
+      "data": [
+        {"instType": "SWAP", "instId": "BTC-USDT-SWAP", "fundingTime": "1767254400000", "nextFundingTime": "1767283200000"}
+      ]
+    },
     "okx_swap_funding": {
       "code": "0",
       "msg": "",

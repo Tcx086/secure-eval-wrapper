@@ -19,6 +19,7 @@ Current migrations:
 - `0004_reconciliation_persistence.sql`: adds auditable reconciliation summaries and child check results with idempotency constraints.
 - `0005_trade_funding_instrument_hardening.sql`: adds explicit trade/funding identity, immutable
   instrument metadata versions, conflict hashes, indexes, uniqueness, and foreign-key verification.
+- `0006_phase2_final_hardening.sql`: normalizes legacy instrument types and enforces complete identities/hashes for new Phase 2 rows with upgrade-safe check constraints.
 
 Migration metadata tracks:
 

@@ -19,6 +19,7 @@ from secure_eval_wrapper.data_collection.instruments import perpetual_instrument
 from secure_eval_wrapper.data_collection.models import (
     CollectionStatus,
     DataRequest,
+    FundingIntervalSource,
     InstrumentKey,
     InstrumentType,
     MarketDataType,
@@ -33,8 +34,10 @@ from secure_eval_wrapper.data_collection.time_utils import require_utc_datetime
 BINANCE_USDM_BASE_URL = "https://fapi.binance.com"
 BINANCE_USDM_FUNDING_PATH = "/fapi/v1/fundingRate"
 BINANCE_USDM_EXCHANGE_INFO_PATH = "/fapi/v1/exchangeInfo"
+BINANCE_USDM_FUNDING_INFO_PATH = "/fapi/v1/fundingInfo"
 BINANCE_USDM_FUNDING_SOURCE_ENDPOINT = "binance-usdm:/fapi/v1/fundingRate"
 BINANCE_USDM_EXCHANGE_INFO_SOURCE_ENDPOINT = "binance-usdm:/fapi/v1/exchangeInfo"
+BINANCE_USDM_FUNDING_INFO_SOURCE_ENDPOINT = "binance-usdm:/fapi/v1/fundingInfo"
 BINANCE_USDM_MAX_LIMIT = 1000
 BINANCE_USDM_MAX_PAGE_GUARD = 1000
 
@@ -133,6 +136,7 @@ class BinanceUsdmPublicProvider(MarketDataProvider):
 
     def fetch_funding_rates(self, request: DataRequest) -> Sequence[RawObservation]:
         key, start, end, limit, max_pages = self._funding_request(request)
+        funding_interval, interval_source, interval_metadata = self._fetch_funding_interval(key)
         start_ms = _ms(start)
         end_ms = _ms(end, exclusive_end=True)
         observations: list[RawObservation] = []
@@ -155,7 +159,9 @@ class BinanceUsdmPublicProvider(MarketDataProvider):
                 break
             page_times: list[int] = []
             for position, row in enumerate(rows):
-                payload, timestamp, timestamp_ms = self._parse_funding(row, key, position)
+                payload, timestamp, timestamp_ms = self._parse_funding(
+                    row, key, position, funding_interval, interval_source, interval_metadata
+                )
                 page_times.append(timestamp_ms)
                 if timestamp_ms in seen_times:
                     raise ValueError("Binance funding pagination returned a duplicate timestamp")
@@ -249,8 +255,36 @@ class BinanceUsdmPublicProvider(MarketDataProvider):
             raise ValueError("Binance USDⓈ-M exchangeInfo omitted requested instruments: " + ", ".join(missing))
         return tuple(observations)
 
+    def _fetch_funding_interval(
+        self,
+        key: InstrumentKey,
+    ) -> tuple[str | None, FundingIntervalSource, Mapping[str, object]]:
+        response = self._transport.send(self._request(BINANCE_USDM_FUNDING_INFO_PATH, {}))
+        rows = self._decode_list(response, BINANCE_USDM_FUNDING_INFO_PATH)
+        matches = [
+            row for row in rows
+            if isinstance(row, Mapping) and row.get("symbol") == key.provider_instrument_id
+        ]
+        if len(matches) > 1:
+            raise ValueError("Binance fundingInfo returned a duplicate symbol")
+        if not matches:
+            return None, FundingIntervalSource.UNAVAILABLE, {
+                "source_endpoint": BINANCE_USDM_FUNDING_INFO_SOURCE_ENDPOINT,
+                "reason": "symbol_not_returned_by_adjustment_endpoint",
+            }
+        hours = matches[0].get("fundingIntervalHours")
+        if isinstance(hours, bool) or not isinstance(hours, int) or hours <= 0:
+            raise ValueError("Binance fundingIntervalHours must be a positive integer")
+        return f"{hours}h", FundingIntervalSource.PROVIDER_REPORTED, {
+            "source_endpoint": BINANCE_USDM_FUNDING_INFO_SOURCE_ENDPOINT,
+            "funding_interval_hours": hours,
+        }
     def _request(self, path: str, query: Mapping[str, str | int]) -> HttpRequest:
-        if path not in {BINANCE_USDM_FUNDING_PATH, BINANCE_USDM_EXCHANGE_INFO_PATH}:
+        if path not in {
+            BINANCE_USDM_FUNDING_PATH,
+            BINANCE_USDM_EXCHANGE_INFO_PATH,
+            BINANCE_USDM_FUNDING_INFO_PATH,
+        }:
             raise ValueError("Binance USDⓈ-M provider rejected a non-allowlisted path")
         return HttpRequest(
             method="GET",
@@ -318,7 +352,12 @@ class BinanceUsdmPublicProvider(MarketDataProvider):
 
     @staticmethod
     def _parse_funding(
-        row: object, key: InstrumentKey, position: int
+        row: object,
+        key: InstrumentKey,
+        position: int,
+        funding_interval: str | None,
+        interval_source: FundingIntervalSource,
+        interval_metadata: Mapping[str, object],
     ) -> tuple[Mapping[str, object], datetime, int]:
         if not isinstance(row, Mapping):
             raise ValueError(f"Binance funding row {position} must be an object")
@@ -337,7 +376,9 @@ class BinanceUsdmPublicProvider(MarketDataProvider):
             "predicted_rate": None,
             "mark_price": mark,
             "index_price": None,
-            "funding_interval": None,
+            "funding_interval": funding_interval,
+            "funding_interval_source": interval_source.value,
+            "funding_interval_metadata": dict(interval_metadata),
         }, timestamp, int(row["fundingTime"])
 
     @staticmethod
@@ -390,6 +431,7 @@ class BinanceUsdmPublicProvider(MarketDataProvider):
 
 __all__ = [
     "BINANCE_USDM_EXCHANGE_INFO_PATH",
+    "BINANCE_USDM_FUNDING_INFO_PATH",
     "BINANCE_USDM_FUNDING_PATH",
     "BINANCE_USDM_PUBLIC_SPEC",
     "BinanceUsdmPublicProvider",

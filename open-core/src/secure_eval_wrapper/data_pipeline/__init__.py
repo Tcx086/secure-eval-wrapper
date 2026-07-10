@@ -29,6 +29,7 @@ from secure_eval_wrapper.data_pipeline.non_ohlcv_pipelines import (
     FundingRatePipelineRequest,
     InstrumentMetadataPipeline,
     InstrumentMetadataPipelineRequest,
+    MappingInstrumentSnapshotReader,
     TradePipeline,
     TradePipelineRequest,
 )
@@ -45,6 +46,7 @@ __all__ += [
     "FundingRatePipelineRequest",
     "InstrumentMetadataPipeline",
     "InstrumentMetadataPipelineRequest",
+    "MappingInstrumentSnapshotReader",
     "MarketDataPipelineFailure",
     "TradePipeline",
     "TradePipelineRequest",

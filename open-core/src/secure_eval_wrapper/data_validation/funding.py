@@ -8,7 +8,12 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from secure_eval_wrapper.data_collection.models import FundingRate, InstrumentType, MarketDataType
+from secure_eval_wrapper.data_collection.models import (
+    FundingIntervalSource,
+    FundingRate,
+    InstrumentType,
+    MarketDataType,
+)
 from secure_eval_wrapper.data_collection.time_utils import require_utc_datetime
 from secure_eval_wrapper.data_validation.models import (
     QuarantineReason,
@@ -90,8 +95,12 @@ def _validation_result(
     end: datetime,
     symbol: str | None,
     warning: bool,
+    status_override: ValidationCheckStatus | None = None,
+    extra_details: Mapping[str, object] | None = None,
 ) -> ValidationResult:
-    if findings:
+    if status_override is not None:
+        status = status_override
+    elif findings:
         status = ValidationCheckStatus.WARNING if warning else ValidationCheckStatus.FAILED
     else:
         status = ValidationCheckStatus.PASSED
@@ -102,8 +111,11 @@ def _validation_result(
         status=status,
         created_at_utc=created,
         message=(
-            f"Detected {len(findings)} {check_type} finding(s)."
-            if findings else f"No {check_type} findings detected."
+            f"Skipped {check_type}; grounded funding interval metadata is unavailable."
+            if status is ValidationCheckStatus.SKIPPED
+            else f"Detected {len(findings)} {check_type} finding(s)."
+            if findings
+            else f"No {check_type} findings detected."
         ),
         symbol=symbol,
         window_start_utc=start,
@@ -114,6 +126,7 @@ def _validation_result(
             "quarantine_reason": _REASONS[check_type].value,
             "finding_count": len(findings),
             "findings": tuple(findings),
+            **dict(extra_details or {}),
         },
     )
 
@@ -215,6 +228,30 @@ def validate_funding_rates(
             })
         previous = record
 
+    grounded_interval_records = [
+        record for record in valid_timestamp_records
+        if record.funding_interval_source is not FundingIntervalSource.UNAVAILABLE
+        and _interval(record.funding_interval) is not None
+    ]
+    unavailable_interval_records = [
+        record for record in valid_timestamp_records
+        if record not in grounded_interval_records
+    ]
+    interval_sources = tuple(sorted({
+        record.funding_interval_source.value for record in valid_timestamp_records
+    }))
+    interval_status = (
+        ValidationCheckStatus.SKIPPED if not grounded_interval_records else None
+    )
+    interval_details = {
+        "interval_availability": (
+            "unavailable" if not grounded_interval_records else "grounded"
+        ),
+        "grounded_record_count": len(grounded_interval_records),
+        "unavailable_record_count": len(unavailable_interval_records),
+        "interval_sources": interval_sources,
+    }
+
     gap_records = []
     gap_findings = []
     mismatch_records = []
@@ -253,16 +290,16 @@ def validate_funding_rates(
                 })
 
     specs = (
-        (DUPLICATE_FUNDING_TIMESTAMP, _ids(duplicate_records), duplicate_findings, False),
-        (NON_FINITE_FUNDING_RATE, _ids(bad_rates), tuple({"funding_rate_id": str(item.funding_rate_id), "rate": item.rate} for item in bad_rates), False),
-        (MALFORMED_MARK_PRICE, _ids(bad_marks), tuple({"funding_rate_id": str(item.funding_rate_id), "mark_price": item.mark_price} for item in bad_marks), False),
-        (INVALID_FUNDING_TIMESTAMP, _ids(invalid_timestamps), tuple(invalid_timestamp_findings), False),
-        (AMBIGUOUS_FUNDING_INSTRUMENT, _ids(ambiguous), tuple(ambiguous_findings), False),
-        (OUT_OF_WINDOW_FUNDING, _ids(out_of_window), tuple({"funding_rate_id": str(item.funding_rate_id), "funding_time_utc": item.funding_time_utc} for item in out_of_window), False),
-        (NON_MONOTONIC_FUNDING_TIMESTAMP, _ids(nonmonotonic), tuple(nonmonotonic_findings), False),
-        (FUNDING_TIMESTAMP_GAP, _ids(gap_records), tuple(gap_findings), True),
-        (FUNDING_INTERVAL_MISMATCH, _ids(mismatch_records), tuple(mismatch_findings), True),
-        (FUNDING_PROVIDER_INSTRUMENT_MISMATCH, _ids(provider_mismatch), tuple(provider_findings), False),
+        (DUPLICATE_FUNDING_TIMESTAMP, _ids(duplicate_records), duplicate_findings, False, None, None),
+        (NON_FINITE_FUNDING_RATE, _ids(bad_rates), tuple({"funding_rate_id": str(item.funding_rate_id), "rate": item.rate} for item in bad_rates), False, None, None),
+        (MALFORMED_MARK_PRICE, _ids(bad_marks), tuple({"funding_rate_id": str(item.funding_rate_id), "mark_price": item.mark_price} for item in bad_marks), False, None, None),
+        (INVALID_FUNDING_TIMESTAMP, _ids(invalid_timestamps), tuple(invalid_timestamp_findings), False, None, None),
+        (AMBIGUOUS_FUNDING_INSTRUMENT, _ids(ambiguous), tuple(ambiguous_findings), False, None, None),
+        (OUT_OF_WINDOW_FUNDING, _ids(out_of_window), tuple({"funding_rate_id": str(item.funding_rate_id), "funding_time_utc": item.funding_time_utc} for item in out_of_window), False, None, None),
+        (NON_MONOTONIC_FUNDING_TIMESTAMP, _ids(nonmonotonic), tuple(nonmonotonic_findings), False, None, None),
+        (FUNDING_TIMESTAMP_GAP, _ids(gap_records), tuple(gap_findings), True, interval_status, interval_details),
+        (FUNDING_INTERVAL_MISMATCH, _ids(mismatch_records), tuple(mismatch_findings), True, interval_status, interval_details),
+        (FUNDING_PROVIDER_INSTRUMENT_MISMATCH, _ids(provider_mismatch), tuple(provider_findings), False, None, None),
     )
     results = tuple(
         _validation_result(
@@ -276,8 +313,10 @@ def validate_funding_rates(
             end=end,
             symbol=symbol,
             warning=warning,
+            status_override=status_override,
+            extra_details=extra_details,
         )
-        for check_type, affected, findings, warning in specs
+        for check_type, affected, findings, warning, status_override, extra_details in specs
     )
     return build_validation_report(
         validation_run_id=validation_run_id,
@@ -294,7 +333,12 @@ def validate_funding_rates(
             value for record in records
             if isinstance((value := record.provenance.get("source_sha256")), str)
         ),
-        tolerance_config={"checks": _CHECKS, "gap_policy": "warning", "interval_mismatch_policy": "warning"},
+        tolerance_config={
+            "checks": _CHECKS,
+            "gap_policy": "warning_when_grounded",
+            "interval_mismatch_policy": "warning_when_grounded",
+            "unavailable_interval_policy": "skipped",
+        },
         created_at_utc=created,
     )
 

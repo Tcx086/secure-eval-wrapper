@@ -13,6 +13,7 @@ from secure_eval_wrapper.data_collection.models import (
     FundingRate,
     InstrumentKey,
     InstrumentMetadata,
+    InstrumentType,
     MarketDataType,
     NormalizedTrade,
 )
@@ -44,6 +45,7 @@ from secure_eval_wrapper.data_validation.market_persistence import (
     persist_trade_validation_flow,
 )
 from secure_eval_wrapper.data_validation.trades import validate_trades
+from secure_eval_wrapper.storage.repositories.interfaces import InstrumentSnapshotReader
 
 
 def _utc_now() -> datetime:
@@ -241,6 +243,46 @@ class FundingRatePipeline:
         )
 
 
+class MappingInstrumentSnapshotReader:
+    """Deterministic in-memory snapshot reader for offline pipelines and tests."""
+
+    def __init__(
+        self,
+        snapshots: Mapping[tuple[str, str, str], InstrumentMetadata],
+    ) -> None:
+        normalized: dict[tuple[str, str, str], InstrumentMetadata] = {}
+        for raw_key, snapshot in snapshots.items():
+            if len(raw_key) != 3 or not isinstance(snapshot, InstrumentMetadata):
+                raise TypeError("snapshot mapping requires three-part keys and InstrumentMetadata values")
+            key = (
+                raw_key[0].strip().lower(),
+                raw_key[1].strip(),
+                InstrumentType(raw_key[2]).value,
+            )
+            instrument_key = snapshot.instrument_key
+            if instrument_key is None or key != (
+                instrument_key.provider_name,
+                instrument_key.provider_instrument_id,
+                instrument_key.instrument_type.value,
+            ):
+                raise ValueError("snapshot mapping key conflicts with instrument identity")
+            normalized[key] = snapshot
+        self._snapshots = MappingProxyType(dict(sorted(normalized.items())))
+
+    def get_instrument_snapshot(
+        self,
+        *,
+        provider_name: str,
+        provider_instrument_id: str,
+        instrument_type: str,
+    ) -> InstrumentMetadata | None:
+        return self._snapshots.get((
+            provider_name.strip().lower(),
+            provider_instrument_id.strip(),
+            InstrumentType(instrument_type).value,
+        ))
+
+
 @dataclass(frozen=True)
 class InstrumentMetadataPipelineRequest:
     collection_run_id: UUID
@@ -276,8 +318,19 @@ class InstrumentMetadataPipeline:
         providers: Sequence[MarketDataProvider],
         *,
         repository: object | None = None,
+        snapshot_reader: InstrumentSnapshotReader | None = None,
+        previous_snapshots: Mapping[tuple[str, str, str], InstrumentMetadata] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
+        if snapshot_reader is not None and previous_snapshots is not None:
+            raise ValueError("provide snapshot_reader or previous_snapshots, not both")
+        if previous_snapshots is not None:
+            snapshot_reader = MappingInstrumentSnapshotReader(previous_snapshots)
+        elif snapshot_reader is None and repository is not None and hasattr(
+            repository, "get_instrument_snapshot"
+        ):
+            snapshot_reader = repository
+        self._snapshot_reader = snapshot_reader
         self._clock = _utc_now if clock is None else clock
         self._runner = TypedMarketDataPipeline[InstrumentMetadata, InstrumentPersistenceSummary](
             providers,
@@ -298,10 +351,21 @@ class InstrumentMetadataPipeline:
 
     def _validate(self, validation_run_id, provider_name, records, request):
         identities = ",".join(key.provider_instrument_id for key in request.instruments)
+        previous = []
+        if self._snapshot_reader is not None:
+            for key in request.instruments:
+                snapshot = self._snapshot_reader.get_instrument_snapshot(
+                    provider_name=key.provider_name,
+                    provider_instrument_id=key.provider_instrument_id,
+                    instrument_type=key.instrument_type.value,
+                )
+                if snapshot is not None:
+                    previous.append(snapshot)
         return validate_instruments(
             validation_run_id=validation_run_id,
             dataset_ref=f"public-instruments:{provider_name}:{identities}",
             instruments=records,
+            previous_instruments=tuple(previous),
             clock=self._clock,
         )
 
@@ -335,6 +399,7 @@ __all__ = [
     "FundingRatePipeline",
     "FundingRatePipelineRequest",
     "InstrumentMetadataPipeline",
+    "MappingInstrumentSnapshotReader",
     "InstrumentMetadataPipelineRequest",
     "TradePipeline",
     "TradePipelineRequest",

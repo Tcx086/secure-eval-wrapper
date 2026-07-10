@@ -28,6 +28,7 @@ from secure_eval_wrapper.data_collection.models import (
     CollectionRunSummary,
     CollectionStatus,
     DataRequest,
+    FundingIntervalSource,
     FundingRate,
     InstrumentKey,
     InstrumentMetadata,
@@ -60,8 +61,11 @@ from secure_eval_wrapper.data_collection.instruments import (
 )
 from secure_eval_wrapper.data_collection.providers import MarketDataProvider
 from secure_eval_wrapper.data_collection.registry import (
+    CONCRETE_PROVIDER_SPECS,
+    EXCHANGE_CAPABILITY_SUMMARIES,
     PLANNED_PROVIDER_SPECS,
     PROVIDER_SPECS,
+    get_exchange_capability_summary,
     get_provider_spec,
     list_provider_specs,
 )
@@ -76,9 +80,12 @@ __all__ = [
     "BinanceSpotOhlcvProvider",
     "BinanceSpotPublicProvider",
     "BinanceUsdmPublicProvider",
+    "CONCRETE_PROVIDER_SPECS",
     "CollectionRunSummary",
     "CollectionStatus",
     "DataRequest",
+    "EXCHANGE_CAPABILITY_SUMMARIES",
+    "FundingIntervalSource",
     "FundingRate",
     "InstrumentKey",
     "InstrumentMetadata",
@@ -101,6 +108,7 @@ __all__ = [
     "TradeSide",
     "TransportError",
     "UrlLibHttpTransport",
+    "get_exchange_capability_summary",
     "get_provider_spec",
     "list_provider_specs",
     "SampleProvider",

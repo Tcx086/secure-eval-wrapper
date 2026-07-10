@@ -9,6 +9,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from secure_eval_wrapper.data_collection.hashing import sha256_payload
 from secure_eval_wrapper.data_collection.models import (
+    FundingIntervalSource,
     FundingRate,
     InstrumentKey,
     InstrumentMetadata,
@@ -171,6 +172,24 @@ def normalize_funding_rate_observation(observation: RawObservation) -> FundingRa
     )
     rate = _decimal(payload, "rate")
     assert rate is not None
+    funding_interval = _text(payload, "funding_interval", optional=True)
+    source_text = _text(payload, "funding_interval_source", optional=True) or "unavailable"
+    try:
+        interval_source = FundingIntervalSource(source_text)
+    except ValueError as exc:
+        raise ValueError("unsupported funding_interval_source") from exc
+    if interval_source is FundingIntervalSource.UNAVAILABLE and funding_interval is not None:
+        raise ValueError("unavailable funding interval source requires a null interval")
+    if interval_source is not FundingIntervalSource.UNAVAILABLE and funding_interval is None:
+        raise ValueError("grounded funding interval source requires an interval")
+    interval_metadata = payload.get("funding_interval_metadata", {})
+    if not isinstance(interval_metadata, Mapping):
+        raise ValueError("funding_interval_metadata must be a mapping")
+    provenance = _provenance(observation)
+    provenance.update({
+        "funding_interval_source": interval_source.value,
+        "funding_interval_metadata": dict(interval_metadata),
+    })
     return FundingRate(
         funding_rate_id=uuid5(
             NAMESPACE_URL,
@@ -181,11 +200,12 @@ def normalize_funding_rate_observation(observation: RawObservation) -> FundingRa
         funding_time_utc=funding_time,
         rate=rate,
         source_observation_ids=(observation.observation_id,),
-        funding_interval=_text(payload, "funding_interval", optional=True),
+        funding_interval=funding_interval,
+        funding_interval_source=interval_source,
         predicted_rate=_decimal(payload, "predicted_rate", optional=True),
         mark_price=_decimal(payload, "mark_price", optional=True, positive=True),
         index_price=_decimal(payload, "index_price", optional=True, positive=True),
-        provenance=_provenance(observation),
+        provenance=provenance,
         instrument_key=key,
         provider_instrument_id=key.provider_instrument_id,
     )

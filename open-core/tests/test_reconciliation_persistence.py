@@ -256,7 +256,7 @@ class ReconciliationPersistenceTests(unittest.TestCase):
             REPO_ROOT / "open-core" / "db" / "migrations"
         )
         verifier.inspect_migrations(migrations)
-        self.assertEqual(migrations[-1].filename, "0005_trade_funding_instrument_hardening.sql")
+        self.assertEqual(migrations[-1].filename, "0006_phase2_final_hardening.sql")
         self.assertIn("reconciliation_results", verifier.REQUIRED_TABLES["data_quality"])
         self.assertIn(
             "reconciliation_check_results",
@@ -265,6 +265,24 @@ class ReconciliationPersistenceTests(unittest.TestCase):
         self.assertIn(
             ("data_quality", "reconciliation_results"),
             verifier.REQUIRED_COLUMNS,
+        )
+        self.assertIn(
+            (
+                "market_data",
+                "validated_trades",
+                "chk_validated_trades_phase2_identity_required",
+                False,
+            ),
+            verifier.REQUIRED_CHECK_CONSTRAINTS,
+        )
+        self.assertIn(
+            (
+                "market_data",
+                "funding_rates",
+                "chk_funding_rates_phase2_identity_required",
+                False,
+            ),
+            verifier.REQUIRED_CHECK_CONSTRAINTS,
         )
         self.assertIn(
             (

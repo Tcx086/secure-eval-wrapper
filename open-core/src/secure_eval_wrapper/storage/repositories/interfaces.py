@@ -9,13 +9,27 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID
+
+from secure_eval_wrapper.data_collection.models import InstrumentMetadata
 
 
 StorageRecord = Mapping[str, Any]
 StoragePayload = Mapping[str, Any]
 
+
+class InstrumentSnapshotReader(Protocol):
+    """Read-only boundary for latest immutable instrument snapshots."""
+
+    def get_instrument_snapshot(
+        self,
+        *,
+        provider_name: str,
+        provider_instrument_id: str,
+        instrument_type: str,
+    ) -> InstrumentMetadata | None:
+        """Return the latest prior snapshot for one concrete instrument identity."""
 
 class MarketDataRepository(ABC):
     """Persistence contract for raw and validated market data records."""

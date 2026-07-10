@@ -279,3 +279,20 @@ validation-report foreign keys are verifier-covered. Reads use end-exclusive win
 instrument types. Typed persistence writes raw observations, reports/checks, accepted rows, and
 quarantine decisions inside one outer transaction. PostgreSQL remains the only authoritative
 implementation.
+
+## Phase 2 final identity and snapshot hardening
+
+Logical trade and funding hashes deliberately exclude raw observation IDs and collection provenance.
+Those values remain in `source_observation_ids` and `provenance_jsonb`, while `record_sha256` covers
+only immutable provider identity and economic event content. Re-fetching the same event is therefore
+idempotent; changing price, quantity, rate, timestamp, or grounded interval still conflicts.
+
+The PostgreSQL repository exposes a read-only latest-snapshot boundary that rehydrates instrument
+rows for pipeline drift comparison. Metadata versions remain keyed by provider identity, type, and
+metadata hash; drift inserts a new version and never mutates the prior snapshot.
+
+Migration `0006_phase2_final_hardening.sql` leaves the recorded `0005` file untouched, maps legacy
+instrument type names, restores the canonical type check, and adds `NOT VALID` identity checks.
+PostgreSQL enforces those checks for new/updated rows while allowing an existing legacy installation
+to upgrade without an immediate historical backfill. Catalog verification covers names and expected
+validation state for all four hardening checks.

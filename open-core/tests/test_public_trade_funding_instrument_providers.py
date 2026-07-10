@@ -14,6 +14,7 @@ from secure_eval_wrapper.data_collection import (
     BinanceSpotPublicProvider,
     BinanceUsdmPublicProvider,
     DataRequest,
+    FundingIntervalSource,
     HttpRequest,
     HttpResponse,
     MarketDataType,
@@ -195,7 +196,10 @@ class FundingAndInstrumentProviderTests(unittest.TestCase):
         )
 
     def test_binance_funding_is_ascending_and_preserves_mark_price(self):
-        transport = QueueTransport(FIXTURE["binance_usdm_funding"])
+        transport = QueueTransport((
+            FIXTURE["binance_usdm_funding_info"],
+            FIXTURE["binance_usdm_funding"],
+        ))
         provider = BinanceUsdmPublicProvider(
             transport=transport, max_pages=1, clock=lambda: NOW
         )
@@ -212,16 +216,22 @@ class FundingAndInstrumentProviderTests(unittest.TestCase):
         )
         observations = provider.fetch_funding_rates(request)
         rates = normalize_funding_rate_observations(observations)
-        sent = transport.requests[0]
+        self.assertEqual(transport.requests[0].url, "https://fapi.binance.com/fapi/v1/fundingInfo")
+        sent = transport.requests[1]
         self.assertEqual(sent.url, "https://fapi.binance.com/fapi/v1/fundingRate")
         self.assertEqual(sent.headers, {})
         self.assertEqual(tuple(str(item.rate) for item in rates), ("0.0001", "-0.0002"))
         self.assertEqual(str(rates[0].mark_price), "100.50")
+        self.assertTrue(all(item.funding_interval == "8h" for item in rates))
+        self.assertTrue(all(
+            item.funding_interval_source is FundingIntervalSource.PROVIDER_REPORTED
+            for item in rates
+        ))
         self.assertEqual(rates[0].instrument_key.instrument_type.value, "perpetual_swap")
 
     def test_binance_funding_pagination_advances_one_millisecond(self):
         first, second = FIXTURE["binance_usdm_funding"]
-        transport = QueueTransport(([first], [second], []))
+        transport = QueueTransport((FIXTURE["binance_usdm_funding_info"], [first], [second], []))
         provider = BinanceUsdmPublicProvider(
             transport=transport, max_pages=3, clock=lambda: NOW
         )
@@ -239,15 +249,18 @@ class FundingAndInstrumentProviderTests(unittest.TestCase):
         observations = provider.fetch_funding_rates(request)
         self.assertEqual(len(observations), 2)
         self.assertEqual(
-            transport.requests[1].query_params["startTime"],
+            transport.requests[2].query_params["startTime"],
             first["fundingTime"] + 1,
         )
         self.assertEqual(
-            transport.requests[2].query_params["startTime"],
+            transport.requests[3].query_params["startTime"],
             second["fundingTime"] + 1,
         )
     def test_okx_funding_uses_realized_rate_and_preserves_predicted_rate(self):
-        transport = QueueTransport(FIXTURE["okx_swap_funding"])
+        transport = QueueTransport((
+            FIXTURE["okx_swap_current_funding"],
+            FIXTURE["okx_swap_funding"],
+        ))
         provider = OkxPublicProvider(
             transport=transport, max_pages=1, clock=lambda: NOW
         )
@@ -267,7 +280,17 @@ class FundingAndInstrumentProviderTests(unittest.TestCase):
         )
         self.assertEqual(tuple(str(item.rate) for item in rates), ("0.0001", "-0.0002"))
         self.assertEqual(tuple(str(item.predicted_rate) for item in rates), ("0.0001", "0.0000"))
+        self.assertTrue(all(item.funding_interval == "8h" for item in rates))
+        self.assertTrue(all(
+            item.funding_interval_source is FundingIntervalSource.METADATA_REPORTED
+            for item in rates
+        ))
+        self.assertEqual(
+            transport.requests[0].url,
+            "https://openapi.okx.com/api/v5/public/funding-rate",
+        )
         self.assertEqual(transport.requests[0].headers, {})
+        self.assertEqual(transport.requests[1].headers, {})
 
     def test_all_four_instrument_scopes_normalize_without_identity_collision(self):
         binance_spot = BinanceSpotPublicProvider(

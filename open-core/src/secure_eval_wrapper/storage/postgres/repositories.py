@@ -15,6 +15,7 @@ from decimal import Decimal
 from typing import Any, Iterator
 from uuid import UUID
 
+from secure_eval_wrapper.storage.postgres.mappers import instrument_metadata_from_row
 from secure_eval_wrapper.storage.repositories.interfaces import (
     DataQualityRepository,
     MarketDataRepository,
@@ -529,6 +530,19 @@ class PostgresMarketDataRepository(_PostgresRepositoryBase, MarketDataRepository
             (provider_name, provider_instrument_id, instrument_type),
         )
 
+    def get_instrument_snapshot(
+        self,
+        *,
+        provider_name: str,
+        provider_instrument_id: str,
+        instrument_type: str,
+    ):
+        row = self.get_instrument(
+            provider_name=provider_name,
+            provider_instrument_id=provider_instrument_id,
+            instrument_type=instrument_type,
+        )
+        return None if row is None else instrument_metadata_from_row(row)
     def list_instruments(
         self,
         *,

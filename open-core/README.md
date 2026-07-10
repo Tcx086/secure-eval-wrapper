@@ -76,3 +76,7 @@ The summary covers OHLCV, trades, funding rates, and instruments without printin
 Public-network mode is disabled unless ENABLE_PUBLIC_NETWORK_SMOKE=true. Persistence is a separate
 gate requiring both --persist and ENABLE_POSTGRES_PERSISTENCE=true. Downloaded public responses
 remain in memory and are not written unless persistence is independently and explicitly enabled.
+Final Phase 2 hardening separates `binance` Spot and `binance_usdm` component capabilities, keeps
+trade/funding event hashes stable across collection runs, compares instrument metadata against an
+explicit prior-snapshot reader, and grounds funding gap checks in provider-reported/current public
+metadata. Missing interval evidence is reported as skipped; it is never silently treated as 8h.

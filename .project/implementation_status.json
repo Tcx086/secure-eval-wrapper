@@ -170,7 +170,11 @@
         "Add typed trade, funding-rate, and instrument metadata pipelines",
         "Add a fixture-default complete public market-data CLI with independent network and PostgreSQL gates",
         "Add comprehensive offline public-data vertical and security-boundary tests",
-        "Complete the Phase 2 exit review without starting Phase 3"
+        "Complete the Phase 2 exit review without starting Phase 3",
+        "Exclude volatile collection provenance from stable trade and funding event hashes while preserving full source audit data",
+        "Integrate prior instrument snapshots into the metadata pipeline through PostgreSQL and in-memory reader boundaries",
+        "Separate concrete Binance Spot, Binance USD-M, and OKX component capabilities from exchange-level summaries",
+        "Ground funding intervals in verified public metadata and explicitly skip gap checks when interval evidence is unavailable"
       ],
       "todo": []
     },

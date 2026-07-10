@@ -525,6 +525,32 @@ REQUIRED_FOREIGN_KEYS = (
         ("validation_report_id",),
     ),
 )
+REQUIRED_CHECK_CONSTRAINTS = (
+    (
+        "market_data",
+        "instruments",
+        "chk_instruments_phase2_types",
+        True,
+    ),
+    (
+        "market_data",
+        "validated_trades",
+        "chk_validated_trades_phase2_identity_required",
+        False,
+    ),
+    (
+        "market_data",
+        "funding_rates",
+        "chk_funding_rates_phase2_identity_required",
+        False,
+    ),
+    (
+        "market_data",
+        "instruments",
+        "chk_instruments_phase2_identity_required",
+        False,
+    ),
+)
 UNSAFE_SQL_PATTERNS = (
     r"\bDROP\s+DATABASE\b",
     r"\bDROP\s+SCHEMA\b",
@@ -542,6 +568,11 @@ UNSAFE_SQL_PATTERNS = (
     r"\bGRANT\b",
     r"\bREVOKE\b",
 )
+ALLOWED_DATA_MIGRATIONS = {
+    "0006_phase2_final_hardening.sql": (
+        r"\bUPDATE\s+market_data\.instruments\s+SET\s+instrument_type\s*=\s*CASE\b.*?\bWHERE\s+instrument_type\s+IN\s*\(\s*'perpetual'\s*,\s*'future'\s*\)\s*;",
+    ),
+}
 
 
 class CatalogClient(Protocol):
@@ -671,7 +702,23 @@ def inspect_migrations(migrations: list[MigrationFile]) -> None:
     for migration in migrations:
         sql = migration.path.read_text(encoding="utf-8")
         stripped_sql = strip_sql_comments(sql)
+        allowed_updates = ALLOWED_DATA_MIGRATIONS.get(migration.filename, ())
+        update_statements = re.findall(
+            r"\bUPDATE\b.*?;",
+            stripped_sql,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if allowed_updates and (
+            len(update_statements) != len(allowed_updates)
+            or any(
+                re.fullmatch(pattern, statement.strip(), flags=re.IGNORECASE | re.DOTALL) is None
+                for pattern, statement in zip(allowed_updates, update_statements)
+            )
+        ):
+            fail(f"{migration.filename} contains an unapproved data migration statement")
         for pattern in UNSAFE_SQL_PATTERNS:
+            if pattern == r"\bUPDATE\b" and allowed_updates:
+                continue
             if re.search(pattern, stripped_sql, flags=re.IGNORECASE):
                 fail(
                     f"{migration.filename} contains unsafe statement matching pattern: {pattern}"
@@ -837,6 +884,47 @@ def fetch_unique_constraints(client: CatalogClient) -> set[tuple[str, str, tuple
         for row in rows
     }
 
+
+def fetch_check_constraints(
+    client: CatalogClient,
+) -> set[tuple[str, str, str, bool]]:
+    rows = client.query(
+        f"""
+        SELECT
+            namespace.nspname,
+            table_class.relname,
+            constraint_info.conname,
+            CASE WHEN constraint_info.convalidated THEN 'true' ELSE 'false' END
+        FROM pg_constraint AS constraint_info
+        JOIN pg_class AS table_class
+            ON table_class.oid = constraint_info.conrelid
+        JOIN pg_namespace AS namespace
+            ON namespace.oid = table_class.relnamespace
+        WHERE constraint_info.contype = 'c'
+          AND namespace.nspname IN ({sql_string_list(REQUIRED_TABLES)})
+        """
+    )
+    return {
+        (
+            str(row[0]),
+            str(row[1]),
+            str(row[2]),
+            str(row[3]).lower() == "true",
+        )
+        for row in rows
+    }
+
+
+def verify_check_constraints(client: CatalogClient) -> None:
+    existing = fetch_check_constraints(client)
+    missing = sorted(set(REQUIRED_CHECK_CONSTRAINTS) - existing)
+    if missing:
+        formatted = ", ".join(
+            f"{schema}.{table}.{name} (validated={validated})"
+            for schema, table, name, validated in missing
+        )
+        fail("required check constraints are missing from PostgreSQL: " + formatted)
+    print(f"OK: found {len(REQUIRED_CHECK_CONSTRAINTS)} required PostgreSQL check constraints")
 
 def fetch_foreign_keys(client: CatalogClient) -> set[
     tuple[str, str, tuple[str, ...], str, str, tuple[str, ...]]
@@ -1058,6 +1146,7 @@ def main() -> None:
         verify_required_columns(client)
         verify_required_indexes(client)
         verify_unique_constraints(client)
+        verify_check_constraints(client)
         verify_foreign_keys(client)
         verify_migration_records(client, migrations)
     finally:

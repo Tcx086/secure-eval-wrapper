@@ -149,6 +149,13 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add comprehensive offline provider, pagination, normalization, validation, gating, persistence, pipeline, CLI, socket-isolation, and boundary tests.
 - [x] Complete the Phase 2 exit review without starting Phase 3 alpha implementation.
 
+### Phase 2 final hardening
+
+- [x] Exclude volatile collection provenance from stable trade/funding event hashes while preserving full source audit columns.
+- [x] Integrate prior instrument snapshots into the metadata pipeline with PostgreSQL and in-memory reader boundaries.
+- [x] Separate concrete `binance`, `binance_usdm`, and `okx` component capabilities from exchange-level summaries.
+- [x] Ground funding intervals in verified public metadata, preserve typed interval sources, and skip gap checks explicitly when unavailable.
+
 ## Todo
 
 ### Future provider enhancements

@@ -179,8 +179,9 @@ Public sample highlights:
 
 ## Public data quick start
 
-Phase 2 public market data is complete for Binance and OKX. Run the complete offline, socket-free
-fixture pipeline from the repository root:
+Phase 2 public market data is complete for Binance and OKX, including stable event hashes,
+metadata-drift snapshot integration, concrete provider-component identities, and grounded funding
+interval validation. Run the complete offline, socket-free fixture pipeline from the repository root:
 
     python open-core\scripts\run_public_market_data_pipeline.py
 

@@ -22,3 +22,6 @@ Migration 0005 extends validated trades and funding rates with provider instrume
 conflict hashes. Instruments are stored as immutable metadata versions keyed by provider,
 provider instrument ID, instrument type, and metadata hash. This prevents Spot and perpetual
 contracts from sharing ambiguous identities while preserving historical metadata drift.
+Migration 0006 maps legacy `perpetual`/`future` values to the canonical derivative names and adds
+upgrade-safe checks that require complete provider identity and logical hashes on new trade,
+funding, and instrument records.

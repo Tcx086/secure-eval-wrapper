@@ -14,6 +14,7 @@ from secure_eval_wrapper.data_collection.instruments import perpetual_instrument
 from secure_eval_wrapper.data_collection.models import (
     CollectionStatus,
     DataRequest,
+    FundingIntervalSource,
     InstrumentKey,
     InstrumentType,
     MarketDataType,
@@ -31,9 +32,11 @@ from secure_eval_wrapper.data_collection.time_utils import require_utc_datetime
 
 OKX_HISTORY_TRADES_PATH = "/api/v5/market/history-trades"
 OKX_FUNDING_HISTORY_PATH = "/api/v5/public/funding-rate-history"
+OKX_CURRENT_FUNDING_PATH = "/api/v5/public/funding-rate"
 OKX_INSTRUMENTS_PATH = "/api/v5/public/instruments"
 OKX_HISTORY_TRADES_SOURCE_ENDPOINT = "okx-v5:/api/v5/market/history-trades"
 OKX_FUNDING_HISTORY_SOURCE_ENDPOINT = "okx-v5:/api/v5/public/funding-rate-history"
+OKX_CURRENT_FUNDING_SOURCE_ENDPOINT = "okx-v5:/api/v5/public/funding-rate"
 OKX_INSTRUMENTS_SOURCE_ENDPOINT = "okx-v5:/api/v5/public/instruments"
 OKX_MAX_HISTORY_TRADE_LIMIT = 100
 OKX_MAX_FUNDING_LIMIT = 400
@@ -74,6 +77,15 @@ def _from_ms(value: object, *, field_name: str) -> tuple[datetime, int]:
 
 def _iso(value: datetime) -> str:
     return require_utc_datetime(value).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _format_funding_interval(milliseconds: int) -> str:
+    if milliseconds <= 0 or milliseconds % 60_000:
+        raise ValueError("OKX funding interval must be a positive whole number of minutes")
+    minutes = milliseconds // 60_000
+    if minutes % 60 == 0:
+        return f"{minutes // 60}h"
+    return f"{minutes}m"
 
 
 def okx_spot_instrument_key(symbol: str) -> InstrumentKey:
@@ -139,6 +151,7 @@ class OkxPublicProvider(OkxPublicOhlcvProvider):
             OKX_HISTORY_CANDLES_PATH,
             OKX_HISTORY_TRADES_PATH,
             OKX_FUNDING_HISTORY_PATH,
+            OKX_CURRENT_FUNDING_PATH,
             OKX_INSTRUMENTS_PATH,
         }:
             raise ValueError("OKX public provider rejected a non-allowlisted V5 path")
@@ -209,6 +222,7 @@ class OkxPublicProvider(OkxPublicOhlcvProvider):
 
     def fetch_funding_rates(self, request: DataRequest) -> Sequence[RawObservation]:
         key, start, end, limit, pages = self._funding_request(request)
+        funding_interval, interval_source, interval_metadata = self._fetch_funding_interval(key)
         cursor = _ms(end)
         cursors = {cursor}
         observations: dict[int, RawObservation] = {}
@@ -226,7 +240,9 @@ class OkxPublicProvider(OkxPublicOhlcvProvider):
                 break
             page_times: list[tuple[datetime, int]] = []
             for position, row in enumerate(rows):
-                payload, funding_at, timestamp_ms = self._parse_funding(row, key, position)
+                payload, funding_at, timestamp_ms = self._parse_funding(
+                    row, key, position, funding_interval, interval_source, interval_metadata
+                )
                 page_times.append((funding_at, timestamp_ms))
                 if timestamp_ms in observations:
                     raise ValueError("OKX funding pagination returned a duplicate timestamp")
@@ -262,6 +278,46 @@ class OkxPublicProvider(OkxPublicOhlcvProvider):
             cursors.add(next_cursor)
             cursor = next_cursor
         return tuple(observations[timestamp] for timestamp in sorted(observations))
+
+    def _fetch_funding_interval(
+        self,
+        key: InstrumentKey,
+    ) -> tuple[str | None, FundingIntervalSource, Mapping[str, object]]:
+        query = {"instId": key.provider_instrument_id}
+        response = self._transport.send(
+            self._build_public_request(OKX_CURRENT_FUNDING_PATH, query)
+        )
+        rows = self._decode_envelope(response, OKX_CURRENT_FUNDING_PATH)
+        matches = [
+            row for row in rows
+            if isinstance(row, Mapping) and row.get("instId") == key.provider_instrument_id
+        ]
+        if len(matches) > 1:
+            raise ValueError("OKX current funding endpoint returned a duplicate instrument")
+        if not matches:
+            return None, FundingIntervalSource.UNAVAILABLE, {
+                "source_endpoint": OKX_CURRENT_FUNDING_SOURCE_ENDPOINT,
+                "reason": "instrument_not_returned",
+            }
+        funding_time = matches[0].get("fundingTime")
+        next_funding_time = matches[0].get("nextFundingTime")
+        if not (
+            isinstance(funding_time, str)
+            and funding_time.isdigit()
+            and isinstance(next_funding_time, str)
+            and next_funding_time.isdigit()
+        ):
+            return None, FundingIntervalSource.UNAVAILABLE, {
+                "source_endpoint": OKX_CURRENT_FUNDING_SOURCE_ENDPOINT,
+                "reason": "schedule_timestamps_unavailable",
+            }
+        elapsed_ms = int(next_funding_time) - int(funding_time)
+        interval = _format_funding_interval(elapsed_ms)
+        return interval, FundingIntervalSource.METADATA_REPORTED, {
+            "source_endpoint": OKX_CURRENT_FUNDING_SOURCE_ENDPOINT,
+            "funding_time": funding_time,
+            "next_funding_time": next_funding_time,
+        }
 
     def fetch_instruments(self, request: DataRequest) -> Sequence[RawObservation]:
         keys = self._instrument_request(request)
@@ -422,7 +478,12 @@ class OkxPublicProvider(OkxPublicOhlcvProvider):
 
     @staticmethod
     def _parse_funding(
-        row: object, key: InstrumentKey, position: int
+        row: object,
+        key: InstrumentKey,
+        position: int,
+        funding_interval: str | None,
+        interval_source: FundingIntervalSource,
+        interval_metadata: Mapping[str, object],
     ) -> tuple[Mapping[str, object], datetime, int]:
         if not isinstance(row, Mapping):
             raise ValueError(f"OKX funding row {position} must be an object")
@@ -442,7 +503,9 @@ class OkxPublicProvider(OkxPublicOhlcvProvider):
             "predicted_rate": predicted,
             "mark_price": None,
             "index_price": None,
-            "funding_interval": None,
+            "funding_interval": funding_interval,
+            "funding_interval_source": interval_source.value,
+            "funding_interval_metadata": dict(interval_metadata),
             "formula_type": row.get("formulaType"),
             "method": row.get("method"),
         }, funding_at, timestamp_ms
@@ -491,6 +554,7 @@ class OkxPublicProvider(OkxPublicOhlcvProvider):
 
 
 __all__ = [
+    "OKX_CURRENT_FUNDING_PATH",
     "OKX_FUNDING_HISTORY_PATH",
     "OKX_HISTORY_TRADES_PATH",
     "OKX_INSTRUMENTS_PATH",

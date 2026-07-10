@@ -84,6 +84,8 @@ class _FixtureTransport:
             if path == "/api/v3/exchangeInfo":
                 return _response(self._responses["binance_spot_exchange_info"])
         if self._provider == "binance_usdm":
+            if path == "/fapi/v1/fundingInfo":
+                return _response(self._responses["binance_usdm_funding_info"])
             if path == "/fapi/v1/fundingRate":
                 return _response(self._responses["binance_usdm_funding"])
             if path == "/fapi/v1/exchangeInfo":
@@ -100,6 +102,8 @@ class _FixtureTransport:
                 })
             if path == "/api/v5/market/history-trades":
                 return _response(self._responses["okx_spot_history_trades"])
+            if path == "/api/v5/public/funding-rate":
+                return _response(self._responses["okx_swap_current_funding"])
             if path == "/api/v5/public/funding-rate-history":
                 return _response(self._responses["okx_swap_funding"])
             if path == "/api/v5/public/instruments":

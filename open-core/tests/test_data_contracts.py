@@ -9,14 +9,20 @@ from decimal import Decimal
 from uuid import UUID
 
 from secure_eval_wrapper.data_collection import (
+    BinanceSpotPublicProvider,
+    BinanceUsdmPublicProvider,
+    CONCRETE_PROVIDER_SPECS,
+    EXCHANGE_CAPABILITY_SUMMARIES,
     CollectionStatus,
     DataRequest,
     MarketDataProvider,
     MarketDataType,
     NormalizedBar,
+    OkxPublicProvider,
     PLANNED_PROVIDER_SPECS,
     ProviderCapabilityStatus,
     RawObservation,
+    get_exchange_capability_summary,
     get_provider_spec,
 )
 from secure_eval_wrapper.data_validation import (
@@ -49,7 +55,7 @@ class CollectionContractTests(unittest.TestCase):
             set(PLANNED_PROVIDER_SPECS),
             {"binance", "okx", "bybit", "coinbase"},
         )
-        self.assertEqual(get_provider_spec(" OKX ").display_name, "OKX")
+        self.assertEqual(get_exchange_capability_summary(" OKX ").display_name, "OKX")
         self.assertEqual(
             get_provider_spec("coinbase").capabilities[MarketDataType.FUNDING_RATES],
             ProviderCapabilityStatus.UNKNOWN,
@@ -68,6 +74,48 @@ class CollectionContractTests(unittest.TestCase):
                 allowed.add(ProviderCapabilityStatus.IMPLEMENTED)
             self.assertTrue(set(spec.capabilities.values()) <= allowed)
 
+    def test_concrete_component_registry_matches_runtime_provider_names(self) -> None:
+        self.assertEqual(set(CONCRETE_PROVIDER_SPECS), {"binance", "binance_usdm", "okx"})
+        self.assertEqual(get_provider_spec("binance_usdm").name, "binance_usdm")
+        self.assertEqual(
+            get_provider_spec("binance").capabilities[MarketDataType.FUNDING_RATES],
+            ProviderCapabilityStatus.PLANNED,
+        )
+        self.assertEqual(
+            get_provider_spec("binance_usdm").capabilities[MarketDataType.FUNDING_RATES],
+            ProviderCapabilityStatus.IMPLEMENTED,
+        )
+        self.assertEqual(
+            get_provider_spec("binance_usdm").capabilities[MarketDataType.OHLCV],
+            ProviderCapabilityStatus.PLANNED,
+        )
+        self.assertEqual(
+            get_exchange_capability_summary("binance").capabilities[MarketDataType.FUNDING_RATES],
+            ProviderCapabilityStatus.IMPLEMENTED,
+        )
+        self.assertEqual(set(EXCHANGE_CAPABILITY_SUMMARIES), {"binance", "okx", "bybit", "coinbase"})
+    def test_implemented_capabilities_resolve_to_concrete_component_methods(self) -> None:
+        components = {
+            "binance": BinanceSpotPublicProvider(transport=object()),
+            "binance_usdm": BinanceUsdmPublicProvider(transport=object()),
+            "okx": OkxPublicProvider(transport=object()),
+        }
+        method_by_type = {
+            MarketDataType.OHLCV: "fetch_ohlcv",
+            MarketDataType.TRADES: "fetch_trades",
+            MarketDataType.FUNDING_RATES: "fetch_funding_rates",
+            MarketDataType.INSTRUMENTS: "fetch_instruments",
+        }
+        for name, component in components.items():
+            self.assertEqual(component.spec.name, name)
+            self.assertEqual(component.spec.capabilities, CONCRETE_PROVIDER_SPECS[name].capabilities)
+            for data_type, status in component.spec.capabilities.items():
+                if status is ProviderCapabilityStatus.IMPLEMENTED:
+                    method_name = method_by_type[data_type]
+                    self.assertIsNot(
+                        getattr(type(component), method_name),
+                        getattr(MarketDataProvider, method_name),
+                    )
     def test_collection_models_are_constructible_without_io(self) -> None:
         request = DataRequest(
             collection_run_id=RUN_ID,

@@ -1,6 +1,6 @@
-"""Provider registry for public market-data adapters and planned capabilities.
+"""Concrete provider-component registry and exchange-level capability summaries.
 
-The registry contains names and capability states only. It does not contain URLs, credentials,
+Registry values contain names and capability states only. They do not contain URLs, credentials,
 API clients, or fetch behavior.
 """
 
@@ -37,18 +37,26 @@ PROVIDER_SPECS: Mapping[str, ProviderSpec] = MappingProxyType(
     {
         "binance": ProviderSpec(
             name="binance",
-            display_name="Binance",
+            display_name="Binance Spot",
             exchange_name="Binance",
             capabilities=_capabilities(
                 ohlcv=ProviderCapabilityStatus.IMPLEMENTED,
                 trades=ProviderCapabilityStatus.IMPLEMENTED,
+                instruments=ProviderCapabilityStatus.IMPLEMENTED,
+            ),
+        ),
+        "binance_usdm": ProviderSpec(
+            name="binance_usdm",
+            display_name="Binance USDⓈ-M",
+            exchange_name="Binance",
+            capabilities=_capabilities(
                 funding_rates=ProviderCapabilityStatus.IMPLEMENTED,
                 instruments=ProviderCapabilityStatus.IMPLEMENTED,
             ),
         ),
         "okx": ProviderSpec(
             name="okx",
-            display_name="OKX",
+            display_name="OKX V5 Public",
             exchange_name="OKX",
             capabilities=_capabilities(
                 ohlcv=ProviderCapabilityStatus.IMPLEMENTED,
@@ -74,17 +82,51 @@ PROVIDER_SPECS: Mapping[str, ProviderSpec] = MappingProxyType(
     }
 )
 
-# Backward-compatible Phase 2A export. The mapping now includes implemented capability states.
-PLANNED_PROVIDER_SPECS = PROVIDER_SPECS
+CONCRETE_PROVIDER_SPECS: Mapping[str, ProviderSpec] = MappingProxyType(
+    {name: PROVIDER_SPECS[name] for name in ("binance", "binance_usdm", "okx")}
+)
+
+EXCHANGE_CAPABILITY_SUMMARIES: Mapping[str, ProviderSpec] = MappingProxyType(
+    {
+        "binance": ProviderSpec(
+            name="binance",
+            display_name="Binance",
+            exchange_name="Binance",
+            capabilities=_capabilities(
+                ohlcv=ProviderCapabilityStatus.IMPLEMENTED,
+                trades=ProviderCapabilityStatus.IMPLEMENTED,
+                funding_rates=ProviderCapabilityStatus.IMPLEMENTED,
+                instruments=ProviderCapabilityStatus.IMPLEMENTED,
+            ),
+        ),
+        "okx": ProviderSpec(
+            name="okx",
+            display_name="OKX",
+            exchange_name="OKX",
+            capabilities=PROVIDER_SPECS["okx"].capabilities,
+        ),
+        "bybit": PROVIDER_SPECS["bybit"],
+        "coinbase": PROVIDER_SPECS["coinbase"],
+    }
+)
+
+# Backward-compatible Phase 2A exchange-level summary export.
+PLANNED_PROVIDER_SPECS = EXCHANGE_CAPABILITY_SUMMARIES
 
 
 def get_provider_spec(name: str) -> ProviderSpec:
-    """Return a provider specification by canonical, case-insensitive name."""
+    """Return a concrete or planned provider-component specification."""
 
     return PROVIDER_SPECS[name.strip().lower()]
 
 
+def get_exchange_capability_summary(name: str) -> ProviderSpec:
+    """Return aggregate exchange capabilities without implying one component owns them all."""
+
+    return EXCHANGE_CAPABILITY_SUMMARIES[name.strip().lower()]
+
+
 def list_provider_specs() -> tuple[ProviderSpec, ...]:
-    """Return provider specifications in stable registry order."""
+    """Return provider-component specifications in stable registry order."""
 
     return tuple(PROVIDER_SPECS.values())

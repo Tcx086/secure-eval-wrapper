@@ -7,15 +7,20 @@ boundary.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from datetime import datetime
+from decimal import Decimal
 from enum import Enum
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from secure_eval_wrapper.data_collection.hashing import sha256_payload
 from secure_eval_wrapper.data_collection.models import (
     FundingRate,
+    InstrumentKey,
     InstrumentMetadata,
+    InstrumentStatus,
+    InstrumentType,
     NormalizedBar,
     NormalizedTrade,
     RawObservation,
@@ -279,8 +284,8 @@ def normalized_trade_to_row(
         "quote_quantity": trade.quote_quantity,
         "side": trade.side.value,
         "provider_sequence": trade.provider_sequence,
-        "source_observation_ids": trade.source_observation_ids,
-        "provenance": dict(trade.provenance),
+        "first_provider_trade_id": trade.first_provider_trade_id,
+        "last_provider_trade_id": trade.last_provider_trade_id,
     }
     return {
         "trade_id": trade.trade_id,
@@ -319,8 +324,6 @@ def funding_rate_to_row(
         "predicted_rate": funding_rate.predicted_rate,
         "mark_price": funding_rate.mark_price,
         "index_price": funding_rate.index_price,
-        "source_observation_ids": funding_rate.source_observation_ids,
-        "provenance": dict(funding_rate.provenance),
     }
     return {
         "funding_rate_id": funding_rate.funding_rate_id,
@@ -384,6 +387,88 @@ def instrument_metadata_to_row(
     }
 
 
+def _json_mapping(value: object, *, field_name: str) -> dict[str, object]:
+    if value is None:
+        return {}
+    if isinstance(value, Mapping):
+        return dict(value)
+    if isinstance(value, str):
+        parsed = json.loads(value)
+        if isinstance(parsed, Mapping):
+            return dict(parsed)
+    raise ValueError(f"{field_name} must be a JSON object")
+
+
+def _decimal_or_none(value: object) -> Decimal | None:
+    return None if value is None else Decimal(str(value))
+
+
+def instrument_metadata_from_row(row: Mapping[str, object]) -> InstrumentMetadata:
+    """Rehydrate one immutable PostgreSQL instrument snapshot for drift comparison."""
+
+    if not isinstance(row, Mapping):
+        raise TypeError("instrument snapshot row must be a mapping")
+    instrument_type = InstrumentType(str(row["instrument_type"]))
+    key = InstrumentKey(
+        provider_name=str(row["provider_name"]),
+        exchange_name=str(row["exchange"]),
+        provider_instrument_id=str(row["provider_instrument_id"]),
+        base_asset=str(row["base_asset"]),
+        quote_asset=str(row["quote_asset"]),
+        settlement_asset=(
+            None if row.get("settlement_asset") is None else str(row["settlement_asset"])
+        ),
+        instrument_type=instrument_type,
+        canonical_symbol=str(row.get("canonical_display_symbol") or row["symbol"]),
+        contract_type=(
+            None if row.get("contract_type") is None else str(row["contract_type"])
+        ),
+        margin_type=None if row.get("margin_type") is None else str(row["margin_type"]),
+    )
+    metadata = _json_mapping(row.get("metadata_jsonb"), field_name="metadata_jsonb")
+    provenance = _json_mapping(row.get("provenance_jsonb"), field_name="provenance_jsonb")
+    if provenance and "provenance" not in metadata:
+        metadata["provenance"] = provenance
+    return InstrumentMetadata(
+        instrument_id=UUID(str(row["instrument_id"])),
+        symbol=str(row["symbol"]),
+        exchange=str(row["exchange"]),
+        base_asset=str(row["base_asset"]),
+        quote_asset=str(row["quote_asset"]),
+        instrument_type=instrument_type,
+        status=InstrumentStatus(str(row["status"])),
+        source_observation_ids=tuple(
+            UUID(str(value)) for value in row.get("source_observation_ids", ())
+        ),
+        price_precision=(
+            None if row.get("price_precision") is None else int(row["price_precision"])
+        ),
+        quantity_precision=(
+            None if row.get("quantity_precision") is None else int(row["quantity_precision"])
+        ),
+        first_seen_at_utc=row.get("first_seen_at_utc"),
+        last_seen_at_utc=row.get("last_seen_at_utc"),
+        metadata=metadata,
+        instrument_key=key,
+        settlement_asset=key.settlement_asset,
+        tick_size=_decimal_or_none(row.get("tick_size")),
+        quantity_step=_decimal_or_none(row.get("quantity_step")),
+        minimum_quantity=_decimal_or_none(row.get("minimum_quantity")),
+        minimum_notional=_decimal_or_none(row.get("minimum_notional")),
+        contract_value=_decimal_or_none(row.get("contract_value")),
+        contract_multiplier=_decimal_or_none(row.get("contract_multiplier")),
+        margin_asset=None if row.get("margin_asset") is None else str(row["margin_asset"]),
+        margin_type=None if row.get("margin_type") is None else str(row["margin_type"]),
+        listing_at_utc=row.get("listing_at_utc"),
+        expiry_at_utc=row.get("expiry_at_utc"),
+        funding_interval=(
+            None if row.get("funding_interval") is None else str(row["funding_interval"])
+        ),
+        metadata_sha256=(
+            None if row.get("metadata_sha256") is None else str(row["metadata_sha256"])
+        ),
+    )
+
 def quarantine_decision_rows_for_records(
     report: ValidationReport,
     observations: Sequence[RawObservation],
@@ -439,6 +524,7 @@ def quarantine_decision_rows_for_records(
     return tuple(rows)
 __all__ = [
     "funding_rate_to_row",
+    "instrument_metadata_from_row",
     "instrument_metadata_to_row",
     "normalized_bar_to_row",
     "normalized_trade_to_row",

@@ -9,6 +9,7 @@ from decimal import Decimal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from secure_eval_wrapper.data_collection import (
+    FundingIntervalSource,
     FundingRate,
     InstrumentMetadata,
     InstrumentStatus,
@@ -90,6 +91,7 @@ def _funding(label: str, hour: int, rate: str = "0"):
         rate=Decimal(rate),
         source_observation_ids=(_obs(label),),
         funding_interval="8h",
+        funding_interval_source=FundingIntervalSource.PROVIDER_REPORTED,
         mark_price=Decimal("100"),
         provenance={
             "provider_name": "okx",

@@ -6,18 +6,22 @@ import importlib.util
 import sys
 import unittest
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
 
 from secure_eval_wrapper.data_collection import (
     BinanceSpotPublicProvider,
     BinanceUsdmPublicProvider,
+    DataRequest,
     MarketDataProvider,
     MarketDataType,
     OkxPublicProvider,
     binance_usdm_instrument_key,
     okx_spot_instrument_key,
+    normalize_instrument_observations,
     okx_swap_instrument_key,
     spot_instrument_key,
 )
@@ -31,6 +35,9 @@ from secure_eval_wrapper.data_pipeline import (
     TradePipelineRequest,
     TypedPipelineError,
 )
+from secure_eval_wrapper.data_validation.instruments import INSTRUMENT_METADATA_DRIFT
+from secure_eval_wrapper.data_validation.models import ValidationCheckStatus, ValidationStatus
+from secure_eval_wrapper.storage.postgres.mappers import instrument_metadata_from_row
 from secure_eval_wrapper.storage.postgres.repositories import PostgresMarketDataRepository
 
 
@@ -93,8 +100,18 @@ class FailingProvider(MarketDataProvider):
 
 
 class FakeRepository:
-    def __init__(self, fail_trade=False):
+    def __init__(self, fail_trade=False, previous_snapshots=()):
         self.fail_trade = fail_trade
+        self.snapshot_versions = list(previous_snapshots)
+        self._latest_snapshots = {
+            (
+                item.instrument_key.provider_name,
+                item.instrument_key.provider_instrument_id,
+                item.instrument_key.instrument_type.value,
+            ): item
+            for item in previous_snapshots
+            if item.instrument_key is not None
+        }
         self.transactions = 0
         self.commits = 0
         self.rollbacks = 0
@@ -139,8 +156,20 @@ class FakeRepository:
         self.funding.append(row)
         return row["funding_rate_id"]
 
+    def get_instrument_snapshot(self, *, provider_name, provider_instrument_id, instrument_type):
+        return self._latest_snapshots.get((provider_name, provider_instrument_id, instrument_type))
+
     def upsert_instrument(self, row):
         self.instruments.append(row)
+        snapshot = instrument_metadata_from_row(row)
+        self.snapshot_versions.append(snapshot)
+        key = snapshot.instrument_key
+        assert key is not None
+        self._latest_snapshots[(
+            key.provider_name,
+            key.provider_instrument_id,
+            key.instrument_type.value,
+        )] = snapshot
         return row["instrument_id"]
 
     def record_quarantine_decision(self, row):
@@ -276,6 +305,86 @@ class TypedPipelineTests(unittest.TestCase):
             )
         self.assertEqual((repository.commits, repository.rollbacks), (0, 1))
 
+    def test_instrument_pipeline_reads_prior_snapshot_and_keeps_both_versions(self):
+        binance, _, _ = _providers()
+        binance_spot, _, _, _ = _keys()
+        observation = binance.fetch_instruments(
+            DataRequest(
+                COLLECTION,
+                "binance",
+                MarketDataType.INSTRUMENTS,
+                (),
+                instruments=(binance_spot,),
+                limit=1,
+            )
+        )[0]
+        current = normalize_instrument_observations((observation,))[0]
+        previous = replace(
+            current,
+            instrument_id=UUID("83000000-0000-0000-0000-000000000077"),
+            tick_size=Decimal("0.02"),
+            metadata_sha256="f" * 64,
+        )
+        repository = FakeRepository(previous_snapshots=(previous,))
+        result = InstrumentMetadataPipeline(
+            (binance,), repository=repository, clock=lambda: NOW
+        ).run(
+            InstrumentMetadataPipelineRequest(
+                COLLECTION,
+                VALIDATION,
+                {"binance": (binance_spot,)},
+                persistence_enabled=True,
+            )
+        )
+        report = result.outcomes[0].validation_report
+        drift = next(
+            item for item in report.results
+            if item.details["check_type"] == INSTRUMENT_METADATA_DRIFT
+        )
+        self.assertEqual(report.status, ValidationStatus.ACCEPTED_WITH_WARNINGS)
+        self.assertEqual(drift.status, ValidationCheckStatus.WARNING)
+        self.assertEqual(
+            drift.details["findings"][0]["changes"]["tick_size"],
+            {"old": Decimal("0.02"), "new": Decimal("0.01")},
+        )
+        self.assertEqual(len(repository.snapshot_versions), 2)
+        self.assertEqual(
+            {item.instrument_id for item in repository.snapshot_versions},
+            {previous.instrument_id, current.instrument_id},
+        )
+
+    def test_instrument_pipeline_accepts_in_memory_previous_snapshot_mapping(self):
+        binance, _, _ = _providers()
+        binance_spot, _, _, _ = _keys()
+        observation = binance.fetch_instruments(
+            DataRequest(
+                COLLECTION,
+                "binance",
+                MarketDataType.INSTRUMENTS,
+                (),
+                instruments=(binance_spot,),
+                limit=1,
+            )
+        )[0]
+        current = normalize_instrument_observations((observation,))[0]
+        previous = replace(current, tick_size=Decimal("0.02"), metadata_sha256="e" * 64)
+        result = InstrumentMetadataPipeline(
+            (binance,),
+            previous_snapshots={
+                ("binance", "BTCUSDT", "spot"): previous,
+            },
+            clock=lambda: NOW,
+        ).run(
+            InstrumentMetadataPipelineRequest(
+                COLLECTION,
+                VALIDATION,
+                {"binance": (binance_spot,)},
+            )
+        )
+        self.assertEqual(
+            result.outcomes[0].validation_report.status,
+            ValidationStatus.ACCEPTED_WITH_WARNINGS,
+        )
     def test_funding_and_instrument_pipelines_succeed(self):
         binance, binance_usdm, okx = _providers()
         binance_spot, usdm, okx_spot, okx_swap = _keys()

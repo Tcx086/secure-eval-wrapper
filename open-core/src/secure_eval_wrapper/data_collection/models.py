@@ -39,6 +39,15 @@ class TradeSide(str, Enum):
     UNKNOWN = "unknown"
 
 
+class FundingIntervalSource(str, Enum):
+    """Evidence source for a normalized funding interval."""
+
+    PROVIDER_REPORTED = "provider_reported"
+    METADATA_REPORTED = "metadata_reported"
+    DERIVED = "derived"
+    UNAVAILABLE = "unavailable"
+
+
 class InstrumentType(str, Enum):
     SPOT = "spot"
     PERPETUAL_SWAP = "perpetual_swap"
@@ -212,12 +221,21 @@ class FundingRate:
     rate: Decimal
     source_observation_ids: tuple[UUID, ...]
     funding_interval: str | None = None
+    funding_interval_source: FundingIntervalSource = FundingIntervalSource.UNAVAILABLE
     predicted_rate: Decimal | None = None
     mark_price: Decimal | None = None
     index_price: Decimal | None = None
     provenance: Mapping[str, object] = field(default_factory=dict)
     instrument_key: InstrumentKey | None = None
     provider_instrument_id: str | None = None
+
+    def __post_init__(self) -> None:
+        source = FundingIntervalSource(self.funding_interval_source)
+        object.__setattr__(self, "funding_interval_source", source)
+        if source is FundingIntervalSource.UNAVAILABLE and self.funding_interval is not None:
+            raise ValueError("unavailable funding interval source requires a null interval")
+        if source is not FundingIntervalSource.UNAVAILABLE and self.funding_interval is None:
+            raise ValueError("grounded funding interval source requires an interval")
 
 
 @dataclass(frozen=True)
