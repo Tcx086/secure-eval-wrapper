@@ -35,7 +35,11 @@ class FakeCursor:
 
     def execute(self, sql, params=()):
         self.connection.executions.append((sql, tuple(params)))
-        if sql.startswith("INSERT"):
+        if sql.startswith("INSERT INTO backtesting.backtest_run_memberships"):
+            self.rows = [(params[2], params[3])]
+        elif sql.startswith("SELECT record_id, deterministic_ordinal"):
+            self.rows = [(params[2], params[3])]
+        elif sql.startswith("INSERT"):
             self.rows = [self.connection.insert_result] if self.connection.insert_result is not None else []
         else:
             self.rows = [self.connection.select_result] if self.connection.select_result is not None else []
@@ -84,7 +88,7 @@ class MappingRepositoryTests(unittest.TestCase):
     def test_parameterized_insert_and_database_selected_id(self):
         value = self.result.order_intents[0]
         connection = FakeConnection((value.order_intent_id, value.record_sha256))
-        selected = PostgresPhase5Repository(connection).record_order_intent(value)
+        selected = PostgresPhase5Repository(connection).record_order_intent(value, backtest_run_id=self.result.run.backtest_run_id, membership_ordinal=0)
         self.assertEqual(selected, value.order_intent_id)
         sql, params = connection.executions[0]
         self.assertIn("%s", sql)
@@ -94,14 +98,14 @@ class MappingRepositoryTests(unittest.TestCase):
     def test_same_identity_same_hash_retry_is_idempotent(self):
         value = self.result.order_intents[0]
         connection = FakeConnection(None, (value.order_intent_id, value.record_sha256))
-        selected = PostgresPhase5Repository(connection).record_order_intent(value)
+        selected = PostgresPhase5Repository(connection).record_order_intent(value, backtest_run_id=self.result.run.backtest_run_id, membership_ordinal=0)
         self.assertEqual(selected, value.order_intent_id)
 
     def test_same_identity_different_hash_conflicts(self):
         value = self.result.order_intents[0]
         connection = FakeConnection(None, (value.order_intent_id, "f" * 64))
         with self.assertRaises(Phase5ConflictError):
-            PostgresPhase5Repository(connection).record_order_intent(value)
+            PostgresPhase5Repository(connection).record_order_intent(value, backtest_run_id=self.result.run.backtest_run_id, membership_ordinal=0)
         self.assertEqual(connection.rollbacks, 1)
 
     def test_half_open_event_read_is_ordered(self):
@@ -111,7 +115,7 @@ class MappingRepositoryTests(unittest.TestCase):
         sql, params = connection.executions[0]
         self.assertIn("event_timestamp_utc >= %s", sql)
         self.assertIn("event_timestamp_utc < %s", sql)
-        self.assertIn("ORDER BY event_timestamp_utc, event_priority, deterministic_sequence", sql)
+        self.assertIn("ORDER BY child.event_timestamp_utc, child.event_priority, child.deterministic_sequence", sql)
         self.assertEqual(params, (RUN, T0, T0 + timedelta(minutes=1)))
 
 
@@ -144,7 +148,7 @@ class RecordingBundleRepository:
 
 
 def _method(name):
-    def write(self, value):
+    def write(self, value, **kwargs):
         if self.fail_at == name:
             raise RuntimeError(f"injected {name} failure")
         self.rows.append((name, getattr(value, "record_sha256", None)))
@@ -221,7 +225,7 @@ class PackageCliCiBoundaryTests(unittest.TestCase):
         from secure_eval_wrapper.validation import boundary_scan
         boundary_scan()
 
-    def test_migrations_0001_through_0009_are_unchanged(self):
+    def test_migrations_0001_through_0010_are_unchanged(self):
         expected = {
             "0001_initial_schema.sql": "598486e6af2eed4559564593adc0b66deff9e21ea91dbda560980c208a2950c5",
             "0002_schema_migrations.sql": "36c91efa851e10fcc6039ebd8715af1c985237af6ff556e6943e10329458f76f",
@@ -232,6 +236,7 @@ class PackageCliCiBoundaryTests(unittest.TestCase):
             "0007_alpha_signal_library.sql": "0a355d3238afcf8691b5366e46332c3e1e6862a9ed574e740e3435479d8883a4",
             "0008_phase3_phase4_audit_repairs.sql": "a59dff645009c117a5146d2bd4102a9ed048126ca77b61566f8d31bf1fcba64b",
             "0009_phase5_simulated_execution_backtesting.sql": "9b49718ee48e45dda42916568f815723f94578eff814ffe0e0b236aa3523c0d5",
+            "0010_phase5_second_audit_repairs.sql": "1387ccf65a7a7ac8c2c7b4d93de8443e47963740dcefbf30a0ae248ea5e978a0",
         }
         import hashlib
         for name, digest in expected.items():

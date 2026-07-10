@@ -1,4 +1,4 @@
-﻿# Schema Groups
+# Schema Groups
 
 The initial migration creates separate PostgreSQL schemas for the major framework domains:
 
@@ -38,3 +38,13 @@ uses a deterministic sequence plus timestamp priority; metrics and equity remain
 backtest run. Partial bundle commits are prohibited by the repository transaction boundary.
 Existing legacy rows can upgrade with nullable strengthened columns, while every new Phase 5 write
 is complete and conflict-protected.
+
+### Phase 5 complete-run membership repair
+
+Migration 0011 normalizes complete-run membership without changing migrations 0001 through 0010.
+Stable lineage-derived economic rows can be members of multiple complete deterministic backtest
+runs through `backtesting.backtest_run_memberships`. Typed foreign keys protect every referenced
+record and a run/type-local ordinal preserves deterministic reconstruction. Child
+`backtest_run_id` values are non-authoritative owner hints with safe rehoming/nulling semantics;
+queries use memberships exclusively. Aggregate metrics remain run-scoped and are keyed by the
+complete `backtest_run_id`.

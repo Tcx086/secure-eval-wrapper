@@ -204,7 +204,7 @@ def equity_row(value):
 
 def metric_row(value):
     return {
-        "backtest_metric_id": value.backtest_metric_id, "backtest_run_id": value.run_id,
+        "backtest_metric_id": value.backtest_metric_id, "backtest_run_id": value.backtest_run_id,
         "metric_name": value.name, "metric_value": value.value, "metric_unit": value.unit,
         "details_jsonb": dict(value.details), "metric_status": value.status.value,
         "config_sha256": value.config_sha256, "record_sha256": value.record_sha256,

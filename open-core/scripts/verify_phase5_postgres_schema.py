@@ -1,4 +1,4 @@
-"""Catalog verification for Phase 5 second-audit tables, constraints, and orphan counts."""
+"""Catalog verification for Phase 5 normalized complete-run persistence."""
 
 from __future__ import annotations
 
@@ -13,7 +13,14 @@ TABLE_COLUMNS = {
     "execution.cash_ledger_entries": {"cash_ledger_entry_id", "ledger_sequence", "entry_type", "amount", "balance_after", "currency", "record_sha256"},
     "backtesting.backtest_runs": {"backtest_run_id", "account_ref", "base_currency", "fee_currency", "run_mode", "run_identity_version", "implementation_code_sha256", "record_sha256"},
     "backtesting.backtest_events": {"backtest_event_id", "deterministic_sequence", "event_priority", "event_sha256", "record_sha256"},
+    "backtesting.backtest_run_memberships": {
+        "backtest_run_id", "record_type", "record_id", "deterministic_ordinal",
+        "order_intent_id", "risk_decision_id", "order_id", "fill_id", "position_id",
+        "position_snapshot_id", "funding_payment_id", "cash_ledger_entry_id",
+        "account_snapshot_id", "backtest_event_id", "equity_curve_id",
+    },
 }
+
 INDEXES = {
     "uq_phase5_order_intents_signal_series_time", "uq_phase5_orders_intent",
     "uq_phase5_fills_order", "uq_phase5_positions_series", "uq_phase5_risk_logical",
@@ -21,29 +28,54 @@ INDEXES = {
     "uq_phase5_position_snapshots_logical", "idx_phase5_position_snapshots_source",
     "uq_phase5_cash_ledger_logical", "idx_phase5_cash_ledger_source",
     "uq_phase5_backtest_run_base_currency", "uq_phase5_backtest_run_account_ref",
-    "uq_phase5_fill_fee_currency",
+    "uq_phase5_fill_fee_currency", "idx_phase5_run_memberships_record",
+    "idx_phase5_run_memberships_order_intent", "idx_phase5_run_memberships_risk_decision",
+    "idx_phase5_run_memberships_order", "idx_phase5_run_memberships_fill",
+    "idx_phase5_run_memberships_position", "idx_phase5_run_memberships_position_snapshot",
+    "idx_phase5_run_memberships_funding_payment", "idx_phase5_run_memberships_cash_ledger",
+    "idx_phase5_run_memberships_account_snapshot", "idx_phase5_run_memberships_backtest_event",
+    "idx_phase5_run_memberships_equity_curve",
 }
+
 CONSTRAINTS = {
     "phase5_backtest_runs_fee_base_check", "phase5_backtest_runs_mode_check",
     "phase5_backtest_runs_complete_check", "phase5_backtest_runs_data_sha256_check",
     "phase5_backtest_runs_implementation_sha256_check", "phase5_backtest_runs_record_sha256_check",
-    "phase5_positions_run_account_fk", "phase5_account_snapshots_run_account_fk",
-    "phase5_position_snapshots_run_account_fk", "phase5_position_snapshots_kind_check",
-    "phase5_position_snapshots_mark_source_check", "phase5_position_snapshots_mark_provenance_check",
-    "phase5_position_snapshots_sequence_check", "phase5_cash_ledger_sequence_check",
-    "phase5_fills_fee_base_fk", "phase5_cash_ledger_base_currency_fk",
-    "phase5_cash_ledger_fill_currency_fk", "phase5_funding_settlement_base_fk",
+    "phase5_position_snapshots_kind_check", "phase5_position_snapshots_mark_source_check",
+    "phase5_position_snapshots_mark_provenance_check", "phase5_position_snapshots_sequence_check",
+    "phase5_cash_ledger_sequence_check", "phase5_cash_ledger_fill_currency_fk",
     "phase5_risk_order_lineage_check", "phase5_order_intents_implementation_sha256_check",
     "phase5_orders_record_sha256_check", "phase5_fills_record_sha256_check",
     "phase5_positions_record_sha256_check", "phase5_account_snapshots_record_sha256_check",
     "phase5_backtest_metrics_record_sha256_check", "phase5_equity_curves_record_sha256_check",
     "phase5_backtest_events_series_sha256_check",
+    "phase5_order_intents_owner_run_fk", "phase5_orders_owner_run_fk",
+    "phase5_fills_owner_run_fk", "phase5_positions_owner_run_fk",
+    "phase5_risk_decisions_owner_run_fk", "phase5_position_snapshots_owner_run_fk",
+    "phase5_funding_payments_owner_run_fk", "phase5_cash_ledger_owner_run_fk",
+    "phase5_account_snapshots_owner_run_fk", "phase5_backtest_events_owner_run_fk",
+    "phase5_equity_curves_owner_run_fk", "phase5_run_memberships_run_fk",
+    "phase5_run_memberships_type_check", "phase5_run_memberships_ordinal_check",
+    "phase5_run_memberships_one_record_check", "phase5_run_memberships_typed_record_check",
+    "phase5_run_memberships_order_intent_id_fk", "phase5_run_memberships_risk_decision_id_fk",
+    "phase5_run_memberships_order_id_fk", "phase5_run_memberships_fill_id_fk",
+    "phase5_run_memberships_position_id_fk", "phase5_run_memberships_position_snapshot_id_fk",
+    "phase5_run_memberships_funding_payment_id_fk", "phase5_run_memberships_cash_ledger_entry_id_fk",
+    "phase5_run_memberships_account_snapshot_id_fk", "phase5_run_memberships_backtest_event_id_fk",
+    "phase5_run_memberships_equity_curve_id_fk",
 }
 
 
 def connect():
     psycopg = importlib.import_module("psycopg")
-    return psycopg.connect(host=os.environ["POSTGRES_HOST"], port=int(os.environ["POSTGRES_PORT"]), dbname=os.environ["POSTGRES_DB"], user=os.environ["POSTGRES_USER"], password=os.environ["POSTGRES_PASSWORD"], sslmode=os.environ.get("POSTGRES_SSLMODE", "disable"))
+    return psycopg.connect(
+        host=os.environ["POSTGRES_HOST"],
+        port=int(os.environ["POSTGRES_PORT"]),
+        dbname=os.environ["POSTGRES_DB"],
+        user=os.environ["POSTGRES_USER"],
+        password=os.environ["POSTGRES_PASSWORD"],
+        sslmode=os.environ.get("POSTGRES_SSLMODE", "disable"),
+    )
 
 
 def main():
@@ -55,7 +87,11 @@ def main():
         with connection.cursor() as cursor:
             for qualified, required in TABLE_COLUMNS.items():
                 schema, table = qualified.split(".")
-                cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_schema = %s AND table_name = %s", (schema, table))
+                cursor.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = %s AND table_name = %s",
+                    (schema, table),
+                )
                 columns = {row[0] for row in cursor.fetchall()}
                 missing = required - columns
                 if missing:
@@ -66,11 +102,13 @@ def main():
             missing_indexes = INDEXES - {row[0] for row in cursor.fetchall()}
             if missing_indexes:
                 raise RuntimeError("missing Phase 5 indexes: " + ", ".join(sorted(missing_indexes)))
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT conname, convalidated
                 FROM pg_constraint
                 WHERE connamespace IN ('execution'::regnamespace, 'backtesting'::regnamespace)
-            """)
+                """
+            )
             constraints = {row[0]: row[1] for row in cursor.fetchall()}
             missing_constraints = CONSTRAINTS - set(constraints)
             if missing_constraints:
@@ -82,14 +120,16 @@ def main():
                 "orders_without_intents": "SELECT count(*) FROM execution.orders child LEFT JOIN execution.order_intents parent ON parent.order_intent_id=child.order_intent_id WHERE parent.order_intent_id IS NULL",
                 "fills_without_orders": "SELECT count(*) FROM execution.fills child LEFT JOIN execution.orders parent ON parent.order_id=child.order_id WHERE parent.order_id IS NULL",
                 "snapshots_without_positions": "SELECT count(*) FROM execution.position_snapshots child LEFT JOIN execution.positions parent ON parent.position_id=child.position_id WHERE parent.position_id IS NULL",
-                "events_without_runs": "SELECT count(*) FROM backtesting.backtest_events child LEFT JOIN backtesting.backtest_runs parent ON parent.backtest_run_id=child.backtest_run_id WHERE parent.backtest_run_id IS NULL",
+                "memberships_without_runs": "SELECT count(*) FROM backtesting.backtest_run_memberships child LEFT JOIN backtesting.backtest_runs parent ON parent.backtest_run_id=child.backtest_run_id WHERE parent.backtest_run_id IS NULL",
                 "prefill_without_orders": "SELECT count(*) FROM execution.risk_decisions WHERE stage='pre_fill' AND order_id IS NULL",
+                "owned_events_without_membership": "SELECT count(*) FROM backtesting.backtest_events child WHERE child.backtest_run_id IS NOT NULL AND child.record_sha256 IS NOT NULL AND NOT EXISTS (SELECT 1 FROM backtesting.backtest_run_memberships membership WHERE membership.backtest_event_id=child.backtest_event_id)",
+                "owned_equity_without_membership": "SELECT count(*) FROM backtesting.equity_curves child WHERE child.backtest_run_id IS NOT NULL AND child.record_sha256 IS NOT NULL AND NOT EXISTS (SELECT 1 FROM backtesting.backtest_run_memberships membership WHERE membership.equity_curve_id=child.equity_curve_id)",
             }
             for name, sql in orphan_queries.items():
                 cursor.execute(sql)
                 orphans[name] = cursor.fetchone()[0]
             if any(orphans.values()):
-                raise RuntimeError("orphaned Phase 5 rows detected")
+                raise RuntimeError("orphaned Phase 5 rows or memberships detected")
             consistency_queries = {
                 "run_fee_base_mismatch": "SELECT count(*) FROM backtesting.backtest_runs WHERE fee_currency IS DISTINCT FROM base_currency AND record_sha256 IS NOT NULL",
                 "fill_fee_base_mismatch": "SELECT count(*) FROM execution.fills fill JOIN backtesting.backtest_runs run ON run.backtest_run_id=fill.backtest_run_id WHERE fill.fee_asset IS DISTINCT FROM run.base_currency",
@@ -105,7 +145,19 @@ def main():
                 raise RuntimeError("Phase 5 currency/account consistency check failed")
     finally:
         connection.close()
-    print(json.dumps({"status": "ok", "table_counts": counts, "orphans": orphans, "consistency": consistency, "required_index_count": len(INDEXES), "required_constraint_count": len(CONSTRAINTS)}, sort_keys=True))
+    print(
+        json.dumps(
+            {
+                "status": "ok",
+                "table_counts": counts,
+                "orphans": orphans,
+                "consistency": consistency,
+                "required_index_count": len(INDEXES),
+                "required_constraint_count": len(CONSTRAINTS),
+            },
+            sort_keys=True,
+        )
+    )
     return 0
 
 

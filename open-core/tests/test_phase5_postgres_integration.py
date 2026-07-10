@@ -57,41 +57,49 @@ class RealPostgresPhase5IntegrationTests(unittest.TestCase):
 
     @classmethod
     def _delete_bundle(cls):
-        tables = (
-            "backtesting.backtest_metrics", "backtesting.equity_curves", "backtesting.backtest_events",
-            "execution.cash_ledger_entries", "execution.position_snapshots", "execution.funding_payments",
-            "execution.account_snapshots", "execution.fills", "execution.orders", "execution.risk_decisions",
-            "execution.positions", "execution.order_intents", "backtesting.backtest_runs",
+        PostgresPhase5Repository(cls.connection).delete_backtest_run(
+            backtest_run_id=cls.result.run.backtest_run_id
         )
-        with cls.connection.cursor() as cursor:
-            for table in tables:
-                column = "backtest_run_id" if table.startswith("backtesting.") else "run_id"
-                if table == "backtesting.backtest_runs": column = "backtest_run_id"
-                identity = cls.result.run.backtest_run_id if column == "backtest_run_id" else cls.result.run.run_id
-                cursor.execute(f"DELETE FROM {table} WHERE {column} = %s", (identity,))
-        cls.connection.commit()
 
     @classmethod
     def _counts(cls):
-        queries = {
-            "backtest_runs": "SELECT count(*) FROM backtesting.backtest_runs WHERE backtest_run_id=%s",
-            "order_intents": "SELECT count(*) FROM execution.order_intents WHERE run_id=%s",
-            "risk_decisions": "SELECT count(*) FROM execution.risk_decisions WHERE run_id=%s",
-            "orders": "SELECT count(*) FROM execution.orders WHERE run_id=%s",
-            "fills": "SELECT count(*) FROM execution.fills WHERE run_id=%s",
-            "cash_ledger": "SELECT count(*) FROM execution.cash_ledger_entries WHERE run_id=%s",
-            "funding": "SELECT count(*) FROM execution.funding_payments WHERE run_id=%s",
-            "position_snapshots": "SELECT count(*) FROM execution.position_snapshots WHERE run_id=%s",
-            "account_snapshots": "SELECT count(*) FROM execution.account_snapshots WHERE run_id=%s",
-            "events": "SELECT count(*) FROM backtesting.backtest_events WHERE backtest_run_id=%s",
-            "equity": "SELECT count(*) FROM backtesting.equity_curves WHERE backtest_run_id=%s",
-            "metrics": "SELECT count(*) FROM backtesting.backtest_metrics WHERE backtest_run_id=%s",
+        record_types = {
+            "order_intents": "order_intent",
+            "risk_decisions": "risk_decision",
+            "orders": "order",
+            "fills": "fill",
+            "positions": "position",
+            "cash_ledger": "cash_ledger_entry",
+            "funding": "funding_payment",
+            "position_snapshots": "position_snapshot",
+            "account_snapshots": "account_snapshot",
+            "events": "backtest_event",
+            "equity": "equity_curve",
         }
         values = {}
         with cls.connection.cursor() as cursor:
-            for name, sql in queries.items():
-                identity = cls.result.run.backtest_run_id if "backtest_run_id" in sql else cls.result.run.run_id
-                cursor.execute(sql, (identity,)); values[name] = cursor.fetchone()[0]
+            cursor.execute(
+                "SELECT count(*) FROM backtesting.backtest_runs WHERE backtest_run_id=%s",
+                (cls.result.run.backtest_run_id,),
+            )
+            values["backtest_runs"] = cursor.fetchone()[0]
+            for name, record_type in record_types.items():
+                cursor.execute(
+                    "SELECT count(*) FROM backtesting.backtest_run_memberships "
+                    "WHERE backtest_run_id=%s AND record_type=%s",
+                    (cls.result.run.backtest_run_id, record_type),
+                )
+                values[name] = cursor.fetchone()[0]
+            cursor.execute(
+                "SELECT count(*) FROM backtesting.backtest_metrics WHERE backtest_run_id=%s",
+                (cls.result.run.backtest_run_id,),
+            )
+            values["metrics"] = cursor.fetchone()[0]
+            cursor.execute(
+                "SELECT count(*) FROM backtesting.backtest_run_memberships WHERE backtest_run_id=%s",
+                (cls.result.run.backtest_run_id,),
+            )
+            values["memberships"] = cursor.fetchone()[0]
         return values
 
     def test_real_full_bundle_writes_reads_and_idempotency(self):
@@ -103,9 +111,10 @@ class RealPostgresPhase5IntegrationTests(unittest.TestCase):
         self.assertEqual(counts["funding"], summary.funding_payments)
         self.assertEqual(counts["events"], summary.events)
         self.assertEqual(counts["metrics"], summary.metrics)
+        self.assertEqual(counts["memberships"], summary.memberships)
         persist_backtest_bundle(repository, self.result)
         self.assertEqual(self._counts(), counts)
-        rows = repository.list_fills(order_id=self.result.orders[0].order_id)
+        rows = repository.list_fills(backtest_run_id=self.result.run.backtest_run_id, order_id=self.result.orders[0].order_id)
         self.assertEqual(len(rows), 1)
 
     def test_real_same_identity_different_hash_conflicts_for_every_writer(self):
@@ -131,8 +140,13 @@ class RealPostgresPhase5IntegrationTests(unittest.TestCase):
                 with self.connection.cursor() as cursor:
                     cursor.execute(f"UPDATE {table} SET record_sha256=%s WHERE {id_column}=%s", ("f" * 64, identity))
                 self.connection.commit()
+                kwargs = {}
+                if method != "record_backtest_run":
+                    kwargs["backtest_run_id"] = self.result.run.backtest_run_id
+                if method not in {"record_backtest_run", "record_backtest_metric"}:
+                    kwargs["membership_ordinal"] = 0
                 with self.assertRaises(Phase5ConflictError):
-                    getattr(repository, method)(value)
+                    getattr(repository, method)(value, **kwargs)
                 self.connection.rollback()
                 with self.connection.cursor() as cursor:
                     cursor.execute(f"UPDATE {table} SET record_sha256=%s WHERE {id_column}=%s", (value.record_sha256, identity))
@@ -145,13 +159,13 @@ class RealPostgresPhase5IntegrationTests(unittest.TestCase):
         conflicting_snapshot = replace(snapshot, mark_price=snapshot.mark_price + 1, position_snapshot_id=None)
         self.assertEqual(conflicting_snapshot.position_snapshot_id, snapshot.position_snapshot_id)
         with self.assertRaises(Phase5ConflictError):
-            repository.record_position_snapshot(conflicting_snapshot)
+            repository.record_position_snapshot(conflicting_snapshot, backtest_run_id=self.result.run.backtest_run_id, membership_ordinal=0)
         self.connection.rollback()
         ledger = self.result.cash_ledger_entries[0]
         conflicting_ledger = replace(ledger, amount=ledger.amount + 1, balance_after=ledger.balance_after + 1, cash_ledger_entry_id=None)
         self.assertEqual(conflicting_ledger.cash_ledger_entry_id, ledger.cash_ledger_entry_id)
         with self.assertRaises(Phase5ConflictError):
-            repository.record_cash_ledger_entry(conflicting_ledger)
+            repository.record_cash_ledger_entry(conflicting_ledger, backtest_run_id=self.result.run.backtest_run_id, membership_ordinal=0)
         self.connection.rollback()
         with self.connection.cursor() as cursor:
             cursor.execute("SELECT count(*) FROM execution.position_snapshots WHERE run_id=%s GROUP BY snapshot_at_utc HAVING count(DISTINCT snapshot_kind) > 1", (self.result.run.run_id,))
@@ -218,7 +232,7 @@ class _FailingRepository:
         target = getattr(self.base, name)
         if name != self.failure:
             return target
-        def fail(value):
+        def fail(value, **kwargs):
             raise RuntimeError(f"injected real PostgreSQL failure at {name}")
         return fail
 

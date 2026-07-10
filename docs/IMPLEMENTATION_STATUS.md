@@ -200,7 +200,7 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Complete clean-install, 0007-to-0008 upgrade, schema, migration-hash, full-suite, offline, and security-boundary validation.
 - [x] Re-accept Phase 3 and Phase 4 only after every mandatory audit repair and validation passes.
 
-### Phase 5: simulated execution + backtesting (second audit accepted)
+### Phase 5: simulated execution + backtesting (second audit accepted; third audit repair in progress)
 
 - [x] Add installable package metadata, console entry points, cross-platform validation, and least-privilege CI.
 - [x] Define immutable deterministic execution, sizing, risk, order, fill, position, cash, funding, account, and event contracts.
@@ -228,6 +228,14 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add migration `0010`, dedicated regression coverage, PostgreSQL upgrade validation, and final CI validation.
 
 ## Todo
+
+### Phase 5: third independent audit repair
+
+- [ ] Add migration `0011` with normalized complete-run membership for shared immutable economic records.
+- [ ] Make aggregate metric identity and persistence explicitly scoped to the complete deterministic `backtest_run_id`.
+- [ ] Add complete-run reads, deterministic ordering, deletion/reference safety, and membership cleanup.
+- [ ] Add overlapping short/extended-run coexistence, isolation, reconstruction, idempotency, conflict, and rollback regressions.
+- [ ] Pass clean install, seeded upgrade, real PostgreSQL integration, full-suite, packaging, console, compile, boundary, and final CI validation.
 
 ### Future provider enhancements
 

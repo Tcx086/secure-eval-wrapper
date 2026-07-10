@@ -325,7 +325,7 @@ class BacktestEngine:
         positions = tuple(sorted(portfolio.positions.values(), key=lambda row: row.series_identity.series_identity_sha256))
         orders = tuple(sorted(order_by_id.values(), key=lambda row: (row.submitted_at_utc, str(row.order_id))))
         metrics = calculate_metrics(initial_cash=request.configuration.initial_cash, fills=tuple(fills), intents=tuple(intents), orders=orders, positions=positions, snapshots=tuple(portfolio.position_snapshots), ledger=tuple(portfolio.ledger), funding_payments=tuple(funding_payments), equity_curve=tuple(equity_curve))
-        metric_rows = metric_records(execution_run_id, metrics, request.configuration.config_sha256)
+        metric_rows = metric_records(request.run_id, metrics, request.configuration.config_sha256)
         run_payload = {"backtest_run_id": request.run_id, "run_id": execution_run_id, "signal_run_id": request.signal_run_id, "started_at_utc": started_at, "completed_at_utc": completed_at, "initial_cash": request.configuration.initial_cash, "base_currency": request.configuration.base_currency, "fee_currency": request.configuration.fees.fee_currency, "account_ref": request.configuration.broker.account_ref, "config_sha256": request.configuration.config_sha256, "data_sha256": request.data_sha256, "implementation_code_sha256": request.implementation_code_sha256, "repository_commit_sha": request.repository_commit_sha, "status": BacktestRunStatus.COMPLETED}
         run = BacktestRun(
             backtest_run_id=request.run_id,

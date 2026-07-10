@@ -170,17 +170,25 @@ not fabricated.
 Migration `0009_phase5_simulated_execution_backtesting.sql` introduced the Phase 5 schema without
 rewriting earlier migrations. Migration `0010_phase5_second_audit_repairs.sql` preserves migrations
 `0001` through `0009`, upgrade-safely backfills the new logical identity, account, currency, hash,
-and risk-lineage columns, and adds the required unique, check, and foreign-key constraints. The
-Phase 5 schema includes `execution.risk_decisions`, `execution.position_snapshots`,
-`execution.funding_payments`, `execution.cash_ledger_entries`, and
-`backtesting.backtest_events`.
+and risk-lineage columns, and adds the required unique, check, and foreign-key constraints.
+Migration `0011_phase5_run_membership_repairs.sql` preserves migrations `0001` through `0010` and
+separates immutable economic-record identity from complete-run membership.
+
+`backtesting.backtest_run_memberships` is the authoritative many-to-many mapping. It links each
+complete deterministic `backtest_run_id` to the exact order, risk, fill, position, snapshot, ledger,
+funding, account, event, and equity records in that run, with a deterministic per-type ordinal. One
+immutable row may therefore belong to both a short run and a future-extended run. The legacy child
+`backtest_run_id` columns are only owner hints used for lifecycle management; reads never use them
+to infer membership. Owner deletion rehomes shared records, and unreferenced economic rows are
+collected only after their final membership is removed. Aggregate metrics are deliberately not
+shared: their identity, uniqueness, and foreign key use the complete `backtest_run_id`.
 
 Repositories accept an injected DB-API PostgreSQL connection, connect nowhere during import, use
-parameterized SQL, return database-selected IDs, order half-open reads deterministically, and reject
-same-logical-identity/different-hash conflicts. One outer transaction persists the complete run,
-intents, decisions, final orders, fills, positions, ledgers, funding, snapshots, events, equity, and
-metrics. Any child failure rolls the entire backtest bundle back. PostgreSQL is the only authority;
-there is no SQLite or file-database fallback.
+parameterized SQL, return database-selected IDs, order membership reads deterministically, and
+reject same-economic-identity/different-hash conflicts. Every writer receives the complete run ID
+explicitly. One outer transaction persists the run, immutable rows, memberships, and run-scoped
+metrics; any row or membership failure rolls the entire bundle back. PostgreSQL is the only
+authority, with no SQLite or file-database fallback.
 
 ## Offline demo and validation
 

@@ -223,28 +223,28 @@ class ExecutionRepository(ABC):
     """Persistence contract for order intents, orders, fills, positions, and snapshots."""
 
     @abstractmethod
-    def record_order_intent(self, order_intent: StoragePayload) -> UUID:
+    def record_order_intent(self, order_intent: StoragePayload, *, backtest_run_id: UUID, membership_ordinal: int) -> UUID:
         """Record an order intent."""
 
     @abstractmethod
-    def record_order(self, order: StoragePayload) -> UUID:
+    def record_order(self, order: StoragePayload, *, backtest_run_id: UUID, membership_ordinal: int) -> UUID:
         """Record an order acknowledgement or status."""
 
     @abstractmethod
-    def record_fill(self, fill: StoragePayload) -> UUID:
+    def record_fill(self, fill: StoragePayload, *, backtest_run_id: UUID, membership_ordinal: int) -> UUID:
         """Record an execution fill."""
 
     @abstractmethod
-    def upsert_position(self, position: StoragePayload) -> UUID:
+    def upsert_position(self, position: StoragePayload, *, backtest_run_id: UUID, membership_ordinal: int) -> UUID:
         """Create or update a position record."""
 
     @abstractmethod
-    def record_account_snapshot(self, account_snapshot: StoragePayload) -> UUID:
+    def record_account_snapshot(self, account_snapshot: StoragePayload, *, backtest_run_id: UUID, membership_ordinal: int) -> UUID:
         """Record an account snapshot."""
 
     @abstractmethod
-    def list_fills(self, *, order_id: UUID) -> Sequence[StorageRecord]:
-        """List fills for an order."""
+    def list_fills(self, *, backtest_run_id: UUID, order_id: UUID | None = None) -> Sequence[StorageRecord]:
+        """List only fills belonging to one complete run, optionally filtered by order."""
 
 
 class BacktestRepository(ABC):
@@ -255,11 +255,11 @@ class BacktestRepository(ABC):
         """Record backtest run metadata."""
 
     @abstractmethod
-    def record_backtest_metric(self, metric: StoragePayload) -> UUID:
+    def record_backtest_metric(self, metric: StoragePayload, *, backtest_run_id: UUID) -> UUID:
         """Record one backtest metric."""
 
     @abstractmethod
-    def record_equity_curve_point(self, equity_curve_point: StoragePayload) -> UUID:
+    def record_equity_curve_point(self, equity_curve_point: StoragePayload, *, backtest_run_id: UUID, membership_ordinal: int) -> UUID:
         """Record one equity curve point."""
 
     @abstractmethod
@@ -268,7 +268,15 @@ class BacktestRepository(ABC):
 
     @abstractmethod
     def list_backtest_metrics(self, *, backtest_run_id: UUID) -> Sequence[StorageRecord]:
-        """List metrics for a backtest run."""
+        """List run-scoped metrics for one complete deterministic backtest run."""
+
+    @abstractmethod
+    def get_backtest_bundle(self, *, backtest_run_id: UUID) -> StorageRecord | None:
+        """Reconstruct exactly one complete run through normalized memberships."""
+
+    @abstractmethod
+    def delete_backtest_run(self, *, backtest_run_id: UUID) -> StorageRecord:
+        """Delete one run and collect only economic records with no remaining memberships."""
 
 
 class MonitoringRepository(ABC):

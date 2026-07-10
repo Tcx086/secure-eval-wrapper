@@ -249,7 +249,7 @@ class EquityCurvePoint:
 
 @dataclass(frozen=True)
 class BacktestMetric:
-    run_id: UUID
+    backtest_run_id: UUID
     name: str
     value: Decimal | None
     status: MetricStatus
@@ -266,14 +266,14 @@ class BacktestMetric:
         if self.status is MetricStatus.UNAVAILABLE and self.value is not None:
             raise ValueError("unavailable metric must have a null value")
         object.__setattr__(self, "details", MappingProxyType(dict(self.details)))
-        expected = uuid5(NAMESPACE_URL, f"backtest-metric:{sha256_payload({'run_id': self.run_id, 'name': self.name})}")
+        expected = uuid5(NAMESPACE_URL, f"backtest-metric:{sha256_payload({'backtest_run_id': self.backtest_run_id, 'name': self.name})}")
         if self.backtest_metric_id is not None and self.backtest_metric_id != expected:
             raise ValueError("backtest_metric_id does not match deterministic identity")
         object.__setattr__(self, "backtest_metric_id", expected)
 
     @property
     def record_sha256(self) -> str:
-        return sha256_payload({"run_id": self.run_id, "name": self.name, "value": self.value, "status": self.status, "unit": self.unit, "config_sha256": self.config_sha256, "details": dict(self.details)})
+        return sha256_payload({"backtest_run_id": self.backtest_run_id, "name": self.name, "value": self.value, "status": self.status, "unit": self.unit, "config_sha256": self.config_sha256, "details": dict(self.details)})
 
 
 @dataclass(frozen=True)

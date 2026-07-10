@@ -181,11 +181,12 @@ class IdentityHashAccountAndMetricTests(unittest.TestCase):
             ("record_cash_ledger_entry", ledger, ledger.cash_ledger_entry_id),
         ):
             with self.subTest(method=method):
+                kwargs = {"backtest_run_id": result.run.backtest_run_id, "membership_ordinal": 0}
                 same = FakeConnection(None, (identity, value.record_sha256))
-                self.assertEqual(getattr(PostgresPhase5Repository(same), method)(value), identity)
+                self.assertEqual(getattr(PostgresPhase5Repository(same), method)(value, **kwargs), identity)
                 conflict = FakeConnection(None, (identity, "f" * 64))
                 with self.assertRaises(Phase5ConflictError):
-                    getattr(PostgresPhase5Repository(conflict), method)(value)
+                    getattr(PostgresPhase5Repository(conflict), method)(value, **kwargs)
 
     def test_same_timestamp_fill_open_and_close_mark_snapshots_remain_distinct(self):
         result = run_engine(
@@ -237,8 +238,13 @@ class IdentityHashAccountAndMetricTests(unittest.TestCase):
         for method, value, identity in matrix:
             with self.subTest(method=method):
                 connection = FakeConnection(None, (identity, "f" * 64))
+                kwargs = {}
+                if method != "record_backtest_run":
+                    kwargs["backtest_run_id"] = result.run.backtest_run_id
+                if method not in {"record_backtest_run", "record_backtest_metric"}:
+                    kwargs["membership_ordinal"] = 0
                 with self.assertRaises(Phase5ConflictError):
-                    getattr(PostgresPhase5Repository(connection), method)(value)
+                    getattr(PostgresPhase5Repository(connection), method)(value, **kwargs)
 
     def test_lowercase_sha256_contract_and_no_signal_path(self):
         bars = (bar(0, "100", "101", "99", "100"),)

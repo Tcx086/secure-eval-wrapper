@@ -125,7 +125,7 @@ def calculate_metrics(*, initial_cash, fills, intents, orders, positions, snapsh
     )
 
 
-def metric_records(run_id, metrics: BacktestMetrics, config_sha256: str) -> tuple[BacktestMetric, ...]:
+def metric_records(backtest_run_id, metrics: BacktestMetrics, config_sha256: str) -> tuple[BacktestMetric, ...]:
     count_names = {name for name in metrics.__dataclass_fields__ if name.endswith("_count") or name in {"winning_round_trips", "losing_round_trips"}}
     fraction_names = {"total_return", "maximum_drawdown_fraction", "win_rate", "profit_factor"}
     net_round_trip_names = {"completed_round_trip_count", "winning_round_trips", "losing_round_trips", "win_rate", "gross_profit", "gross_loss", "profit_factor"}
@@ -144,5 +144,5 @@ def metric_records(run_id, metrics: BacktestMetrics, config_sha256: str) -> tupl
             details["round_trip_semantics"] = "net_of_fees_and_realized_funding"
         if name == "gross_pnl":
             details["semantics"] = "realized_plus_unrealized_plus_funding_before_fees"
-        rows.append(BacktestMetric(run_id, name, value, status, unit, config_sha256, details))
+        rows.append(BacktestMetric(backtest_run_id, name, value, status, unit, config_sha256, details))
     return tuple(rows)

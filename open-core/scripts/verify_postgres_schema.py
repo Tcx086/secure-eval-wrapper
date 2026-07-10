@@ -79,6 +79,7 @@ REQUIRED_TABLES: dict[str, tuple[str, ...]] = {
         "equity_curves",
         "stress_results",
         "backtest_events",
+        "backtest_run_memberships",
     ),
     "monitoring": (
         "monitoring_events",
@@ -554,6 +555,22 @@ REQUIRED_COLUMNS: dict[tuple[str, str], tuple[str, ...]] = {
         "scenario_name",
         "metric_name",
         "metric_value",
+    ),    ("backtesting", "backtest_run_memberships"): (
+        "backtest_run_id",
+        "record_type",
+        "record_id",
+        "deterministic_ordinal",
+        "order_intent_id",
+        "risk_decision_id",
+        "order_id",
+        "fill_id",
+        "position_id",
+        "position_snapshot_id",
+        "funding_payment_id",
+        "cash_ledger_entry_id",
+        "account_snapshot_id",
+        "backtest_event_id",
+        "equity_curve_id",
     ),
     ("monitoring", "monitoring_events"): (
         "monitoring_event_id",
@@ -639,6 +656,18 @@ REQUIRED_INDEXES = (
     ("backtesting", "backtest_runs", "uq_phase5_backtest_run_base_currency"),
     ("backtesting", "backtest_runs", "uq_phase5_backtest_run_account_ref"),
     ("backtesting", "backtest_events", "idx_phase5_backtest_events_order"),
+    ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_record"),
+    ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_order_intent"),
+    ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_risk_decision"),
+    ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_order"),
+    ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_fill"),
+    ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_position"),
+    ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_position_snapshot"),
+    ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_funding_payment"),
+    ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_cash_ledger"),
+    ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_account_snapshot"),
+    ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_backtest_event"),
+    ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_equity_curve"),
     ("backtesting", "backtest_runs", "idx_backtest_runs_run_id"),
     ("backtesting", "equity_curves", "idx_equity_curves_run_time"),
     ("monitoring", "monitoring_events", "idx_monitoring_events_run_time"),
@@ -692,6 +721,7 @@ REQUIRED_UNIQUE_CONSTRAINTS = (
     ("backtesting", "backtest_metrics", ("backtest_run_id", "metric_name")),
     ("backtesting", "equity_curves", ("backtest_run_id", "timestamp_utc")),
     ("backtesting", "stress_results", ("backtest_run_id", "scenario_name", "metric_name")),
+    ("backtesting", "backtest_run_memberships", ("backtest_run_id", "record_type", "deterministic_ordinal")),
 )
 
 REQUIRED_FOREIGN_KEYS = (
@@ -787,34 +817,35 @@ REQUIRED_FOREIGN_KEYS = (
         "signals", "signal_components", ("alpha_id",),
         "alpha", "alpha_registry", ("alpha_id",),
     ),
-    (
-        "execution", "positions", ("backtest_run_id", "account_ref"),
-        "backtesting", "backtest_runs", ("backtest_run_id", "account_ref"),
-    ),
-    (
-        "execution", "account_snapshots", ("backtest_run_id", "account_ref"),
-        "backtesting", "backtest_runs", ("backtest_run_id", "account_ref"),
-    ),
-    (
-        "execution", "position_snapshots", ("backtest_run_id", "account_ref"),
-        "backtesting", "backtest_runs", ("backtest_run_id", "account_ref"),
-    ),
-    (
-        "execution", "fills", ("backtest_run_id", "fee_asset"),
-        "backtesting", "backtest_runs", ("backtest_run_id", "base_currency"),
-    ),
-    (
-        "execution", "cash_ledger_entries", ("backtest_run_id", "currency"),
-        "backtesting", "backtest_runs", ("backtest_run_id", "base_currency"),
-    ),
+    ("execution", "order_intents", ("backtest_run_id",), "backtesting", "backtest_runs", ("backtest_run_id",)),
+    ("execution", "orders", ("backtest_run_id",), "backtesting", "backtest_runs", ("backtest_run_id",)),
+    ("execution", "fills", ("backtest_run_id", "fee_asset"), "backtesting", "backtest_runs", ("backtest_run_id", "base_currency")),
+    ("execution", "positions", ("backtest_run_id", "account_ref"), "backtesting", "backtest_runs", ("backtest_run_id", "account_ref")),
+    ("execution", "risk_decisions", ("backtest_run_id",), "backtesting", "backtest_runs", ("backtest_run_id",)),
+    ("execution", "position_snapshots", ("backtest_run_id", "account_ref"), "backtesting", "backtest_runs", ("backtest_run_id", "account_ref")),
+    ("execution", "funding_payments", ("backtest_run_id", "settlement_asset"), "backtesting", "backtest_runs", ("backtest_run_id", "base_currency")),
+    ("execution", "cash_ledger_entries", ("backtest_run_id", "currency"), "backtesting", "backtest_runs", ("backtest_run_id", "base_currency")),
+    ("execution", "account_snapshots", ("backtest_run_id", "account_ref"), "backtesting", "backtest_runs", ("backtest_run_id", "account_ref")),
+    ("backtesting", "backtest_events", ("backtest_run_id",), "backtesting", "backtest_runs", ("backtest_run_id",)),
+    ("backtesting", "equity_curves", ("backtest_run_id",), "backtesting", "backtest_runs", ("backtest_run_id",)),
+    ("backtesting", "backtest_run_memberships", ("backtest_run_id",), "backtesting", "backtest_runs", ("backtest_run_id",)),
+    ("backtesting", "backtest_run_memberships", ("order_intent_id",), "execution", "order_intents", ("order_intent_id",)),
+    ("backtesting", "backtest_run_memberships", ("risk_decision_id",), "execution", "risk_decisions", ("risk_decision_id",)),
+    ("backtesting", "backtest_run_memberships", ("order_id",), "execution", "orders", ("order_id",)),
+    ("backtesting", "backtest_run_memberships", ("fill_id",), "execution", "fills", ("fill_id",)),
+    ("backtesting", "backtest_run_memberships", ("position_id",), "execution", "positions", ("position_id",)),
+    ("backtesting", "backtest_run_memberships", ("position_snapshot_id",), "execution", "position_snapshots", ("position_snapshot_id",)),
+    ("backtesting", "backtest_run_memberships", ("funding_payment_id",), "execution", "funding_payments", ("funding_payment_id",)),
+    ("backtesting", "backtest_run_memberships", ("cash_ledger_entry_id",), "execution", "cash_ledger_entries", ("cash_ledger_entry_id",)),
+    ("backtesting", "backtest_run_memberships", ("account_snapshot_id",), "execution", "account_snapshots", ("account_snapshot_id",)),
+    ("backtesting", "backtest_run_memberships", ("backtest_event_id",), "backtesting", "backtest_events", ("backtest_event_id",)),
+    ("backtesting", "backtest_run_memberships", ("equity_curve_id",), "backtesting", "equity_curves", ("equity_curve_id",)),
+
     (
         "execution", "cash_ledger_entries", ("fill_id", "currency"),
         "execution", "fills", ("fill_id", "fee_asset"),
     ),
-    (
-        "execution", "funding_payments", ("backtest_run_id", "settlement_asset"),
-        "backtesting", "backtest_runs", ("backtest_run_id", "base_currency"),
-    ),
+
     (
         "execution", "risk_decisions", ("order_id",),
         "execution", "orders", ("order_id",),
@@ -835,6 +866,10 @@ REQUIRED_CHECK_CONSTRAINTS = (
     ("execution", "account_snapshots", "phase5_account_snapshots_record_sha256_check", True),
     ("backtesting", "backtest_metrics", "phase5_backtest_metrics_record_sha256_check", True),
     ("backtesting", "equity_curves", "phase5_equity_curves_record_sha256_check", True),
+    ("backtesting", "backtest_run_memberships", "phase5_run_memberships_type_check", True),
+    ("backtesting", "backtest_run_memberships", "phase5_run_memberships_ordinal_check", True),
+    ("backtesting", "backtest_run_memberships", "phase5_run_memberships_one_record_check", True),
+    ("backtesting", "backtest_run_memberships", "phase5_run_memberships_typed_record_check", True),
     ("alpha", "alpha_registry", "chk_alpha_registry_minimum_warmup", True),
     ("alpha", "alpha_registry", "chk_alpha_registry_implementation_sha256", True),
     ("alpha", "alpha_registry", "chk_alpha_registry_content_sha256", True),
@@ -930,6 +965,9 @@ ALLOWED_DATA_MIGRATIONS = {
         r"\bUPDATE\s+execution\.risk_decisions\s+SET\b.*?;",
         r"\bUPDATE\s+execution\.risk_decisions\s+SET\b.*?;",
     ),
+    "0011_phase5_run_membership_repairs.sql": (
+        r"\bINSERT\s+INTO\s+backtesting\.backtest_run_memberships\s*\(.*?\)\s*SELECT\b.*?;",
+    ) * 11,
 }
 
 
@@ -1058,22 +1096,22 @@ def inspect_migrations(migrations: list[MigrationFile]) -> None:
     for migration in migrations:
         sql = migration.path.read_text(encoding="utf-8")
         stripped_sql = strip_sql_comments(sql)
-        allowed_updates = ALLOWED_DATA_MIGRATIONS.get(migration.filename, ())
-        update_statements = re.findall(
-            r"\bUPDATE\b.*?;",
+        allowed_statements = ALLOWED_DATA_MIGRATIONS.get(migration.filename, ())
+        data_statements = re.findall(
+            r"\b(?:UPDATE|INSERT\s+INTO)\b.*?;",
             stripped_sql,
             flags=re.IGNORECASE | re.DOTALL,
         )
-        if allowed_updates and (
-            len(update_statements) != len(allowed_updates)
+        if allowed_statements and (
+            len(data_statements) != len(allowed_statements)
             or any(
                 re.fullmatch(pattern, statement.strip(), flags=re.IGNORECASE | re.DOTALL) is None
-                for pattern, statement in zip(allowed_updates, update_statements)
+                for pattern, statement in zip(allowed_statements, data_statements)
             )
         ):
             fail(f"{migration.filename} contains an unapproved data migration statement")
         for pattern in UNSAFE_SQL_PATTERNS:
-            if pattern == r"\bUPDATE\b" and allowed_updates:
+            if pattern in {r"\bUPDATE\b", r"\bINSERT\s+INTO\b"} and allowed_statements:
                 continue
             if re.search(pattern, stripped_sql, flags=re.IGNORECASE):
                 fail(
