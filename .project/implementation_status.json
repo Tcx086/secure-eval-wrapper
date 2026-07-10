@@ -4,8 +4,8 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-10T17:33:23Z",
-  "current_phase": "phase_5_simulated_execution_backtesting",
+  "updated_at_utc": "2026-07-10T17:56:59Z",
+  "current_phase": "phase_6_monitoring_simulated_fix_api",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
     "future_functional_prs_must_update_json_status": true,
@@ -235,7 +235,7 @@
     {
       "id": "phase_5_simulated_execution_backtesting",
       "title": "Phase 5: simulated execution + backtesting",
-      "status": "in_progress",
+      "status": "completed",
       "completed": [
         "Define the shared Broker interface and immutable deterministic execution contracts",
         "Implement target-position sizing with conservative quantity-step rounding and explicit no-action audits",
@@ -263,15 +263,14 @@
         "Add simulated-order lineage to pre-fill risk decisions",
         "Define fee- and funding-aware net economic round-trip metric semantics",
         "Strengthen the public/private CI boundary scan",
-        "Add migration 0010, dedicated regression coverage, PostgreSQL upgrade validation, and final CI validation"
-      ],
-      "todo": [
+        "Add migration 0010, dedicated regression coverage, PostgreSQL upgrade validation, and final CI validation",
         "Add migration 0011 with normalized complete-run membership for shared immutable economic records",
         "Make aggregate metric identity and persistence explicitly scoped to the complete deterministic backtest_run_id",
         "Add complete-run reads, deterministic ordering, deletion/reference safety, and membership cleanup",
         "Add overlapping short/extended-run coexistence, isolation, reconstruction, idempotency, conflict, and rollback regressions",
-        "Pass clean install, seeded upgrade, real PostgreSQL integration, full-suite, packaging, console, compile, boundary, and final CI validation"
-      ]
+        "Pass clean install, seeded 0010-to-0011 upgrade, real PostgreSQL integration, full-suite, packaging, console, compile, boundary, and final CI validation"
+      ],
+      "todo": []
     },
     {
       "id": "phase_6_monitoring_simulated_fix_api",
