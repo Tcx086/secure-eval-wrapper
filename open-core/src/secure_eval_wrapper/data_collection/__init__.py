@@ -1,7 +1,7 @@
 """Public collection contracts, providers, transports, and normalization utilities."""
 
 from secure_eval_wrapper.data_collection.binance_spot import BinanceSpotOhlcvProvider
-
+from secure_eval_wrapper.data_collection.okx_public import OkxPublicOhlcvProvider
 from secure_eval_wrapper.data_collection.hashing import (
     canonical_json_dumps,
     sha256_observation_source,
@@ -64,6 +64,7 @@ __all__ = [
     "MarketDataType",
     "NormalizedBar",
     "NormalizedTrade",
+    "OkxPublicOhlcvProvider",
     "PLANNED_PROVIDER_SPECS",
     "PROVIDER_SPECS",
     "ProviderCapabilityStatus",

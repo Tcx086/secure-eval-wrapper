@@ -626,12 +626,17 @@ class OfflineOhlcvReconciler(CrossSourceReconciler):
             }
             for check in selected_checks
         )
+        config_sha256 = sha256_payload(
+            {
+                "config": dict(self._config.as_mapping()),
+                "checks": check_payload,
+            }
+        )
         identity_sha256 = sha256_payload(
             {
                 "validation_run_id": validation_run_id,
                 "dataset_sha256": prepared.dataset_sha256,
-                "config": dict(self._config.as_mapping()),
-                "checks": check_payload,
+                "config_sha256": config_sha256,
             }
         )
         window_start = prepared.timestamps[0]
@@ -707,11 +712,43 @@ class OfflineOhlcvReconciler(CrossSourceReconciler):
             "extra_bar_count": len(extra_findings),
             "close_time_mismatch_count": len(close_time_findings),
         }
+        reconciliation_id = uuid5(
+            NAMESPACE_URL,
+            f"offline-ohlcv-reconciliation:{identity_sha256}",
+        )
+        result_sha256 = sha256_payload(
+            {
+                "reconciliation_id": reconciliation_id,
+                "validation_run_id": validation_run_id,
+                "data_type": MarketDataType.OHLCV,
+                "symbol": prepared.symbol,
+                "timeframe": prepared.timeframe,
+                "provider_names": prepared.provider_names,
+                "window_start_utc": window_start,
+                "window_end_utc": window_end,
+                "status": reconciliation_status,
+                "results": tuple(
+                    {
+                        "result_id": result.result_id,
+                        "check_id": result.check_id,
+                        "status": result.status,
+                        "message": result.message,
+                        "symbol": result.symbol,
+                        "timeframe": result.timeframe,
+                        "window_start_utc": result.window_start_utc,
+                        "window_end_utc": result.window_end_utc,
+                        "affected_observation_ids": result.affected_observation_ids,
+                        "details": dict(result.details),
+                    }
+                    for result in results
+                ),
+                "metrics": metrics,
+                "config_sha256": config_sha256,
+                "dataset_sha256": prepared.dataset_sha256,
+            }
+        )
         return ReconciliationResult(
-            reconciliation_id=uuid5(
-                NAMESPACE_URL,
-                f"offline-ohlcv-reconciliation:{identity_sha256}",
-            ),
+            reconciliation_id=reconciliation_id,
             validation_run_id=validation_run_id,
             data_type=MarketDataType.OHLCV,
             symbol=prepared.symbol,
@@ -722,6 +759,9 @@ class OfflineOhlcvReconciler(CrossSourceReconciler):
             status=reconciliation_status,
             results=tuple(results),
             metrics=metrics,
+            config_sha256=config_sha256,
+            dataset_sha256=prepared.dataset_sha256,
+            result_sha256=result_sha256,
             created_at_utc=created_at_utc,
         )
 

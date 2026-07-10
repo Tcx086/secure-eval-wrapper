@@ -104,16 +104,36 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Build deterministic reconciliation IDs, status, metrics, and UTC provenance without persistence.
 - [x] Add fully offline tests for policies, tolerances, ordering, input guards, and network isolation.
 
+### Phase 2G: OKX V5 public OHLCV provider adapter
+
+- [x] Verify the current OKX V5 public GET /api/v5/market/history-candles contract against official documentation.
+- [x] Implement an injectable public-only OKX historical OHLCV adapter with conservative symbol and UTC timeframe mappings.
+- [x] Add bounded backward pagination, half-open filtering, cursor-progress guards, deterministic provenance, and documented finality parsing.
+- [x] Add fully offline OKX request, parsing, pagination, hashing, normalization, validation, and socket-isolation tests.
+
+### Phase 2H: PostgreSQL reconciliation persistence
+
+- [x] Add ordered reconciliation summary and child-check PostgreSQL tables with indexes and idempotency constraints.
+- [x] Expose deterministic reconciliation configuration, dataset, and result hashes in the domain contract.
+- [x] Add reconciliation row mappings and parameterized PostgreSQL repository methods that return database-selected conflict IDs.
+- [x] Add atomic reconciliation persistence with child-write rollback and a unified OHLCV pipeline repository.
+- [x] Extend schema verification and offline tests for reconciliation tables, columns, indexes, constraints, migration hashes, mappings, and transactions.
+
+### Phase 2I: End-to-end public OHLCV data pipeline
+
+- [x] Add typed provider-neutral orchestration for collection, normalization, single-source validation, and cross-source reconciliation.
+- [x] Add explicit fail-fast and partial-provider policies without treating one provider as successful reconciliation.
+- [x] Add one outer PostgreSQL transaction boundary for optional raw, validation, bar/quarantine, and reconciliation persistence.
+- [x] Add a fixture-default CLI with separately gated bounded public-network and PostgreSQL persistence modes.
+- [x] Add offline Binance plus OKX integration tests for success, failures, quarantine, mismatches, persistence, determinism, and socket isolation.
+
 ## Todo
 
 ### Phase 2: data collection + validation (in progress)
-- [ ] Implement additional concrete public market data provider adapters without embedding credentials.
-- [ ] Expand OHLCV collection beyond Binance Spot.
-- [ ] Implement trade collection.
-- [ ] Implement funding rate collection.
-- [ ] Implement instrument metadata collection.
-- [ ] Integrate source hashing and provenance into additional concrete exchange adapters.
-- [ ] Persist offline reconciliation results through PostgreSQL repository abstractions.
+- [ ] Implement additional public OHLCV provider adapters beyond Binance and OKX without embedding credentials.
+- [ ] Implement public trade collection.
+- [ ] Implement public funding rate collection.
+- [ ] Implement public instrument metadata collection.
 
 ### Phase 3: public alpha library
 - [ ] Create public alpha registry.

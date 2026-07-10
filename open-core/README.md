@@ -1,4 +1,4 @@
-﻿# Open Core (Public)
+# Open Core (Public)
 
 ## What this is
 Runtime core for a production-style evaluation system.
@@ -27,3 +27,35 @@ powershell -ExecutionPolicy Bypass -File scripts/start.ps1 -Mode generic
 ## Not Included
 - real_test_v5 / real_test_v6 private logic
 - private params or secrets
+
+## Public OHLCV vertical slice (Phase 2G-2I)
+
+The public data framework includes injectable Binance Spot and OKX V5 historical OHLCV adapters,
+offline normalization and single-source validation, deterministic cross-source reconciliation,
+auditable PostgreSQL reconciliation persistence, and a provider-neutral orchestration service. It
+contains no alpha, signals, backtesting, orders, account access, credentials, or live trading.
+
+Run the default offline fixture pipeline (no network and no persistence):
+
+```powershell
+python open-core\scripts\run_public_ohlcv_pipeline.py
+```
+
+Run the tiny bounded public-network check only after explicit enablement:
+
+```powershell
+$env:ENABLE_PUBLIC_NETWORK_SMOKE = "true"
+python open-core\scripts\run_public_ohlcv_pipeline.py --mode public-network
+```
+
+Persistence remains independently disabled. It requires PostgreSQL-only configuration, a supported
+PostgreSQL driver, the environment gate, and the CLI flag:
+
+```powershell
+$env:ENABLE_POSTGRES_PERSISTENCE = "true"
+python open-core\scripts\run_public_ohlcv_pipeline.py --persist
+```
+
+Downloaded public-network responses are kept in memory, are not written to the repository, and are
+not printed. The summary contains provider status, observation counts, validation/reconciliation
+status, and hash validity only.

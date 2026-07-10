@@ -3,10 +3,11 @@
 ## Purpose
 The target data layer will collect crypto market data from public exchange APIs and provider APIs,
 preserve source provenance, validate quality, and only promote accepted datasets into research and
-backtesting. Phase 2 now includes contracts, offline preparation, sample and Binance Spot OHLCV
-normalization, single-source validation/reporting, offline OHLCV cross-source reconciliation, and
-PostgreSQL-backed offline persistence. Automated tests remain offline; public-network
-access exists only through the explicitly enabled Binance smoke script.
+backtesting. Phase 2 now includes contracts, offline preparation, sample, Binance Spot, and OKX V5
+public OHLCV normalization; single-source validation/reporting; cross-source reconciliation;
+auditable PostgreSQL persistence; and provider-neutral pipeline orchestration. Automated tests
+remain offline. The combined CLI defaults to fixtures, while public-network access is explicitly
+gated and bounded.
 
 ## Collection Scope
 Initial crypto-only data types:
@@ -112,7 +113,7 @@ The Phase 2 registry records the following current capability metadata:
 | Provider | OHLCV | Trades | Funding rates | Instruments |
 |---|---|---|---|---|
 | Binance | implemented | planned | planned | planned |
-| OKX | planned | planned | planned | planned |
+| OKX | implemented | planned | planned | planned |
 | Bybit | planned | planned | planned | planned |
 | Coinbase | planned | planned | unknown | planned |
 
@@ -121,8 +122,8 @@ when a future provider adapter is designed. The registry deliberately contains n
 authentication configuration, or credentials; fetch behavior stays in provider modules.
 
 The offline sample provider remains a fixture reader rather than an exchange adapter. Binance Spot
-OHLCV is implemented in Phase 2E; Binance's other capabilities and all OKX, Bybit, and Coinbase
-capabilities remain planned or unknown.
+OHLCV is implemented in Phase 2E and OKX V5 public historical OHLCV is implemented in Phase 2G.
+Trades, funding rates, instrument metadata, and all Bybit/Coinbase adapters remain planned or unknown.
 
 Provider adapters must normalize symbol naming, timestamp format, timezone to UTC, numeric
 precision, timeframe names, funding interval representation, and instrument metadata fields.
@@ -177,8 +178,8 @@ Phase 2A models these stages, Phase 2B supplies offline parsing guards and prove
 Phase 2C implements stages 1 through 3 plus in-memory report construction for sample OHLCV data.
 Phase 2D persists the offline sample-provider flow through PostgreSQL, including raw observations,
 reports, checks, accepted bars, and quarantine decisions. Phase 2E feeds Binance Spot public OHLCV
-through the same normalization and validation path. Phase 2F implements stage 4 for normalized
-OHLCV entirely in memory; persistence of reconciliation results remains future work.
+through the same normalization and validation path. Phase 2F implements stage 4 for normalized OHLCV. Phase 2H persists reconciliation summaries and
+child checks in PostgreSQL, and Phase 2I orchestrates stages 1 through 7 for injected providers.
 
 ## Single-Source Checks
 Implemented offline for normalized OHLCV in Phase 2C:
@@ -296,9 +297,9 @@ are promoted to `market_data.validated_bars`; failed source observations produce
 offline-only, accepts an injected repository/DB-API connection, and makes no network or exchange
 client calls.
 
-Only public-safe offline fixtures are in scope for this persistence path. Binance provider results
-are not persisted by Phase 2E. Phase 2F reconciliation results also remain in memory; PostgreSQL
-persistence for them is future Phase 2 work.
+Only public-safe offline fixtures are in scope for this Phase 2D service. Phase 2I reuses the same
+row mappings for explicitly enabled Binance/OKX pipeline persistence, and Phase 2H adds the separate
+reconciliation summary/check persistence service.
 
 ## Phase 2E Binance public OHLCV adapter
 
@@ -337,6 +338,67 @@ extra bars, and optional close-time mismatches. `OhlcvReconciliationConfig` supp
 and relative tolerances plus warning/reject policies. Reconciliation and result IDs exclude the
 injected creation clock, while the returned `created_at_utc` remains explicit UTC provenance.
 
-Phase 2F is fully offline. It adds no exchange adapter, endpoint, HTTP behavior, credential handling,
-or database write. Reconciliation-result persistence and additional market-data providers remain
-future Phase 2 work.
+Phase 2F remains fully offline and contains no exchange, credential, or HTTP behavior. Phase 2H adds
+an explicit PostgreSQL persistence boundary for these deterministic results; it does not add network
+or trading behavior.
+
+## Phase 2G OKX V5 public historical OHLCV adapter
+
+The current contract was verified on 2026-07-09 against the official
+[OKX V5 API guide](https://www.okx.com/docs-v5/en/). The adapter uses the unauthenticated market-data
+route `GET /api/v5/market/history-candles` (API version V5). Its documented request parameters are
+`instId`, `after`, `before`, `bar`, and `limit`; the maximum page size is 300. The response envelope
+must contain `code="0"`, a string `msg`, and a list `data`. Each candle must have the documented
+nine-field layout `[ts,o,h,l,c,vol,volCcy,volCcyQuote,confirm]`, where `confirm` is `0` for incomplete
+and `1` for complete.
+
+`OkxPublicOhlcvProvider` accepts conservative spot symbols such as `BTC-USDT`, explicitly maps
+internal timeframes to OKX bar values, and selects UTC-opening variants for 6-hour and longer bars.
+It requires explicit UTC-aware half-open bounds. The first request uses the exclusive end timestamp
+as the `after` cursor; later requests move backward using the oldest timestamp. Page count is
+bounded, cursor progress is checked, duplicate timestamps across pages fail, and results are
+filtered to `[start_at_utc, end_at_utc)` before being returned in chronological order. The adapter
+preserves the original nine-field provider payload, exact numeric strings, the documented finality
+flag, derived close time, full request provenance, and deterministic source SHA-256.
+
+The default API base is `https://openapi.okx.com`. A small allowlist supports OKX's documented regional
+domain requirement (`openapi.okx.com`, `us.okx.com`, and `eea.okx.com`) without
+allowing an arbitrary host. The adapter sends no authentication headers and exposes no private,
+account, order, execution, signing, or credential behavior. Trades, funding rates, and instruments
+remain explicitly unimplemented.
+
+## Phase 2H reconciliation persistence
+
+Migration `0004_reconciliation_persistence.sql` adds
+`data_quality.reconciliation_results` and
+`data_quality.reconciliation_check_results`. The summary row exposes reconciliation, validation,
+provider, window, status, configuration hash, dataset hash, deterministic result hash, metrics, and
+creation-time fields. Child rows preserve the declared check, status, severity, affected source
+observation IDs, and structured findings. Unique constraints make summary/check writes idempotent;
+repositories use parameterized SQL and return the database-selected identifier on conflict.
+
+`persist_reconciliation_result` writes a summary and all child checks in one transaction and rolls
+back on failure. It accepts an injected DB-API repository and never connects at module import time.
+The schema verifier covers both tables, every required column, indexes, unique constraints, and the
+existing per-migration SHA metadata verification.
+
+## Phase 2I provider-neutral OHLCV pipeline and safe CLI
+
+`OhlcvPipeline` validates a typed request, invokes injected public providers in deterministic name
+order, normalizes observations, runs one validation report per provider, reconciles when at least
+two normalized provider datasets succeeded, and returns explicit provider failures. `fail_fast=True`
+raises an `OhlcvPipelineError` retaining the failure and completed outcomes. Partial mode continues
+and never describes a single successful provider as cross-source reconciliation.
+
+Persistence is disabled by default. When enabled with a unified PostgreSQL repository, raw
+observations, validation reports/checks, accepted bars or quarantine decisions, and reconciliation
+summary/check rows are written inside one outer transaction. The inner persistence helpers suppress
+their own transaction boundaries in this path, so a failure rolls back the full persisted pipeline
+run. PostgreSQL is the only persistence implementation; there is no fallback storage.
+
+`open-core/scripts/run_public_ohlcv_pipeline.py` defaults to public-safe in-memory Binance and OKX
+fixtures and prints only statuses, counts, and hash validity. `--mode public-network` additionally
+requires `ENABLE_PUBLIC_NETWORK_SMOKE=true`, uses a two-candle one-page completed window, and writes
+no downloaded output. Persistence requires both `--persist` and
+`ENABLE_POSTGRES_PERSISTENCE=true`; PostgreSQL settings and a driver are loaded only after both
+explicit gates pass. The CLI never prints raw payloads or connection settings.

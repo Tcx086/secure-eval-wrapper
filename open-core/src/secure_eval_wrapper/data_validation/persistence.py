@@ -43,6 +43,7 @@ def persist_offline_ohlcv_validation_flow(
     market_data_repository: MarketDataRepository | None = None,
     data_quality_repository: DataQualityRepository | None = None,
     quarantine_repository: QuarantineRepository | None = None,
+    manage_transaction: bool = True,
 ) -> OfflinePersistenceSummary:
     """Persist one already-validated offline OHLCV flow.
 
@@ -88,7 +89,7 @@ def persist_offline_ohlcv_validation_flow(
     transaction_owner = repository or market_data_repository
     transaction = (
         transaction_owner.transaction()
-        if hasattr(transaction_owner, "transaction")
+        if manage_transaction and hasattr(transaction_owner, "transaction")
         else nullcontext()
     )
     with transaction:

@@ -129,4 +129,7 @@ class ReconciliationResult:
     status: ValidationCheckStatus
     results: tuple[ValidationResult, ...]
     metrics: Mapping[str, object]
+    config_sha256: str
+    dataset_sha256: str
+    result_sha256: str
     created_at_utc: datetime

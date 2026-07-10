@@ -71,6 +71,8 @@ tracks `migration_id`, `filename`, `sha256`, `applied_at_utc`, and `description`
 migration files.
 `open-core/db/migrations/0003_data_quality_quarantine.sql` adds the indexed data-quality
 quarantine decision table used by Phase 2D offline persistence.
+`open-core/db/migrations/0004_reconciliation_persistence.sql` adds auditable cross-source
+reconciliation summaries and child check results for Phase 2H.
 
 
 ## Table Responsibilities
@@ -210,3 +212,39 @@ Validated-bar range queries use the half-open interval [start_utc, end_utc), mat
 offline collection and validation window convention. No driver
 is imported or connection opened at module import time; PostgreSQL remains the sole authoritative
 storage target.
+
+## Phase 2H reconciliation storage
+
+`data_quality.reconciliation_results` stores one deterministic cross-source outcome. Its explicit
+columns preserve `reconciliation_id`, `validation_run_id`, data type, symbol/timeframe, provider
+names, UTC window, status, `config_sha256`, `dataset_sha256`, `result_sha256`, metrics, and creation
+time. The idempotency constraint covers validation run, logical dataset identity, configuration,
+and dataset hash. Indexes support validation-run, symbol/timeframe/window, status, and JSONB
+provider-membership queries.
+
+`data_quality.reconciliation_check_results` stores every stable reconciliation check separately.
+Rows retain the database-selected reconciliation ID, validation run, declared check ID/type,
+status, severity, affected observation UUID array, complete finding details, and creation time. The
+foreign key cascades only when its reconciliation summary is removed, and a unique constraint on
+`(reconciliation_id, check_id)` makes retries idempotent. Indexes support reconciliation, validation
+run, check type, and status queries.
+
+`PostgresReconciliationRepository` accepts an injected DB-API PostgreSQL connection, uses `%s`
+parameters for every value, performs no import-time connection, and returns `RETURNING` IDs after
+both inserts and uniqueness conflicts. `PostgresOhlcvPipelineRepository` combines this contract with
+the Phase 2D raw/validation/bar/quarantine repositories on one connection.
+
+`persist_reconciliation_result` owns one summary-plus-children transaction when called directly.
+The Phase 2I pipeline instead opens one outer transaction for all successful provider persistence
+and the reconciliation records, then calls both persistence services with their internal transaction
+management disabled. Thus the documented pipeline boundary is full-run atomic for the unified
+repository: raw observations, validation reports/checks, accepted bars or quarantine decisions, and
+reconciliation summary/check rows commit or roll back together.
+
+## Phase 2I persistence gates
+
+Pipeline persistence is off by default. The safe CLI requires both `--persist` and
+`ENABLE_POSTGRES_PERSISTENCE=true` before loading PostgreSQL configuration or importing a driver.
+Only `POSTGRES_*` settings are read. No SQLite, file database, in-memory authoritative store, or
+implicit fallback is available. Public-network collection is gated independently and does not imply
+persistence.

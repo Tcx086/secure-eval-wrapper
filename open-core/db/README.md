@@ -16,6 +16,7 @@ Current migrations:
 - `0001_initial_schema.sql`: creates the initial schema groups, tables, indexes, and constraints.
 - `0002_schema_migrations.sql`: creates `audit.schema_migrations` for migration metadata.
 - `0003_data_quality_quarantine.sql`: adds indexed quarantine decisions for failed offline validation observations.
+- `0004_reconciliation_persistence.sql`: adds auditable reconciliation summaries and child check results with idempotency constraints.
 
 Migration metadata tracks:
 
@@ -59,7 +60,9 @@ under `var/postgres/`, which is ignored by Git.
 
 The verification script reads connection settings from the environment, loading `.env` first when
 present. It inspects migrations, computes migration hashes, and checks PostgreSQL catalog metadata
-for required schemas, tables, columns, indexes, unique constraints, and migration metadata rows. It
+for required schemas, tables, columns, indexes, unique constraints, and migration metadata rows.
+This includes both Phase 2H reconciliation tables, their provider/status/window query indexes, and
+their idempotency constraints. It
 does not insert sample data.
 
 ## Direct Docker Command

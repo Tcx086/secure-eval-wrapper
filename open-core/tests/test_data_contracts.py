@@ -64,7 +64,7 @@ class CollectionContractTests(unittest.TestCase):
                 ProviderCapabilityStatus.PLANNED,
                 ProviderCapabilityStatus.UNKNOWN,
             }
-            if spec.name == "binance":
+            if spec.name in {"binance", "okx"}:
                 allowed.add(ProviderCapabilityStatus.IMPLEMENTED)
             self.assertTrue(set(spec.capabilities.values()) <= allowed)
 

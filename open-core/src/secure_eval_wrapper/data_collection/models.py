@@ -92,6 +92,7 @@ class DataRequest:
     start_at_utc: datetime | None = None
     end_at_utc: datetime | None = None
     limit: int | None = None
+    max_pages: int | None = None
     parameters: Mapping[str, object] = field(default_factory=dict)
 
 

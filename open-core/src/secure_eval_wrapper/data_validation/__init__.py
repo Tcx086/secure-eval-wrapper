@@ -35,6 +35,10 @@ from secure_eval_wrapper.data_validation.persistence import (
     persist_offline_ohlcv_validation_flow,
 )
 from secure_eval_wrapper.data_validation.quarantine import map_quarantine_reasons
+from secure_eval_wrapper.data_validation.reconciliation_persistence import (
+    ReconciliationPersistenceSummary,
+    persist_reconciliation_result,
+)
 from secure_eval_wrapper.data_validation.reconciliation import (
     CROSS_SOURCE_CLOSE_TIME_MISMATCH,
     CROSS_SOURCE_EXTRA_BAR,
@@ -71,6 +75,7 @@ __all__ = [
     "OhlcvValidationConfig",
     "PARTIAL_CANDLE",
     "QuarantineReason",
+    "ReconciliationPersistenceSummary",
     "ReconciliationResult",
     "ValidationCheck",
     "ValidationCheckStatus",
@@ -84,6 +89,7 @@ __all__ = [
     "default_ohlcv_reconciliation_checks",
     "map_quarantine_reasons",
     "persist_offline_ohlcv_validation_flow",
+    "persist_reconciliation_result",
     "reconcile_ohlcv_sources",
     "validate_ohlcv_bars",
 ]

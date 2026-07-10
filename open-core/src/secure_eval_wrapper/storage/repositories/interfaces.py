@@ -76,6 +76,36 @@ class QuarantineRepository(ABC):
     def record_quarantine_decision(self, decision: StoragePayload) -> UUID:
         """Record one failed-observation quarantine decision."""
 
+
+class ReconciliationRepository(ABC):
+    """Persistence contract for reconciliation summaries and child checks."""
+
+    @abstractmethod
+    def record_reconciliation_result(self, result: StoragePayload) -> UUID:
+        """Record an idempotent reconciliation summary."""
+
+    @abstractmethod
+    def record_reconciliation_check_result(self, result: StoragePayload) -> UUID:
+        """Record one idempotent child reconciliation check."""
+
+    @abstractmethod
+    def get_reconciliation_result(
+        self,
+        reconciliation_id: UUID,
+    ) -> StorageRecord | None:
+        """Fetch a reconciliation summary by identifier."""
+
+    @abstractmethod
+    def list_reconciliation_results(
+        self,
+        *,
+        validation_run_id: UUID | None = None,
+        symbol: str | None = None,
+        status: str | None = None,
+    ) -> Sequence[StorageRecord]:
+        """List reconciliation summaries with optional parameterized filters."""
+
+
 class AlphaRepository(ABC):
     """Persistence contract for public alpha registry metadata."""
 

@@ -47,7 +47,9 @@ PROVIDER_SPECS: Mapping[str, ProviderSpec] = MappingProxyType(
             name="okx",
             display_name="OKX",
             exchange_name="OKX",
-            capabilities=_capabilities(),
+            capabilities=_capabilities(
+                ohlcv=ProviderCapabilityStatus.IMPLEMENTED,
+            ),
         ),
         "bybit": ProviderSpec(
             name="bybit",
