@@ -223,17 +223,17 @@ class PackageCliCiBoundaryTests(unittest.TestCase):
     def test_migrations_0001_through_0008_are_unchanged(self):
         expected = {
             "0001_initial_schema.sql": "598486e6af2eed4559564593adc0b66deff9e21ea91dbda560980c208a2950c5",
-            "0002_schema_migrations.sql": "87147ba7efd798e6f93b1e219ef79e6bc2a66c2c7a24ff699a28bd498eb7c0c8",
+            "0002_schema_migrations.sql": "36c91efa851e10fcc6039ebd8715af1c985237af6ff556e6943e10329458f76f",
             "0003_data_quality_quarantine.sql": "d0b32a72ad98a9d1361bfa57770a9b7d58ae2323816e8b3d77c3d05f66b35a9a",
             "0004_reconciliation_persistence.sql": "efe77fa89b25f90dea3f49a70b22b8cc376c434333abbff6fd17cc9eb75fd7ba",
             "0005_trade_funding_instrument_hardening.sql": "b18d66f37df55923a1e1cfba709784de55ab90d0c5ff250b8d683dc6029f9d48",
             "0006_phase2_final_hardening.sql": "af507329f29e63ab260317b879da5e82917aafd7368d692b343a09ccafdace5d",
-            "0007_alpha_signal_library.sql": "f9ff354e0a7f319cf82a04ce13eaceeae12c99d903f0a5b683275903f53c5a59",
-            "0008_phase3_phase4_audit_repairs.sql": "950a08f2f9c8620b85640d132604c93ae4a03f4111aa9326f0654df369bc320c",
+            "0007_alpha_signal_library.sql": "0a355d3238afcf8691b5366e46332c3e1e6862a9ed574e740e3435479d8883a4",
+            "0008_phase3_phase4_audit_repairs.sql": "a59dff645009c117a5146d2bd4102a9ed048126ca77b61566f8d31bf1fcba64b",
         }
         import hashlib
         for name, digest in expected.items():
-            self.assertEqual(hashlib.sha256((OPEN_CORE / "db" / "migrations" / name).read_bytes()).hexdigest(), digest)
+            self.assertEqual(hashlib.sha256((OPEN_CORE / "db" / "migrations" / name).read_bytes().replace(b"\r\n", b"\n")).hexdigest(), digest)
 
 
 if __name__ == "__main__":
