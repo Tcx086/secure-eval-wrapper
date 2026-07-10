@@ -4,7 +4,7 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-09T21:27:32Z",
+  "updated_at_utc": "2026-07-10T00:28:56Z",
   "current_phase": "phase_2_data_collection_validation",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
@@ -136,7 +136,11 @@
         "Add an injectable HTTP transport boundary with an optional standard-library implementation",
         "Implement Binance Spot public /api/v3/klines request building and 12-field response parsing",
         "Generate deterministic hashed RawObservation records that flow through existing normalization and validation",
-        "Add fully offline fake-transport tests and an explicitly disabled public-network smoke script"
+        "Add fully offline fake-transport tests and an explicitly disabled public-network smoke script",
+        "Implement configurable deterministic offline OHLCV reconciliation across provider datasets",
+        "Emit stable missing-coverage, price, volume, extra-bar, and close-time validation results",
+        "Build deterministic reconciliation IDs, status, metrics, and UTC provenance without persistence",
+        "Add fully offline tests for policies, tolerances, ordering, input guards, and network isolation"
       ],
       "todo": [
         "Implement additional concrete public market data provider adapters without embedding credentials",
@@ -145,7 +149,7 @@
         "Implement funding rate collection",
         "Implement instrument metadata collection",
         "Integrate source hashing and provenance into additional concrete exchange adapters",
-        "Implement cross-source reconciliation"
+        "Persist offline reconciliation results through PostgreSQL repository abstractions"
       ]
     },
     {

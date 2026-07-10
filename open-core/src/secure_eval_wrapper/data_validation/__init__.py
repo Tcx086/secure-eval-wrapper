@@ -35,9 +35,25 @@ from secure_eval_wrapper.data_validation.persistence import (
     persist_offline_ohlcv_validation_flow,
 )
 from secure_eval_wrapper.data_validation.quarantine import map_quarantine_reasons
+from secure_eval_wrapper.data_validation.reconciliation import (
+    CROSS_SOURCE_CLOSE_TIME_MISMATCH,
+    CROSS_SOURCE_EXTRA_BAR,
+    CROSS_SOURCE_MISSING_TIMESTAMP,
+    CROSS_SOURCE_PRICE_MISMATCH,
+    CROSS_SOURCE_VOLUME_MISMATCH,
+    OfflineOhlcvReconciler,
+    OhlcvReconciliationConfig,
+    default_ohlcv_reconciliation_checks,
+    reconcile_ohlcv_sources,
+)
 from secure_eval_wrapper.data_validation.reporting import build_validation_report
 
 __all__ = [
+    "CROSS_SOURCE_CLOSE_TIME_MISMATCH",
+    "CROSS_SOURCE_EXTRA_BAR",
+    "CROSS_SOURCE_MISSING_TIMESTAMP",
+    "CROSS_SOURCE_PRICE_MISMATCH",
+    "CROSS_SOURCE_VOLUME_MISMATCH",
     "CrossSourceReconciler",
     "DataValidator",
     "DatasetPromoter",
@@ -48,8 +64,10 @@ __all__ = [
     "MISSING_BARS",
     "NON_MONOTONIC_TIMESTAMPS",
     "NormalizedRecord",
+    "OfflineOhlcvReconciler",
     "OfflineOhlcvValidator",
     "OfflinePersistenceSummary",
+    "OhlcvReconciliationConfig",
     "OhlcvValidationConfig",
     "PARTIAL_CANDLE",
     "QuarantineReason",
@@ -63,7 +81,9 @@ __all__ = [
     "ValidationStatus",
     "build_validation_report",
     "default_ohlcv_checks",
+    "default_ohlcv_reconciliation_checks",
     "map_quarantine_reasons",
     "persist_offline_ohlcv_validation_flow",
+    "reconcile_ohlcv_sources",
     "validate_ohlcv_bars",
 ]

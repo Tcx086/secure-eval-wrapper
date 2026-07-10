@@ -4,8 +4,8 @@
 The target data layer will collect crypto market data from public exchange APIs and provider APIs,
 preserve source provenance, validate quality, and only promote accepted datasets into research and
 backtesting. Phase 2 now includes contracts, offline preparation, sample and Binance Spot OHLCV
-normalization, single-source validation/reporting, and PostgreSQL-backed offline persistence.
-Cross-source reconciliation is not implemented. Automated tests remain offline; public-network
+normalization, single-source validation/reporting, offline OHLCV cross-source reconciliation, and
+PostgreSQL-backed offline persistence. Automated tests remain offline; public-network
 access exists only through the explicitly enabled Binance smoke script.
 
 ## Collection Scope
@@ -49,9 +49,10 @@ network test.
 
 The validation package separates declarative checks, individual check results, dataset-level
 reports, and cross-source reconciliation results. `OfflineOhlcvValidator` is the Phase 2C concrete,
-network-free `DataValidator`; `CrossSourceReconciler` and `DatasetPromoter` remain abstract future
-boundaries. `ValidationCheckStatus` describes an individual check outcome, while
-`ValidationStatus` describes the final dataset gate decision. Stable `QuarantineReason` values
+network-free `DataValidator`; `OfflineOhlcvReconciler` is the Phase 2F concrete, network-free
+`CrossSourceReconciler`; and `DatasetPromoter` remains an abstract future boundary.
+`ValidationCheckStatus` describes an individual check outcome, while `ValidationStatus` describes
+the final dataset gate decision. Stable `QuarantineReason` values
 classify failed observations without promoting or persisting them.
 
 ## Phase 2B Offline Utilities
@@ -176,7 +177,8 @@ Phase 2A models these stages, Phase 2B supplies offline parsing guards and prove
 Phase 2C implements stages 1 through 3 plus in-memory report construction for sample OHLCV data.
 Phase 2D persists the offline sample-provider flow through PostgreSQL, including raw observations,
 reports, checks, accepted bars, and quarantine decisions. Phase 2E feeds Binance Spot public OHLCV
-through the same normalization and validation path. Cross-source reconciliation remains future work.
+through the same normalization and validation path. Phase 2F implements stage 4 for normalized
+OHLCV entirely in memory; persistence of reconciliation results remains future work.
 
 ## Single-Source Checks
 Implemented offline for normalized OHLCV in Phase 2C:
@@ -196,9 +198,24 @@ Still planned for later Phase 2 increments:
 - Instrument metadata drift.
 
 ## Cross-Source Reconciliation
-When multiple providers cover the same symbol and timeframe, compare close price deviation,
-high/low range deviation, volume deviation, missing intervals, timestamp alignment, and symbol or
-instrument metadata consistency.
+Phase 2F compares two or more provider datasets for one canonical symbol and timeframe. Inputs are
+indexed by provider and bar-open timestamp after enforcing UTC-aware timestamps, source observation
+IDs, one exchange per provider dataset, and no duplicated provider timestamps. Mixed symbols or
+timeframes fail instead of being reconciled implicitly.
+
+The reconciler evaluates the union timestamp grid in deterministic order. A missing-coverage result
+records every absent provider slot; an extra-bar result is reserved for a timestamp supplied by only
+one provider. At timestamps with at least two bars, all provider pairs are compared. OHLC values
+mismatch only when both the configured absolute tolerance and a symmetric relative-basis-point
+tolerance are exceeded. Volume uses a configurable symmetric relative tolerance. Close times are
+compared only when both bars provide one.
+
+Each stable check type emits one aggregate `ValidationResult` containing timestamp-ordered findings,
+compared values, provider names, tolerances, and affected source observation IDs. Warning/reject
+policies control the result status. `ReconciliationResult` metrics count providers, union timestamps,
+timestamps with pairwise comparisons, missing provider slots, mismatch timestamps, and provider-only
+extra bars. Deterministic IDs hash stable datasets, config, and checks; `created_at_utc` is recorded but
+does not affect those IDs.
 
 ## Tolerance Rules
 Tolerance rules should be configurable and stored with the validation report.
@@ -213,6 +230,13 @@ Example design-level defaults:
 
 Tolerances should vary by symbol liquidity, venue, data type, timeframe, and historical vs
 near-real-time collection.
+
+Phase 2F defaults are deliberately warning-oriented: price comparison allows an absolute tolerance
+of `0.00000001` or a relative tolerance of 50 basis points, and volume comparison allows 5,000
+basis points because venue volume can differ materially. A pair is accepted when it falls within
+either price tolerance. Missing timestamps, mismatches, and extra bars warn by default; callers can
+select reject policies explicitly. Config values are exact `Decimal` values and can be hashed by the
+existing canonical SHA-256 utilities.
 
 ## Accepted vs Rejected Flow
 ```text
@@ -273,8 +297,8 @@ offline-only, accepts an injected repository/DB-API connection, and makes no net
 client calls.
 
 Only public-safe offline fixtures are in scope for this persistence path. Binance provider results
-are not persisted by Phase 2E. Additional provider collection and cross-source reconciliation remain
-future Phase 2 work.
+are not persisted by Phase 2E. Phase 2F reconciliation results also remain in memory; PostgreSQL
+persistence for them is future Phase 2 work.
 
 ## Phase 2E Binance public OHLCV adapter
 
@@ -300,3 +324,19 @@ websocket behavior, or trading logic; its non-OHLCV provider methods remain unim
 `open-core/scripts/binance_public_ohlcv_smoke.py` is the only optional public-network check. It is
 disabled unless `ENABLE_PUBLIC_NETWORK_SMOKE=true`, requests at most two completed public candles,
 writes no downloaded data, uses no credentials, and prints only a public-safe summary.
+
+## Phase 2F Offline OHLCV cross-source reconciliation
+
+`OfflineOhlcvReconciler` and `reconcile_ohlcv_sources` compare normalized OHLCV datasets from at
+least two named providers. The implementation is deterministic across input mapping and bar order,
+uses exact `Decimal` comparisons, validates all timestamps as UTC, and preserves provider and source
+observation provenance in each `ValidationResult`.
+
+Stable checks cover missing provider timestamps, OHLC mismatches, volume mismatches, provider-only
+extra bars, and optional close-time mismatches. `OhlcvReconciliationConfig` supplies exact absolute
+and relative tolerances plus warning/reject policies. Reconciliation and result IDs exclude the
+injected creation clock, while the returned `created_at_utc` remains explicit UTC provenance.
+
+Phase 2F is fully offline. It adds no exchange adapter, endpoint, HTTP behavior, credential handling,
+or database write. Reconciliation-result persistence and additional market-data providers remain
+future Phase 2 work.

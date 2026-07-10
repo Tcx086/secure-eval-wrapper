@@ -97,6 +97,13 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Generate deterministic hashed `RawObservation` records that flow through existing normalization and validation.
 - [x] Add fully offline fake-transport tests and an explicitly disabled public-network smoke script.
 
+### Phase 2F: Offline OHLCV cross-source reconciliation
+
+- [x] Implement configurable deterministic offline OHLCV reconciliation across provider datasets.
+- [x] Emit stable missing-coverage, price, volume, extra-bar, and close-time validation results.
+- [x] Build deterministic reconciliation IDs, status, metrics, and UTC provenance without persistence.
+- [x] Add fully offline tests for policies, tolerances, ordering, input guards, and network isolation.
+
 ## Todo
 
 ### Phase 2: data collection + validation (in progress)
@@ -106,7 +113,7 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [ ] Implement funding rate collection.
 - [ ] Implement instrument metadata collection.
 - [ ] Integrate source hashing and provenance into additional concrete exchange adapters.
-- [ ] Implement cross-source reconciliation.
+- [ ] Persist offline reconciliation results through PostgreSQL repository abstractions.
 
 ### Phase 3: public alpha library
 - [ ] Create public alpha registry.
