@@ -1,5 +1,6 @@
 """Public validation contracts and offline-only OHLCV checks."""
 
+from secure_eval_wrapper.data_validation.gating import accepted_ohlcv_bars
 from secure_eval_wrapper.data_validation.interfaces import (
     CrossSourceReconciler,
     DataValidator,
@@ -84,6 +85,7 @@ __all__ = [
     "ValidationResult",
     "ValidationSeverity",
     "ValidationStatus",
+    "accepted_ohlcv_bars",
     "build_validation_report",
     "default_ohlcv_checks",
     "default_ohlcv_reconciliation_checks",

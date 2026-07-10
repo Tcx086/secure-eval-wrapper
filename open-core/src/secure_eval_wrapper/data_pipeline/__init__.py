@@ -7,6 +7,7 @@ from secure_eval_wrapper.data_pipeline.ohlcv_pipeline import (
     OhlcvPipelinePersistenceSummary,
     OhlcvPipelineRequest,
     OhlcvPipelineResult,
+    PipelineStatus,
     ProviderCollectionOutcome,
     run_ohlcv_pipeline,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "OhlcvPipelinePersistenceSummary",
     "OhlcvPipelineRequest",
     "OhlcvPipelineResult",
+    "PipelineStatus",
     "ProviderCollectionOutcome",
     "run_ohlcv_pipeline",
 ]

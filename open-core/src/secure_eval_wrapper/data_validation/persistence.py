@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from secure_eval_wrapper.data_collection.models import NormalizedBar, RawObservation
+from secure_eval_wrapper.data_validation.gating import accepted_ohlcv_bars
 from secure_eval_wrapper.data_validation.models import ValidationReport, ValidationStatus
 from secure_eval_wrapper.storage.postgres.mappers import (
     normalized_bar_to_row,
@@ -71,20 +72,12 @@ def persist_offline_ohlcv_validation_flow(
         else:
             raise TypeError("a quarantine_repository is required for failed observations")
 
-    quarantine_rows = quarantine_decision_rows(report, observations, bars)
-    rejected_observation_ids = {
-        row["observation_id"] for row in quarantine_rows
-    }
     accepted_status = (
         ValidationStatus.ACCEPTED_WITH_WARNINGS
         if report.status is ValidationStatus.ACCEPTED_WITH_WARNINGS
         else ValidationStatus.ACCEPTED
     )
-    accepted_bars = tuple(
-        bar
-        for bar in bars
-        if not rejected_observation_ids.intersection(bar.source_observation_ids)
-    )
+    accepted_bars = accepted_ohlcv_bars(bars, report)
 
     transaction_owner = repository or market_data_repository
     transaction = (
@@ -97,7 +90,15 @@ def persist_offline_ohlcv_validation_flow(
             market_data_repository.record_raw_source_observation(raw_observation_to_row(item))
             for item in observations
         )
-        data_quality_repository.record_validation_report(validation_report_to_row(report))
+        stored_validation_report_id = data_quality_repository.record_validation_report(
+            validation_report_to_row(report)
+        )
+        quarantine_rows = quarantine_decision_rows(
+            report,
+            observations,
+            bars,
+            validation_report_id=stored_validation_report_id,
+        )
         check_ids = tuple(
             data_quality_repository.record_data_quality_check(validation_result_to_row(result))
             for result in report.results
@@ -106,7 +107,7 @@ def persist_offline_ohlcv_validation_flow(
             market_data_repository.record_validated_bar(
                 normalized_bar_to_row(
                     bar,
-                    validation_report_id=report.validation_report_id,
+                    validation_report_id=stored_validation_report_id,
                     validation_status=accepted_status,
                 )
             )
@@ -118,7 +119,7 @@ def persist_offline_ohlcv_validation_flow(
         )
 
     return OfflinePersistenceSummary(
-        validation_report_id=report.validation_report_id,
+        validation_report_id=stored_validation_report_id,
         raw_observation_ids=raw_ids,
         data_quality_check_ids=check_ids,
         accepted_bar_ids=bar_ids,

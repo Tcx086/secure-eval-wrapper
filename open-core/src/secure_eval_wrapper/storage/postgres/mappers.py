@@ -13,6 +13,7 @@ from enum import Enum
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from secure_eval_wrapper.data_collection.models import NormalizedBar, RawObservation
+from secure_eval_wrapper.data_validation.gating import accepted_ohlcv_bars
 from secure_eval_wrapper.data_validation.models import (
     QuarantineReason,
     ValidationCheckStatus,
@@ -159,6 +160,8 @@ def quarantine_decision_rows(
     report: ValidationReport,
     observations: Sequence[RawObservation] = (),
     bars: Sequence[NormalizedBar] = (),
+    *,
+    validation_report_id: UUID | None = None,
 ) -> tuple[dict[str, object], ...]:
     """Build deterministic quarantine rows for failed source observations.
 
@@ -168,17 +171,35 @@ def quarantine_decision_rows(
 
     if not isinstance(report, ValidationReport):
         raise TypeError("report must be a ValidationReport")
+    effective_validation_report_id = (
+        report.validation_report_id
+        if validation_report_id is None
+        else validation_report_id
+    )
+    if not isinstance(effective_validation_report_id, UUID):
+        raise TypeError("validation_report_id must be a UUID")
     observation_by_id = {item.observation_id: item for item in observations}
     bar_by_observation_id: dict[UUID, NormalizedBar] = {}
     for bar in bars:
         for observation_id in bar.source_observation_ids:
             bar_by_observation_id.setdefault(observation_id, bar)
-    reasons = map_quarantine_reasons(report)
+    accepted_bar_ids = {bar.bar_id for bar in accepted_ohlcv_bars(bars, report)}
+    rejected_source_observation_ids = tuple(
+        observation_id
+        for bar in bars
+        if bar.bar_id not in accepted_bar_ids
+        for observation_id in bar.source_observation_ids
+    )
+    reasons = map_quarantine_reasons(
+        report,
+        dataset_observation_ids=rejected_source_observation_ids,
+    )
     result_details: dict[UUID, dict[str, object]] = {}
     for result in report.results:
         if result.status is not ValidationCheckStatus.FAILED:
             continue
-        for observation_id in result.affected_observation_ids:
+        affected_ids = result.affected_observation_ids or rejected_source_observation_ids
+        for observation_id in affected_ids:
             result_details.setdefault(observation_id, dict(result.details))
 
     rows: list[dict[str, object]] = []
@@ -195,9 +216,10 @@ def quarantine_decision_rows(
             {
                 "quarantine_id": uuid5(
                     NAMESPACE_URL,
-                    f"quarantine-decision:{report.validation_report_id}:{observation_id}:{reason.value}",
+                    f"quarantine-decision:{effective_validation_report_id}:"
+                    f"{observation_id}:{reason.value}",
                 ),
-                "validation_report_id": report.validation_report_id,
+                "validation_report_id": effective_validation_report_id,
                 "validation_run_id": report.validation_run_id,
                 "observation_id": observation_id,
                 "quarantine_reason": reason.value,

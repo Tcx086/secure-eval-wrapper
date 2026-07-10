@@ -20,9 +20,11 @@ from secure_eval_wrapper.data_collection.normalization import normalize_ohlcv_ob
 from secure_eval_wrapper.data_collection.providers import MarketDataProvider
 from secure_eval_wrapper.data_collection.symbols import normalize_symbol
 from secure_eval_wrapper.data_collection.time_utils import require_utc_datetime
+from secure_eval_wrapper.data_validation.gating import accepted_ohlcv_bars
 from secure_eval_wrapper.data_validation.models import (
     ReconciliationResult,
     ValidationReport,
+    ValidationStatus,
 )
 from secure_eval_wrapper.data_validation.ohlcv import (
     OhlcvValidationConfig,
@@ -40,6 +42,14 @@ from secure_eval_wrapper.data_validation.reconciliation_persistence import (
     ReconciliationPersistenceSummary,
     persist_reconciliation_result,
 )
+
+
+class PipelineStatus(str, Enum):
+    """Overall pipeline outcome after collection and validation gates."""
+
+    SUCCEEDED = "succeeded"
+    PARTIAL = "partial"
+    FAILED = "failed"
 
 
 class PipelineStage(str, Enum):
@@ -138,6 +148,10 @@ class ProviderCollectionOutcome:
     observations: tuple[RawObservation, ...] = ()
     bars: tuple[NormalizedBar, ...] = ()
     validation_report: ValidationReport | None = None
+    validation_status: ValidationStatus | None = None
+    accepted_bars: tuple[NormalizedBar, ...] = ()
+    rejected_bar_count: int = 0
+    eligible_for_reconciliation: bool = False
     error: OhlcvPipelineFailure | None = None
 
 
@@ -160,7 +174,7 @@ class OhlcvPipelineResult:
     timeframe: str
     start_at_utc: datetime
     end_at_utc: datetime
-    status: CollectionStatus
+    status: PipelineStatus
     outcomes: tuple[ProviderCollectionOutcome, ...]
     reconciliation: ReconciliationResult | None
     persistence: OhlcvPipelinePersistenceSummary | None
@@ -254,6 +268,9 @@ class OhlcvPipeline:
         for provider_name in request.provider_names:
             provider = self._providers_by_name[provider_name]
             stage = PipelineStage.COLLECTION
+            observations: tuple[RawObservation, ...] = ()
+            bars: tuple[NormalizedBar, ...] = ()
+            report: ValidationReport | None = None
             try:
                 observations = tuple(
                     provider.fetch_ohlcv(
@@ -292,6 +309,10 @@ class OhlcvPipeline:
                 outcome = ProviderCollectionOutcome(
                     provider_name=provider_name,
                     status=CollectionStatus.FAILED,
+                    observations=observations,
+                    bars=bars,
+                    validation_report=report,
+                    validation_status=report.status if report is not None else None,
                     error=failure,
                 )
                 outcomes.append(outcome)
@@ -299,7 +320,14 @@ class OhlcvPipeline:
                     raise OhlcvPipelineError(failure, outcomes) from exc
                 continue
 
-            successful_datasets[provider_name] = bars
+            accepted_bars = accepted_ohlcv_bars(bars, report)
+            rejected_bar_count = len(bars) - len(accepted_bars)
+            eligible_for_reconciliation = bool(accepted_bars) and report.status not in (
+                ValidationStatus.QUARANTINED,
+                ValidationStatus.FAILED,
+            )
+            if eligible_for_reconciliation:
+                successful_datasets[provider_name] = accepted_bars
             outcomes.append(
                 ProviderCollectionOutcome(
                     provider_name=provider_name,
@@ -307,6 +335,10 @@ class OhlcvPipeline:
                     observations=observations,
                     bars=bars,
                     validation_report=report,
+                    validation_status=report.status,
+                    accepted_bars=accepted_bars,
+                    rejected_bar_count=rejected_bar_count,
+                    eligible_for_reconciliation=eligible_for_reconciliation,
                 )
             )
 
@@ -333,13 +365,23 @@ class OhlcvPipeline:
             if request.persistence_enabled
             else None
         )
-        failed_count = sum(outcome.error is not None for outcome in outcomes)
-        if failed_count == len(outcomes):
-            status = CollectionStatus.FAILED
-        elif failed_count:
-            status = CollectionStatus.PARTIAL
+        usable_count = sum(outcome.eligible_for_reconciliation for outcome in outcomes)
+        all_complete_and_usable = all(
+            outcome.error is None
+            and outcome.eligible_for_reconciliation
+            and outcome.validation_status in (
+                ValidationStatus.ACCEPTED,
+                ValidationStatus.ACCEPTED_WITH_WARNINGS,
+            )
+            and outcome.rejected_bar_count == 0
+            for outcome in outcomes
+        )
+        if usable_count == 0:
+            status = PipelineStatus.FAILED
+        elif all_complete_and_usable:
+            status = PipelineStatus.SUCCEEDED
         else:
-            status = CollectionStatus.SUCCEEDED
+            status = PipelineStatus.PARTIAL
         return OhlcvPipelineResult(
             collection_run_id=request.collection_run_id,
             validation_run_id=request.validation_run_id,
@@ -428,6 +470,7 @@ __all__ = [
     "OhlcvPipelineRequest",
     "OhlcvPipelineResult",
     "PipelineStage",
+    "PipelineStatus",
     "ProviderCollectionOutcome",
     "run_ohlcv_pipeline",
 ]

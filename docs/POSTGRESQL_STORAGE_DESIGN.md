@@ -209,9 +209,13 @@ The Phase 2D repository implementations accept an injected PostgreSQL DB-API con
 parameterized SQL. The offline flow persists raw observations, reports, check results, accepted
 bars, and quarantine decisions in one transaction when the unified repository is used.
 Validated-bar range queries use the half-open interval [start_utc, end_utc), matching the
-offline collection and validation window convention. No driver
-is imported or connection opened at module import time; PostgreSQL remains the sole authoritative
-storage target.
+offline collection and validation window convention. Validation-report inserts use the logical
+identity `(validation_run_id, dataset_ref)`: an idempotent retry returns the existing database ID
+only when its stored `report_sha256` matches the incoming hash, while different content raises a
+`ValidationReportConflictError`. Both insert and conflict lookup use parameterized SQL. The returned
+database-selected report ID, rather than a caller-proposed ID, becomes the foreign key on accepted
+bars and quarantine decisions and is returned in the persistence summary. No driver is imported or
+connection opened at module import time; PostgreSQL remains the sole authoritative storage target.
 
 ## Phase 2H reconciliation storage
 
@@ -247,4 +251,6 @@ Pipeline persistence is off by default. The safe CLI requires both `--persist` a
 `ENABLE_POSTGRES_PERSISTENCE=true` before loading PostgreSQL configuration or importing a driver.
 Only `POSTGRES_*` settings are read. No SQLite, file database, in-memory authoritative store, or
 implicit fallback is available. Public-network collection is gated independently and does not imply
-persistence.
+persistence. Before storage, the same canonical validation gate used by reconciliation selects the
+accepted bars; rejected records remain auditable through raw observations and deterministic
+quarantine decisions.

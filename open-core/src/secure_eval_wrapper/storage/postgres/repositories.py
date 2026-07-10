@@ -42,6 +42,10 @@ def _json_param(value: object) -> str:
     return json.dumps(_jsonable(value), sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
+class ValidationReportConflictError(RuntimeError):
+    """A stored validation-report identity has different logical content."""
+
+
 class _PostgresRepositoryBase:
     def __init__(self, connection: Any, *, commit_on_write: bool = True) -> None:
         if connection is None:
@@ -235,30 +239,70 @@ class PostgresDataQualityRepository(_PostgresRepositoryBase, DataQualityReposito
 
     def record_validation_report(self, report: StoragePayload) -> UUID:
         report_id = report["validation_report_id"]
-        return self._execute_returning_uuid(
-            """
-            INSERT INTO data_quality.validation_reports (
-                validation_report_id, validation_run_id, dataset_ref,
-                accepted_count, rejected_count, warning_count, status,
-                report_sha256, report_jsonb, created_at_utc
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
-            ON CONFLICT (validation_run_id, dataset_ref) DO UPDATE
-                SET dataset_ref = EXCLUDED.dataset_ref
-            RETURNING validation_report_id
-            """,
-            (
-                report_id,
-                report["validation_run_id"],
-                report["dataset_ref"],
-                report["accepted_count"],
-                report["rejected_count"],
-                report["warning_count"],
-                report["status"],
-                report.get("report_sha256"),
-                _json_param(report.get("report_jsonb", {})),
-                report["created_at_utc"],
-            ),
-        )
+        identity_params = (report["validation_run_id"], report["dataset_ref"])
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(
+                """
+                INSERT INTO data_quality.validation_reports (
+                    validation_report_id, validation_run_id, dataset_ref,
+                    accepted_count, rejected_count, warning_count, status,
+                    report_sha256, report_jsonb, created_at_utc
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
+                ON CONFLICT (validation_run_id, dataset_ref) DO NOTHING
+                RETURNING validation_report_id
+                """,
+                (
+                    report_id,
+                    *identity_params,
+                    report["accepted_count"],
+                    report["rejected_count"],
+                    report["warning_count"],
+                    report["status"],
+                    report.get("report_sha256"),
+                    _json_param(report.get("report_jsonb", {})),
+                    report["created_at_utc"],
+                ),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                cursor.execute(
+                    """
+                    SELECT validation_report_id, report_sha256
+                    FROM data_quality.validation_reports
+                    WHERE validation_run_id = %s AND dataset_ref = %s
+                    """,
+                    identity_params,
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RuntimeError(
+                        "validation report conflict was not readable after insert"
+                    )
+                stored_hash = None if row[1] is None else str(row[1]).strip()
+                incoming_value = report.get("report_sha256")
+                incoming_hash = (
+                    None if incoming_value is None else str(incoming_value).strip()
+                )
+                if stored_hash != incoming_hash:
+                    raise ValidationReportConflictError(
+                        "validation report identity conflict: stored and incoming "
+                        "report_sha256 values differ"
+                    )
+            value = row[0]
+            if not isinstance(value, UUID):
+                value = UUID(str(value))
+        except Exception:
+            if self.commit_on_write and hasattr(self.connection, "rollback"):
+                self.connection.rollback()
+            raise
+        finally:
+            close = getattr(cursor, "close", None)
+            if close is not None:
+                close()
+        if self.commit_on_write and hasattr(self.connection, "commit"):
+            self.connection.commit()
+        return value
 
     def record_data_quality_check(self, check: StoragePayload) -> UUID:
         check_id = check["check_id"]
@@ -344,4 +388,5 @@ __all__ = [
     "PostgresMarketDataRepository",
     "PostgresOfflineValidationRepository",
     "PostgresQuarantineRepository",
+    "ValidationReportConflictError",
 ]

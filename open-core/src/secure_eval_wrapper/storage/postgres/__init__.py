@@ -30,6 +30,7 @@ from secure_eval_wrapper.storage.postgres.repositories import (
     PostgresMarketDataRepository,
     PostgresOfflineValidationRepository,
     PostgresQuarantineRepository,
+    ValidationReportConflictError,
 )
 
 __all__ = [
@@ -39,6 +40,7 @@ __all__ = [
     'PostgresQuarantineRepository',
     'PostgresReconciliationRepository',
     'PostgresOhlcvPipelineRepository',
+    'ValidationReportConflictError',
     'reconciliation_check_result_to_row',
     'reconciliation_result_to_row',
 ]

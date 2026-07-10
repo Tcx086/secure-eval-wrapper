@@ -127,6 +127,14 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add a fixture-default CLI with separately gated bounded public-network and PostgreSQL persistence modes.
 - [x] Add offline Binance plus OKX integration tests for success, failures, quarantine, mismatches, persistence, determinism, and socket isolation.
 
+### Phase 2I hardening: validation gates and persistence identity
+
+- [x] Add one canonical record-level OHLCV validation gate shared by reconciliation and persistence.
+- [x] Exclude rejected bars from reconciliation and expose provider accepted/rejected eligibility outcomes.
+- [x] Add quality-aware pipeline status semantics for succeeded, partial, and failed runs.
+- [x] Propagate database-selected validation report IDs to accepted bars, quarantine rows, and persistence summaries.
+- [x] Reject validation report identity conflicts when stored and incoming report hashes differ.
+
 ## Todo
 
 ### Phase 2: data collection + validation (in progress)

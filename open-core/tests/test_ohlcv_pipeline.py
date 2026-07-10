@@ -20,6 +20,7 @@ from secure_eval_wrapper.data_pipeline import (
     OhlcvPipeline,
     OhlcvPipelineError,
     OhlcvPipelineRequest,
+    PipelineStatus,
 )
 from secure_eval_wrapper.data_validation import ValidationStatus
 
@@ -204,7 +205,7 @@ class OhlcvPipelineTests(unittest.TestCase):
         with patch("socket.socket", side_effect=AssertionError("network access attempted")):
             result = pipeline.run(_request())
 
-        self.assertEqual(result.status, CollectionStatus.SUCCEEDED)
+        self.assertEqual(result.status, PipelineStatus.SUCCEEDED)
         self.assertEqual(result.provider_names, ("binance", "okx"))
         self.assertEqual(tuple(item.provider_name for item in result.outcomes), result.provider_names)
         self.assertTrue(all(len(item.observations) == 2 for item in result.outcomes))
@@ -225,7 +226,7 @@ class OhlcvPipelineTests(unittest.TestCase):
         providers, _, _ = _providers(binance_status=500)
         result = OhlcvPipeline(providers, clock=lambda: FIXED_NOW).run(_request())
 
-        self.assertEqual(result.status, CollectionStatus.PARTIAL)
+        self.assertEqual(result.status, PipelineStatus.PARTIAL)
         self.assertEqual(len(result.errors), 1)
         self.assertEqual(result.errors[0].provider_name, "binance")
         self.assertEqual(result.errors[0].stage.value, "collection")
@@ -265,9 +266,121 @@ class OhlcvPipelineTests(unittest.TestCase):
         self.assertIsNotNone(binance.validation_report)
         assert binance.validation_report is not None
         self.assertEqual(binance.validation_report.status, ValidationStatus.REJECTED)
-        self.assertGreater(binance.validation_report.rejected_count, 0)
+        self.assertEqual(binance.validation_status, ValidationStatus.REJECTED)
+        self.assertEqual(result.status, PipelineStatus.PARTIAL)
+        self.assertEqual(binance.rejected_bar_count, 1)
+        self.assertEqual(len(binance.bars), 2)
+        self.assertEqual(len(binance.accepted_bars), 1)
+        self.assertTrue(binance.eligible_for_reconciliation)
+        invalid_observation_id = binance.observations[0].observation_id
+        accepted_source_ids = {
+            observation_id
+            for bar in binance.accepted_bars
+            for observation_id in bar.source_observation_ids
+        }
+        self.assertNotIn(invalid_observation_id, accepted_source_ids)
         self.assertEqual(len(repository.quarantine), 1)
         self.assertEqual(len(repository.bars), 3)
+        self.assertIsNotNone(result.reconciliation)
+        assert result.reconciliation is not None
+        self.assertEqual(result.reconciliation.metrics["price_mismatch_count"], 0)
+        self.assertGreater(
+            result.reconciliation.metrics["missing_count"]
+            + result.reconciliation.metrics["extra_bar_count"],
+            0,
+        )
+        affected_ids = {
+            observation_id
+            for finding in result.reconciliation.results
+            for observation_id in finding.affected_observation_ids
+        }
+        self.assertNotIn(invalid_observation_id, affected_ids)
+        self.assertNotIn(str(invalid_observation_id), str(result.reconciliation.results))
+
+    def test_all_rejected_provider_is_ineligible_and_reconciliation_is_skipped(self) -> None:
+        invalid_binance = [
+            _binance_kline(
+                1_767_225_600_000,
+                1_767_225_659_999,
+                high="98.00",
+            ),
+            _binance_kline(
+                1_767_225_660_000,
+                1_767_225_719_999,
+                high="98.00",
+            ),
+        ]
+        providers, _, _ = _providers(binance_bars=invalid_binance)
+
+        result = OhlcvPipeline(providers, clock=lambda: FIXED_NOW).run(_request())
+
+        self.assertEqual(result.status, PipelineStatus.PARTIAL)
+        self.assertEqual(result.outcomes[0].accepted_bars, ())
+        self.assertEqual(result.outcomes[0].rejected_bar_count, 2)
+        self.assertFalse(result.outcomes[0].eligible_for_reconciliation)
+        self.assertTrue(result.outcomes[1].eligible_for_reconciliation)
+        self.assertIsNone(result.reconciliation)
+
+    def test_pipeline_fails_when_all_providers_have_zero_accepted_bars(self) -> None:
+        invalid_binance = [
+            _binance_kline(
+                1_767_225_600_000,
+                1_767_225_659_999,
+                high="98.00",
+            ),
+            _binance_kline(
+                1_767_225_660_000,
+                1_767_225_719_999,
+                high="98.00",
+            ),
+        ]
+        invalid_okx = [
+            _okx_candle(1_767_225_660_000, high="98.00"),
+            _okx_candle(1_767_225_600_000, high="98.00"),
+        ]
+        providers, _, _ = _providers(
+            binance_bars=invalid_binance,
+            okx_bars=invalid_okx,
+        )
+
+        result = OhlcvPipeline(providers, clock=lambda: FIXED_NOW).run(_request())
+
+        self.assertEqual(result.status, PipelineStatus.FAILED)
+        self.assertTrue(all(not item.accepted_bars for item in result.outcomes))
+        self.assertTrue(
+            all(not item.eligible_for_reconciliation for item in result.outcomes)
+        )
+        self.assertIsNone(result.reconciliation)
+
+    def test_warning_only_validation_remains_usable_and_succeeds(self) -> None:
+        warning_binance = [
+            _binance_kline(1_767_225_600_000, 1_767_225_659_999),
+            _binance_kline(1_767_225_720_000, 1_767_225_779_999),
+        ]
+        warning_okx = [
+            _okx_candle(1_767_225_720_000),
+            _okx_candle(1_767_225_600_000),
+        ]
+        providers, _, _ = _providers(
+            binance_bars=warning_binance,
+            okx_bars=warning_okx,
+        )
+        warning_end = datetime(2026, 1, 1, 0, 3, tzinfo=timezone.utc)
+
+        result = OhlcvPipeline(providers, clock=lambda: FIXED_NOW).run(
+            _request(end_at_utc=warning_end)
+        )
+
+        self.assertEqual(result.status, PipelineStatus.SUCCEEDED)
+        self.assertTrue(
+            all(
+                item.validation_status is ValidationStatus.ACCEPTED_WITH_WARNINGS
+                for item in result.outcomes
+            )
+        )
+        self.assertTrue(all(item.eligible_for_reconciliation for item in result.outcomes))
+        self.assertTrue(all(item.rejected_bar_count == 0 for item in result.outcomes))
+        self.assertIsNotNone(result.reconciliation)
 
     def test_reconciliation_mismatch_is_returned(self) -> None:
         mismatched_okx = [

@@ -4,7 +4,7 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-10T01:16:01Z",
+  "updated_at_utc": "2026-07-10T01:32:59Z",
   "current_phase": "phase_2_data_collection_validation",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
@@ -154,7 +154,12 @@
         "Add explicit fail-fast and partial-provider policies without treating one provider as successful reconciliation",
         "Add one outer PostgreSQL transaction boundary for optional raw, validation, bar/quarantine, and reconciliation persistence",
         "Add a fixture-default CLI with separately gated bounded public-network and PostgreSQL persistence modes",
-        "Add offline Binance plus OKX integration tests for success, failures, quarantine, mismatches, persistence, determinism, and socket isolation"
+        "Add offline Binance plus OKX integration tests for success, failures, quarantine, mismatches, persistence, determinism, and socket isolation",
+        "Add one canonical record-level OHLCV validation gate shared by reconciliation and persistence",
+        "Exclude rejected bars from reconciliation and expose provider accepted/rejected eligibility outcomes",
+        "Add quality-aware pipeline status semantics for succeeded, partial, and failed runs",
+        "Propagate database-selected validation report IDs to accepted bars, quarantine rows, and persistence summaries",
+        "Reject validation report identity conflicts when stored and incoming report hashes differ"
       ],
       "todo": [
         "Implement additional public OHLCV provider adapters beyond Binance and OKX without embedding credentials",

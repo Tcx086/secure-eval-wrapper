@@ -385,16 +385,28 @@ existing per-migration SHA metadata verification.
 ## Phase 2I provider-neutral OHLCV pipeline and safe CLI
 
 `OhlcvPipeline` validates a typed request, invokes injected public providers in deterministic name
-order, normalizes observations, runs one validation report per provider, reconciles when at least
-two normalized provider datasets succeeded, and returns explicit provider failures. `fail_fast=True`
-raises an `OhlcvPipelineError` retaining the failure and completed outcomes. Partial mode continues
-and never describes a single successful provider as cross-source reconciliation.
+order, normalizes observations, runs one validation report per provider, and returns explicit
+provider failures. One canonical accepted-bar gate unions observation IDs from failed validation
+results, rejects any bar containing one of those source IDs, and treats a failed result without
+record IDs as a dataset-wide rejection. Warning-only results remain usable. Both persistence and
+reconciliation call this same gate, so rejected bars cannot enter cross-source comparison.
+
+Each provider outcome retains the raw observations and full normalized bar set for auditability,
+while separately exposing accepted bars, rejected-bar count, validation status, and reconciliation
+eligibility. Reconciliation runs only when at least two providers have non-empty eligible accepted
+sets. Overall `PipelineStatus` is `succeeded` only when every requested provider completes with
+usable data and no rejected bars, `partial` when some failure or rejection occurs but usable data
+remains, and `failed` when no provider has usable accepted data. `accepted_with_warnings` alone does
+not force a partial result. `fail_fast=True` still raises an `OhlcvPipelineError` retaining the
+failure and completed outcomes.
 
 Persistence is disabled by default. When enabled with a unified PostgreSQL repository, raw
 observations, validation reports/checks, accepted bars or quarantine decisions, and reconciliation
-summary/check rows are written inside one outer transaction. The inner persistence helpers suppress
-their own transaction boundaries in this path, so a failure rolls back the full persisted pipeline
-run. PostgreSQL is the only persistence implementation; there is no fallback storage.
+summary/check rows are written inside one outer transaction. The validation-report repository's
+returned database-selected ID is propagated to every accepted-bar and quarantine foreign key and
+to the persistence summary. The inner persistence helpers suppress their own transaction boundaries
+in this path, so a failure rolls back the full persisted pipeline run. PostgreSQL is the only
+persistence implementation; there is no fallback storage.
 
 `open-core/scripts/run_public_ohlcv_pipeline.py` defaults to public-safe in-memory Binance and OKX
 fixtures and prints only statuses, counts, and hash validity. `--mode public-network` additionally

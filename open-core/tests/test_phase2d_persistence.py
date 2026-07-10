@@ -18,8 +18,10 @@ from secure_eval_wrapper.data_collection import (
 )
 from secure_eval_wrapper.data_validation import (
     INVALID_OHLC_RELATIONSHIP,
-    validate_ohlcv_bars,
+    ValidationCheckStatus,
+    accepted_ohlcv_bars,
     persist_offline_ohlcv_validation_flow,
+    validate_ohlcv_bars,
 )
 from secure_eval_wrapper.storage.postgres.mappers import (
     normalized_bar_to_row,
@@ -30,6 +32,7 @@ from secure_eval_wrapper.storage.postgres.repositories import (
     PostgresDataQualityRepository,
     PostgresMarketDataRepository,
     PostgresOfflineValidationRepository,
+    ValidationReportConflictError,
 )
 
 
@@ -39,7 +42,8 @@ FIXED_NOW = datetime(2026, 7, 9, 14, 0, tzinfo=timezone.utc)
 
 
 class FakePersistenceRepository:
-    def __init__(self) -> None:
+    def __init__(self, stored_validation_report_id: UUID | None = None) -> None:
+        self.stored_validation_report_id = stored_validation_report_id
         self.raw = []
         self.reports = []
         self.checks = []
@@ -58,7 +62,7 @@ class FakePersistenceRepository:
 
     def record_validation_report(self, row):
         self.reports.append(row)
-        return row["validation_report_id"]
+        return self.stored_validation_report_id or row["validation_report_id"]
 
     def record_data_quality_check(self, row):
         self.checks.append(row)
@@ -83,17 +87,22 @@ class NoConnectConnection:
 
 
 class ReturningCursor:
-    def __init__(self, row=None) -> None:
+    def __init__(self, row=None, rows=None) -> None:
         self.row = row
+        self.rows = list(rows) if rows is not None else None
         self.sql = ""
         self.params = ()
+        self.executions = []
         self.description = None
 
     def execute(self, sql, params):
         self.sql = sql
         self.params = params
+        self.executions.append((sql, params))
 
     def fetchone(self):
+        if self.rows is not None:
+            return self.rows.pop(0)
         return self.row
 
     def fetchall(self):
@@ -104,9 +113,10 @@ class ReturningCursor:
 
 
 class ReturningConnection:
-    def __init__(self, row=None) -> None:
-        self.cursor_instance = ReturningCursor(row)
+    def __init__(self, row=None, rows=None) -> None:
+        self.cursor_instance = ReturningCursor(row, rows)
         self.commits = 0
+        self.rollbacks = 0
 
     def cursor(self):
         return self.cursor_instance
@@ -115,7 +125,7 @@ class ReturningConnection:
         self.commits += 1
 
     def rollback(self):
-        return None
+        self.rollbacks += 1
 
 
 class Phase2DPersistenceTests(unittest.TestCase):
@@ -181,6 +191,70 @@ class Phase2DPersistenceTests(unittest.TestCase):
         self.assertEqual(repository.quarantine[0]["quarantine_reason"], INVALID_OHLC_RELATIONSHIP)
         self.assertEqual(len(summary.quarantine_decision_ids), 1)
 
+    def test_database_selected_report_id_is_used_for_all_child_rows(self) -> None:
+        invalid = replace(self.bars[1], high=Decimal("99"))
+        report = validate_ohlcv_bars(
+            validation_run_id=VALIDATION_RUN_ID,
+            dataset_ref="synthetic-btc-usdt-selected-id",
+            bars=(self.bars[0], invalid, self.bars[2]),
+            clock=lambda: FIXED_NOW,
+        )
+        stored_report_id = UUID("30000000-0000-0000-0000-000000000099")
+        repository = FakePersistenceRepository(stored_report_id)
+
+        summary = persist_offline_ohlcv_validation_flow(
+            self.observations,
+            (self.bars[0], invalid, self.bars[2]),
+            report,
+            repository=repository,
+        )
+
+        self.assertNotEqual(stored_report_id, report.validation_report_id)
+        self.assertEqual(summary.validation_report_id, stored_report_id)
+        self.assertTrue(repository.bars)
+        self.assertTrue(repository.quarantine)
+        self.assertTrue(
+            all(row["validation_report_id"] == stored_report_id for row in repository.bars)
+        )
+        self.assertTrue(
+            all(
+                row["validation_report_id"] == stored_report_id
+                for row in repository.quarantine
+            )
+        )
+
+    def test_dataset_wide_failure_rejects_every_bar(self) -> None:
+        invalid = replace(self.bars[1], high=Decimal("99"))
+        report = validate_ohlcv_bars(
+            validation_run_id=VALIDATION_RUN_ID,
+            dataset_ref="synthetic-btc-usdt-dataset-wide",
+            bars=(self.bars[0], invalid, self.bars[2]),
+            clock=lambda: FIXED_NOW,
+        )
+        failed_result = next(
+            result
+            for result in report.results
+            if result.status is ValidationCheckStatus.FAILED
+        )
+        dataset_wide_report = replace(
+            report,
+            results=(replace(failed_result, affected_observation_ids=()),),
+        )
+
+        dataset_bars = (self.bars[0], invalid, self.bars[2])
+        self.assertEqual(accepted_ohlcv_bars(dataset_bars, dataset_wide_report), ())
+
+        repository = FakePersistenceRepository()
+        summary = persist_offline_ohlcv_validation_flow(
+            self.observations,
+            dataset_bars,
+            dataset_wide_report,
+            repository=repository,
+        )
+        self.assertEqual(summary.accepted_bar_ids, ())
+        self.assertEqual(repository.bars, [])
+        self.assertEqual(len(repository.quarantine), 3)
+
     def test_mapping_utilities_preserve_domain_identity_and_hashes(self) -> None:
         raw_row = raw_observation_to_row(self.observations[0])
         bar_row = normalized_bar_to_row(
@@ -201,9 +275,11 @@ class Phase2DPersistenceTests(unittest.TestCase):
         PostgresOfflineValidationRepository(connection)
         self.assertEqual(connection.cursor_calls, 0)
 
-    def test_report_conflict_returns_existing_database_id(self) -> None:
+    def test_report_conflict_with_same_hash_returns_existing_database_id(self) -> None:
         existing_id = UUID("30000000-0000-0000-0000-000000000099")
-        connection = ReturningConnection((existing_id,))
+        connection = ReturningConnection(
+            rows=[None, (existing_id, self.report.report_sha256)]
+        )
         repository = PostgresDataQualityRepository(connection)
         row = validation_report_to_row(self.report)
         row["validation_report_id"] = UUID("30000000-0000-0000-0000-000000000098")
@@ -211,8 +287,35 @@ class Phase2DPersistenceTests(unittest.TestCase):
         returned_id = repository.record_validation_report(row)
 
         self.assertEqual(returned_id, existing_id)
-        self.assertIn("RETURNING validation_report_id", connection.cursor_instance.sql)
+        self.assertEqual(len(connection.cursor_instance.executions), 2)
+        insert_sql, insert_params = connection.cursor_instance.executions[0]
+        select_sql, select_params = connection.cursor_instance.executions[1]
+        self.assertIn("ON CONFLICT (validation_run_id, dataset_ref) DO NOTHING", insert_sql)
+        self.assertIn("RETURNING validation_report_id", insert_sql)
+        self.assertIn("WHERE validation_run_id = %s AND dataset_ref = %s", select_sql)
+        self.assertEqual(
+            select_params,
+            (self.report.validation_run_id, self.report.dataset_ref),
+        )
+        self.assertNotIn(self.report.dataset_ref, select_sql)
+        self.assertEqual(insert_params[1:3], select_params)
         self.assertEqual(connection.commits, 1)
+        self.assertEqual(connection.rollbacks, 0)
+
+    def test_report_conflict_with_different_hash_fails_clearly(self) -> None:
+        existing_id = UUID("30000000-0000-0000-0000-000000000099")
+        connection = ReturningConnection(rows=[None, (existing_id, "f" * 64)])
+        repository = PostgresDataQualityRepository(connection)
+        row = validation_report_to_row(self.report)
+
+        with self.assertRaisesRegex(
+            ValidationReportConflictError,
+            "report_sha256 values differ",
+        ):
+            repository.record_validation_report(row)
+
+        self.assertEqual(connection.commits, 0)
+        self.assertEqual(connection.rollbacks, 1)
 
     def test_validated_bar_query_uses_end_exclusive_window(self) -> None:
         connection = ReturningConnection()
