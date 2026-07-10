@@ -321,7 +321,7 @@ The intended principle is simple: **make the infrastructure inspectable without 
 
 Phases 3 and 4 are complete and auditable: public alphas produce continuous point-in-time `AlphaValue` records, and standardized signals apply deterministic ranking, thresholding, combination, conflict, and confidence rules with PostgreSQL lineage.
 
-Phase 5 simulated execution and backtesting is implemented and is undergoing its fourth independent audit repair. Phase 6 monitoring and the simulated FIX API remain entirely todo; paper and live trading are not enabled.
+Phase 5 simulated execution and backtesting is complete through its fourth independent audit. Phase 6 monitoring and the simulated FIX API remain entirely todo; paper and live trading are not enabled.
 
 ## Disclaimer
 
