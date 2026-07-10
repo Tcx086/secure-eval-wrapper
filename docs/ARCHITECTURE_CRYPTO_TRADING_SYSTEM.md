@@ -1,4 +1,4 @@
-# Crypto Trading System Architecture
+﻿# Crypto Trading System Architecture
 
 ## Purpose
 This repository is being rebuilt from a demo evaluation wrapper into a public crypto-focused
@@ -313,3 +313,15 @@ The public research path is now `accepted Phase 2 records -> AlphaEngine -> Alph
 `SignalPipeline` ranks strictly within timestamp + alpha/version + horizon, applies explicit absolute/percentile/top-bottom policies, combines signed normalized contributions with deterministic weights and coverage rules, preserves conflicts, and emits bounded heuristic confidence that is explicitly not a profit probability. Signals are research records only. They contain no quantity, leverage, broker, account, order, position, PnL, or portfolio state.
 
 Optional persistence uses injected PostgreSQL repositories and one outer transaction per alpha or signal run. The default CLI is fixture-only, socket-free, and persistence-free. Phase 5 execution and backtesting remain unimplemented.
+## Phase 5 implemented execution-to-backtest boundary
+
+Phase 5 now implements the shared `Broker` contract with a deterministic bar-level
+`SimulatedBroker`; immutable order, risk, fill, ledger, funding, position, account, event, equity,
+and metric records; exact Spot and linear-perpetual accounting; and one atomic PostgreSQL bundle.
+At equal timestamps the engine processes completed-bar execution, close mark, funding, signal and
+order submission, then the next bar open. This prevents same-bar lookahead while allowing a
+close-derived signal to use the next actual open at the same timestamp. Missing candles are never
+synthesized, final positions are never silently closed, and symbol-only identity is prohibited.
+
+Paper, live, real FIX, leverage, liquidation, and Phase 6 monitoring runtime remain unimplemented.
+The normative semantics and limitations are in `SIMULATED_EXECUTION_AND_BACKTESTING.md`.

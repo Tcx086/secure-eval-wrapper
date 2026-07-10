@@ -1,4 +1,4 @@
-# Folder Structure
+﻿# Folder Structure
 
 ## Purpose
 This document defines the target repository layout for the crypto trading framework rebuild. The
@@ -163,3 +163,11 @@ Local-only runtime data:
 - `var/postgres/`: local PostgreSQL data directory.
 
 All `var/` runtime paths should be ignored by Git.
+## Phase 5 implemented package delta
+
+The implemented layout adds `open-core/pyproject.toml`, the `secure_eval_wrapper.execution` and
+`secure_eval_wrapper.backtesting` packages, PostgreSQL Phase 5 row/repository modules,
+`storage/backtest_bundle.py`, migration `0009_phase5_simulated_execution_backtesting.sql`, the
+fixture wrapper `scripts/run_public_backtest_pipeline.py`, cross-platform migration/catalog
+validation scripts, dedicated Phase 5 tests, and `.github/workflows/ci.yml`. `execution/brokers/`
+contains only `simulated.py`; future paper/live and Phase 6 FIX-monitoring folders remain absent.

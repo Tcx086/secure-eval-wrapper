@@ -1,4 +1,4 @@
-# Execution and FIX-Style Monitoring
+﻿# Execution and FIX-Style Monitoring
 
 ## Purpose
 The execution layer defines one shared contract for backtests, paper trading, and future guarded
@@ -140,3 +140,15 @@ health, and future account health.
 ## Public Safety
 Public demos may include simulated FIX events and synthetic execution reports. They must not include
 real broker session IDs, real account IDs, API credentials, or private trade logs.
+## Phase 5 implemented simulated execution
+
+The shared contract is now implemented for backtesting by `SimulatedBroker`. It supports market,
+limit, stop, and deterministic two-stage stop-limit orders; GTC and open-evaluated IOC; maker/taker
+fees; adverse slippage; pre-submit and actual-price pre-fill risk; supersession cancellation; and
+run-end expiry. Positions and cash change only from fills and realized funding. Equal-timestamp
+priority is completed-bar execution, close mark, funding, signal/submission, then next-bar open, so
+a signal never fills from its own completed bar.
+
+The simulated FIX-style monitoring concepts below remain Phase 6 design only. No FIX session,
+paper adapter, live adapter, authenticated endpoint, or trading WebSocket has been implemented.
+See `SIMULATED_EXECUTION_AND_BACKTESTING.md` for the normative Phase 5 rules.

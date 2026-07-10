@@ -1,4 +1,4 @@
-# PostgreSQL Storage Design
+﻿# PostgreSQL Storage Design
 
 ## Positioning
 PostgreSQL is the authoritative storage layer for the target crypto trading framework. SQLite must
@@ -304,3 +304,18 @@ Migration `0007_alpha_signal_library.sql` establishes the original alpha/signal 
 `PostgresAlphaRepository` and `PostgresSignalRepository` accept an injected DB-API PostgreSQL connection, use `%s` parameters, connect nowhere during import, return database-selected IDs, and reject same-identity/different-content retries. Alpha-value and signal reads are deterministic and end-exclusive. `PostgresAlphaSignalRepository` shares one connection when a caller needs both domains. `persist_alpha_signal_bundle` owns one outer transaction for registry definitions, alpha runs/values, signal runs/signals, and signal components; any child failure rolls back the whole milestone. There is no SQLite or file-database fallback.
 
 Persistence remains disabled in the offline alpha-to-signal CLI unless both `--persist` and `ENABLE_POSTGRES_PERSISTENCE=true` are present.
+## Phase 5 execution and backtest persistence
+
+Migration `0009_phase5_simulated_execution_backtesting.sql` leaves migrations `0001` through
+`0008` unchanged. It strengthens order intents, orders, fills, positions, account snapshots,
+backtest runs, metrics, and equity curves with complete series identity, deterministic hashes,
+accounting/risk/fee/slippage fields, event timestamps, and logical conflict indexes. It adds
+`execution.risk_decisions`, `execution.position_snapshots`, `execution.funding_payments`,
+`execution.cash_ledger_entries`, and `backtesting.backtest_events`.
+
+`PostgresPhase5Repository` accepts an injected DB-API connection, uses parameterized SQL, returns
+database-selected IDs, rejects same-identity/different-hash retries, and provides deterministic
+half-open reads. `persist_backtest_bundle` owns one outer transaction for the complete Phase 5
+parent/child graph; injected failures at every child location leave zero run rows. Clean PostgreSQL
+16 installation and a seeded `0008` to `0009` upgrade are independently validated. PostgreSQL
+remains the only authority and persistence is disabled by default in the offline demo.

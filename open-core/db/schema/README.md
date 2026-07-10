@@ -1,4 +1,4 @@
-# Schema Groups
+﻿# Schema Groups
 
 The initial migration creates separate PostgreSQL schemas for the major framework domains:
 
@@ -29,3 +29,12 @@ funding, and instrument records.
 ## Phase 3-4 research schema
 
 Migration 0007 establishes the original public research-storage boundary. Migration 0008 repairs its independent-audit findings: validated bars persist close time/finality; alpha values and signals retain complete immutable series identity, per-as-of stable hashes, separate formula/code/source-tree provenance, and series-based uniqueness; alpha values persist typed status/reasons and lookback bounds; signal ranks support averages; overlap policy/reasons are explicit; and `signals.signal_components` stores every normalized contribution with alpha/signal foreign keys and a deterministic hash. Signal rows remain execution-free research outputs.
+## Phase 5 execution and backtesting schema
+
+Migration 0009 makes complete provider/instrument/timeframe identity and stable content hashes
+first-class throughout execution. New normalized tables retain both risk stages, every position
+snapshot, realized perpetual funding lineage, and every cash change. `backtesting.backtest_events`
+uses a deterministic sequence plus timestamp priority; metrics and equity remain children of the
+backtest run. Partial bundle commits are prohibited by the repository transaction boundary.
+Existing legacy rows can upgrade with nullable strengthened columns, while every new Phase 5 write
+is complete and conflict-protected.

@@ -1,4 +1,4 @@
-# PostgreSQL Database Assets
+﻿# PostgreSQL Database Assets
 
 This directory contains PostgreSQL-only database definitions for the public crypto trading
 framework rebuild. It does not contain private data, seeds, account snapshots, trade logs, or
@@ -86,3 +86,15 @@ The service binds PostgreSQL only to `127.0.0.1`.
 - `0008_phase3_phase4_audit_repairs.sql`: repairs the audited Phase 3-4 contracts without changing migrations `0001` through `0007`. It adds bar close/finality, complete series identity and series-based uniqueness, typed alpha status and lookback bounds, eligible-input/record hashes, formula/code/source-tree provenance, average-rank-compatible numeric storage, explicit overlap policy, and `signals.signal_components`.
 
 The Phase 3-4 repositories use injected PostgreSQL DB-API connections, parameterized SQL, conflict-hash protection, database-selected IDs, half-open reads, and caller-owned outer transactions. The CLI uses one milestone-wide transaction for definitions, alpha runs/values, signal runs/signals, and signal components. No SQLite fallback exists.
+## Migration 0009 and Phase 5 validation
+
+- `0009_phase5_simulated_execution_backtesting.sql` strengthens execution/backtest identity and
+  adds risk decisions, position snapshots, funding payments, cash ledger entries, and ordered
+  backtest events without modifying migrations `0001` through `0008`.
+- `scripts/apply_postgres_migrations.py` is the cross-platform hash-checking runner used by CI.
+- `scripts/verify_phase5_postgres_schema.py` checks Phase 5 catalog essentials and zero FK orphans.
+
+CI applies `0001` through `0009` to a clean PostgreSQL 16 service, applies `0001` through `0008` to
+a second database with public-safe legacy rows before upgrading it with `0009`, and runs real
+repository, idempotency, full-bundle, and rollback validation. No database credentials or dumps are
+published.

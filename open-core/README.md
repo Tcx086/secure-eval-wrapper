@@ -1,4 +1,4 @@
-# Open Core (Public)
+﻿# Open Core (Public)
 
 ## What this is
 Runtime core for a production-style evaluation system.
@@ -62,7 +62,7 @@ status, and hash validity only.
 
 ## Complete public market-data layer (Phase 2)
 
-The public data framework now includes Binance Spot and OKX Spot OHLCV and trades, Binance USDâ“ˆ-M
+The public data framework now includes Binance Spot and OKX Spot OHLCV and trades, Binance USDÃ¢â€œË†-M
 and OKX SWAP funding, and Binance/OKX Spot and derivative instrument metadata. All paths use
 injectable transports, deterministic UTC normalization, validation reports, accepted/rejected
 gates, quarantine, and PostgreSQL-only persistence. No credentials, account endpoints, order
@@ -92,3 +92,26 @@ python scripts\run_public_alpha_signal_pipeline.py
 ```
 
 Persistence requires both `--persist` and `ENABLE_POSTGRES_PERSISTENCE=true`.
+## Installable package and Phase 5 offline backtest
+
+The `secure_eval_wrapper` namespace is a standard setuptools package with no mandatory third-party
+runtime dependency and no import-time network or database activity:
+
+```powershell
+python -m pip install -e .
+secure-eval-backtest
+secure-eval-validate
+```
+
+From the repository root, the compatible wrapper is:
+
+```powershell
+python open-core\scripts\run_public_backtest_pipeline.py
+```
+
+The fixture-default command is socket-free, deterministic, persistence-free, and public-safe. It
+uses complete series identities, target sizing, two-stage risk, `SimulatedBroker`, fill-driven Spot
+accounting, maker/taker fees, adverse slippage, equity-curve metrics, and explicit run-end open
+positions. Optional PostgreSQL support is installed with `.[postgres]`; persistence still requires
+both `--persist` and `ENABLE_POSTGRES_PERSISTENCE=true`. There is no SQLite fallback, paper broker,
+or live runtime. See `../docs/SIMULATED_EXECUTION_AND_BACKTESTING.md`.

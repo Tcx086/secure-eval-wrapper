@@ -1,4 +1,4 @@
-# Implementation Status
+﻿# Implementation Status
 
 This file is the human-readable source of implementation progress. The machine-readable status file
 is `.project/implementation_status.json`.
@@ -140,8 +140,8 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add unambiguous provider instrument identities that separate Spot, perpetual swaps, and dated futures.
 - [x] Verify and document current official public endpoint, request, response, pagination, limit, and authentication contracts.
 - [x] Implement Binance and OKX public Spot trade collection through injectable transports.
-- [x] Implement Binance USDâ“ˆ-M and OKX SWAP public funding history.
-- [x] Implement Binance Spot/USDâ“ˆ-M and OKX SPOT/SWAP public instrument metadata.
+- [x] Implement Binance USDÃ¢â€œË†-M and OKX SWAP public funding history.
+- [x] Implement Binance Spot/USDÃ¢â€œË†-M and OKX SPOT/SWAP public instrument metadata.
 - [x] Add deterministic normalization, validation reports, accepted/rejected gates, and quarantine for all three data types.
 - [x] Add PostgreSQL trade/funding persistence, immutable instrument metadata versions, conflict hashes, reads, indexes, constraints, and foreign-key verification.
 - [x] Add provider-neutral typed trade, funding, and instrument pipelines with fail-fast, partial, warning, and one-transaction persistence semantics.
@@ -199,6 +199,18 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add one atomic bundled alpha-to-signal persistence boundary with rollback coverage at every child failure point.
 - [x] Complete clean-install, 0007-to-0008 upgrade, schema, migration-hash, full-suite, offline, and security-boundary validation.
 - [x] Re-accept Phase 3 and Phase 4 only after every mandatory audit repair and validation passes.
+### Phase 5 implementation checkpoint (exit validation pending)
+- [x] Add installable package metadata, console entry points, cross-platform validation, and least-privilege CI.
+- [x] Define immutable deterministic execution, sizing, risk, order, fill, position, cash, funding, account, and event contracts.
+- [x] Implement market, limit, stop, stop-limit, GTC/IOC, fee, slippage, cancellation, rejection, and expiry semantics in `SimulatedBroker`.
+- [x] Implement exact Spot and linear-perpetual fill-driven accounting, reversals, replay protection, and ledger reconciliation.
+- [x] Implement realized grounded-interval funding with same-timestamp priority and no Spot/predicted funding.
+- [x] Implement the multi-series event-driven engine, missing-candle handling, stale marks, final open positions, and fill-derived metrics.
+- [x] Add migration `0009` and injected-connection PostgreSQL repositories with one complete-bundle transaction.
+- [x] Add the fixture-default socket-free offline backtest CLI and optional double-gated PostgreSQL persistence.
+- [x] Add dedicated Phase 5 order, risk, accounting, funding, metrics, persistence, anti-lookahead, and future-invariance tests.
+- [x] Pass local PostgreSQL 16 clean install, seeded `0008` to `0009` upgrade, catalog/hash checks, real writes/reads, conflicts, and rollback injection.
+- [x] Document exact Phase 5 semantics, persistence, validation, and limitations.
 ## Todo
 
 ### Future provider enhancements
@@ -206,17 +218,7 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [ ] Consider additional public OHLCV/trade/funding/instrument adapters after Phase 2; Bybit and Coinbase are not currently implemented.
 
 ### Phase 5: simulated execution + backtesting
-- [ ] Define broker interface.
-- [ ] Implement order intent schema.
-- [ ] Implement `SimulatedBroker`.
-- [ ] Implement fill model.
-- [ ] Implement fee model.
-- [ ] Implement slippage model.
-- [ ] Implement risk guard.
-- [ ] Implement position manager.
-- [ ] Implement backtest event loop.
-- [ ] Generate metrics from fills and positions, not direct signal equity mutation.
-- [ ] Add crypto-specific backtest handling for fees, funding, 24/7 markets, and missing candles.
+- [ ] Pass the final independent GitHub Actions checkpoint and synchronize the validated final SHA to `origin/main`.
 
 ### Phase 6: monitoring + simulated FIX API
 - [ ] Implement monitoring event schema.

@@ -1,10 +1,12 @@
-# Secure Eval Wrapper
+﻿# Secure Eval Wrapper
+
+[![CI](https://github.com/Tcx086/secure-eval-wrapper/actions/workflows/ci.yml/badge.svg)](https://github.com/Tcx086/secure-eval-wrapper/actions/workflows/ci.yml)
 
 A public, auditable, and reproducible framework for building crypto trading systems without exposing private alpha, credentials, account data, or sensitive trade records.
 
-The project is developed in explicit, auditable phases. Architecture, PostgreSQL foundations, the public market-data layer, and the repaired public alpha and standardized-signal milestone are complete. Simulated execution and backtesting have not started.
+The project is developed in explicit, auditable phases. Architecture, PostgreSQL foundations, public market data, public alpha, and standardized signals are complete. Deterministic simulated execution and event-driven backtesting are implemented and undergoing the Phase 5 exit validation.
 
-> **Current status:** Phase 3 and Phase 4 are complete after the mandatory independent-audit repair and PostgreSQL validation. Phase 5 remains todo and has not been implemented.
+> **Current status:** Phase 5 implementation is complete locally, including PostgreSQL 16 validation; final independent GitHub Actions exit validation is in progress. Phase 6 has not started.
 
 ## Why this project exists
 
@@ -54,7 +56,7 @@ Simulated execution + backtesting    [Phase 5]
 Monitoring, reporting, paper/live    [Later phases]
 ```
 
-Signals are not fills. Future backtests must create order intents, pass them through a simulated broker, receive fills, update positions, and only then calculate portfolio metrics.
+Signals are not fills. Phase 5 backtests create order intents, pass them through `SimulatedBroker`, receive fills, update cash and positions only from fills/funding, and only then calculate portfolio metrics.
 
 ## Implementation status
 
@@ -65,7 +67,7 @@ Signals are not fills. Future backtests must create order intents, pass them thr
 | 2 | Public market-data collection, validation, reconciliation, persistence | Completed |
 | 3 | Public Alpha Library | Completed; audit repair accepted |
 | 4 | Standardized Signal Generation | Completed; audit repair accepted |
-| 5 | Simulated Execution and Event-Driven Backtesting | Todo; not started |
+| 5 | Simulated Execution and Event-Driven Backtesting | In progress; implementation and local PostgreSQL validation complete |
 | 6 | Monitoring and Simulated FIX-Style Events | Planned |
 | 7 | Paper Trading | Future |
 | 8 | Guarded Live Execution | Future; disabled by default |
@@ -73,6 +75,7 @@ Signals are not fills. Future backtests must create order intents, pass them thr
 
 The authoritative progress records are:
 
+- [Simulated execution and backtesting](docs/SIMULATED_EXECUTION_AND_BACKTESTING.md)
 - [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md)
 - [`.project/implementation_status.json`](.project/implementation_status.json)
 

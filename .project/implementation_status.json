@@ -4,7 +4,7 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-10T05:21:03Z",
+  "updated_at_utc": "2026-07-10T06:08:57Z",
   "current_phase": "phase_5_simulated_execution_backtesting",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
@@ -235,20 +235,25 @@
     {
       "id": "phase_5_simulated_execution_backtesting",
       "title": "Phase 5: simulated execution + backtesting",
-      "status": "todo",
-      "completed": [],
+      "status": "in_progress",
+      "completed": [
+        "Define the shared Broker interface and immutable deterministic execution contracts",
+        "Implement target-position sizing with conservative quantity-step rounding and explicit no-action audits",
+        "Implement SimulatedBroker market, limit, stop, stop-limit, GTC, IOC, cancellation, rejection, and expiry semantics",
+        "Implement exact maker/taker fees and adverse slippage with persisted fill evidence",
+        "Implement deterministic pre-submit and actual-price pre-fill RiskGuard decisions",
+        "Implement fill-only Spot and linear-perpetual position and cash accounting with reversals and replay protection",
+        "Implement grounded realized funding and same-timestamp event priority",
+        "Implement multi-series event-driven backtesting, missing-candle handling, stale marks, and final open positions",
+        "Generate metrics only from fills, ledger, funding, positions, marks, and the equity curve",
+        "Add migration 0009 and injected-connection conflict-protected PostgreSQL repositories",
+        "Add one outer transaction for complete Phase 5 bundle persistence with rollback injection coverage",
+        "Add the fixture-default socket-free backtest CLI and package console entry point",
+        "Add cross-platform validation, least-privilege GitHub Actions, documentation, and Phase 5 regression coverage",
+        "Pass local PostgreSQL 16 clean install, seeded 0008-to-0009 upgrade, catalog, repository, idempotency, full-bundle, and rollback validation"
+      ],
       "todo": [
-        "Define broker interface",
-        "Implement order intent schema",
-        "Implement SimulatedBroker",
-        "Implement fill model",
-        "Implement fee model",
-        "Implement slippage model",
-        "Implement risk guard",
-        "Implement position manager",
-        "Implement backtest event loop",
-        "Generate metrics from fills and positions, not direct signal equity mutation",
-        "Add crypto-specific backtest handling for fees, funding, 24/7 markets, and missing candles"
+        "Pass the final independent GitHub Actions checkpoint and synchronize the validated final SHA to origin/main"
       ]
     },
     {
