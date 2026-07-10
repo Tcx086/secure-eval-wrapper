@@ -15,9 +15,23 @@ from secure_eval_wrapper.data_collection.models import InstrumentType
 from secure_eval_wrapper.execution.models import OrderStatus, OrderType
 from secure_eval_wrapper.storage.backtest_bundle import BacktestBundlePersistenceError, persist_backtest_bundle
 from secure_eval_wrapper.storage.postgres.phase5_repositories import PostgresPhase5Repository
+from secure_eval_wrapper.storage.postgres.phase5_rows import position_state_row
 
 from test_phase5_execution import bar, config, run_engine, signal
 
+
+def _expected_position_projection_hash(result) -> str:
+    position = result.positions[0]
+    final_snapshot = max(
+        (snapshot for snapshot in result.position_snapshots if snapshot.position_id == position.position_id),
+        key=lambda snapshot: (snapshot.snapshot_at_utc, snapshot.logical_sequence, str(snapshot.position_snapshot_id)),
+    )
+    return position_state_row(
+        position,
+        backtest_run_id=result.run.backtest_run_id,
+        deterministic_ordinal=0,
+        final_snapshot=final_snapshot,
+    )["final_record_sha256"]
 
 def _signals(name: str, *, kind=InstrumentType.SPOT, final_direction: str | None = None):
     run_id = uuid5(NAMESPACE_URL, f"phase5-fourth-audit-signal-run:{name}")
@@ -215,8 +229,11 @@ class FourthAuditPostgresTests(unittest.TestCase):
         bundle_b = repository.get_backtest_bundle(backtest_run_id=self.flat_b.run.backtest_run_id)
         self.assertEqual(bundle_a["positions"][0]["quantity"], Decimal("1"))
         self.assertEqual(bundle_b["positions"][0]["quantity"], Decimal("0"))
-        self.assertEqual(bundle_a["positions"][0]["record_sha256"], self.flat_a.positions[0].record_sha256)
-        self.assertEqual(bundle_b["positions"][0]["record_sha256"], self.flat_b.positions[0].record_sha256)
+        self.assertEqual(bundle_a["positions"][0]["record_sha256"], _expected_position_projection_hash(self.flat_a))
+        self.assertEqual(bundle_a["positions"][0]["valuation_status"], "marked")
+        self.assertIsNotNone(bundle_a["positions"][0]["mark_price"])
+        self.assertEqual(bundle_b["positions"][0]["record_sha256"], _expected_position_projection_hash(self.flat_b))
+        self.assertEqual(bundle_b["positions"][0]["valuation_status"], "flat")
         a_fill_ids = {row["fill_id"] for row in bundle_a["fills"]}
         b_fill_ids = {row["fill_id"] for row in bundle_b["fills"]}
         self.assertTrue(a_fill_ids < b_fill_ids)
@@ -293,7 +310,7 @@ class FourthAuditPostgresTests(unittest.TestCase):
             cursor.execute(
                 "UPDATE backtesting.backtest_position_states SET final_record_sha256=%s "
                 "WHERE backtest_run_id=%s AND position_id=%s",
-                (self.flat_a.positions[0].record_sha256, self.flat_a.run.backtest_run_id, self.flat_a.positions[0].position_id),
+                (_expected_position_projection_hash(self.flat_a), self.flat_a.run.backtest_run_id, self.flat_a.positions[0].position_id),
             )
         self.connection.commit()
         persist_backtest_bundle(repository, self.flat_b)
