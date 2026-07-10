@@ -144,6 +144,17 @@ class ExecutionEventType(str, Enum):
     NO_ACTION = "no_action"
 
 
+class MarkSource(str, Enum):
+    BAR_OPEN = "bar_open"
+    BAR_CLOSE = "bar_close"
+
+
+class PositionSnapshotKind(str, Enum):
+    FILL = "fill"
+    BAR_OPEN_MARK = "bar_open_mark"
+    BAR_CLOSE_MARK = "bar_close_mark"
+
+
 class LedgerEntryType(str, Enum):
     INITIAL_CASH = "initial_cash"
     SPOT_NOTIONAL = "spot_notional"
@@ -301,6 +312,7 @@ class RiskDecision:
     observed_value: Decimal | None = None
     configured_limit: Decimal | None = None
     relevant_limit: str | None = None
+    order_id: UUID | None = None
     parent_ids: tuple[UUID, ...] = ()
     provenance: Mapping[str, object] = field(default_factory=dict)
     risk_decision_id: UUID | None = None
@@ -314,6 +326,16 @@ class RiskDecision:
         _hash(self.config_sha256, "config_sha256")
         _optional_finite(self.observed_value, "observed_value")
         _optional_finite(self.configured_limit, "configured_limit")
+        if self.stage is RiskStage.PRE_FILL and self.order_id is None:
+            raise ValueError("pre-fill RiskDecision requires order_id")
+        if self.stage is RiskStage.PRE_SUBMIT and self.order_id is not None:
+            raise ValueError("pre-submit RiskDecision must not have order_id")
+        required_parents = (self.order_intent_id,) if self.order_id is None else (self.order_intent_id, self.order_id)
+        if self.parent_ids:
+            if not set(required_parents).issubset(self.parent_ids):
+                raise ValueError("RiskDecision parent_ids must contain its order lineage")
+        else:
+            object.__setattr__(self, "parent_ids", required_parents)
         object.__setattr__(self, "provenance", _public_map(self.provenance))
         expected = deterministic_uuid("risk-decision", self.economic_payload)
         if self.risk_decision_id is not None and self.risk_decision_id != expected:
@@ -322,7 +344,7 @@ class RiskDecision:
 
     @property
     def economic_payload(self) -> dict[str, object]:
-        return {"run_id": self.run_id, "order_intent_id": self.order_intent_id, "series_identity_sha256": self.series_identity.series_identity_sha256, "decision_timestamp_utc": self.decision_timestamp_utc, "stage": self.stage, "status": self.status, "reason_code": self.reason_code, "relevant_limit": self.relevant_limit, "observed_value": self.observed_value, "configured_limit": self.configured_limit, "config_sha256": self.config_sha256}
+        return {"run_id": self.run_id, "order_intent_id": self.order_intent_id, "order_id": self.order_id, "series_identity_sha256": self.series_identity.series_identity_sha256, "decision_timestamp_utc": self.decision_timestamp_utc, "stage": self.stage, "status": self.status, "reason_code": self.reason_code, "relevant_limit": self.relevant_limit, "observed_value": self.observed_value, "configured_limit": self.configured_limit, "config_sha256": self.config_sha256}
 
     @property
     def record_sha256(self) -> str:
@@ -430,6 +452,7 @@ class Fill:
 @dataclass(frozen=True)
 class PositionState:
     run_id: UUID
+    account_ref: str
     series_identity: SeriesIdentity
     accounting_mode: AccountingMode
     quantity: Decimal
@@ -441,6 +464,7 @@ class PositionState:
     position_id: UUID | None = None
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "account_ref", _text(self.account_ref, "account_ref"))
         object.__setattr__(self, "accounting_mode", AccountingMode(self.accounting_mode))
         require_utc_datetime(self.updated_at_utc, field_name="PositionState updated_at_utc")
         _finite(self.quantity, "quantity")
@@ -453,19 +477,20 @@ class PositionState:
         if self.accounting_mode is AccountingMode.SPOT and self.quantity < 0:
             raise ValueError("Spot position cannot be negative")
         _hash(self.config_sha256, "config_sha256")
-        expected = deterministic_uuid("position", {"run_id": self.run_id, "series_identity_sha256": self.series_identity.series_identity_sha256})
+        expected = deterministic_uuid("position", {"run_id": self.run_id, "account_ref": self.account_ref, "series_identity_sha256": self.series_identity.series_identity_sha256})
         if self.position_id is not None and self.position_id != expected:
             raise ValueError("position_id does not match deterministic identity")
         object.__setattr__(self, "position_id", expected)
 
     @property
     def record_sha256(self) -> str:
-        return sha256_payload({"position_id": self.position_id, "run_id": self.run_id, "series_identity_sha256": self.series_identity.series_identity_sha256, "accounting_mode": self.accounting_mode, "quantity": self.quantity, "average_entry_price": self.average_entry_price, "realized_pnl": self.realized_pnl, "updated_at_utc": self.updated_at_utc, "source_fill_ids": self.source_fill_ids, "config_sha256": self.config_sha256})
+        return sha256_payload({"position_id": self.position_id, "run_id": self.run_id, "account_ref": self.account_ref, "series_identity_sha256": self.series_identity.series_identity_sha256, "accounting_mode": self.accounting_mode, "quantity": self.quantity, "average_entry_price": self.average_entry_price, "realized_pnl": self.realized_pnl, "updated_at_utc": self.updated_at_utc, "source_fill_ids": self.source_fill_ids, "config_sha256": self.config_sha256})
 
 
 @dataclass(frozen=True)
 class PositionSnapshot:
     run_id: UUID
+    account_ref: str
     position_id: UUID
     series_identity: SeriesIdentity
     accounting_mode: AccountingMode
@@ -477,33 +502,84 @@ class PositionSnapshot:
     unrealized_pnl: Decimal
     stale_mark_age_seconds: Decimal | None
     config_sha256: str
+    snapshot_kind: PositionSnapshotKind
+    mark_source: MarkSource | None
+    source_event_id: UUID
+    logical_sequence: int
     source_fill_id: UUID | None = None
     parent_ids: tuple[UUID, ...] = ()
     position_snapshot_id: UUID | None = None
 
     def __post_init__(self) -> None:
         require_utc_datetime(self.snapshot_at_utc, field_name="PositionSnapshot snapshot_at_utc")
+        object.__setattr__(self, "account_ref", _text(self.account_ref, "account_ref"))
         object.__setattr__(self, "accounting_mode", AccountingMode(self.accounting_mode))
+        object.__setattr__(self, "snapshot_kind", PositionSnapshotKind(self.snapshot_kind))
+        if self.mark_source is not None:
+            object.__setattr__(self, "mark_source", MarkSource(self.mark_source))
         for name in ("quantity", "realized_pnl", "unrealized_pnl"):
             _finite(getattr(self, name), name)
         _optional_finite(self.average_entry_price, "average_entry_price", positive=True)
         _optional_finite(self.mark_price, "mark_price", positive=True)
         if self.stale_mark_age_seconds is not None:
             _finite(self.stale_mark_age_seconds, "stale_mark_age_seconds", non_negative=True)
+        if isinstance(self.logical_sequence, bool) or self.logical_sequence < 0:
+            raise ValueError("logical_sequence must be a non-negative integer")
+        if self.snapshot_kind is PositionSnapshotKind.FILL and self.source_fill_id is None:
+            raise ValueError("fill snapshot requires source_fill_id")
+        if self.snapshot_kind is not PositionSnapshotKind.FILL and self.source_fill_id is not None:
+            raise ValueError("mark snapshot cannot have source_fill_id")
+        expected_mark_source = {
+            PositionSnapshotKind.BAR_OPEN_MARK: MarkSource.BAR_OPEN,
+            PositionSnapshotKind.BAR_CLOSE_MARK: MarkSource.BAR_CLOSE,
+        }.get(self.snapshot_kind)
+        if expected_mark_source is not None and self.mark_source is not expected_mark_source:
+            raise ValueError("mark snapshot kind and mark_source disagree")
+        if self.mark_price is not None and self.mark_source is None:
+            raise ValueError("marked snapshot requires mark_source provenance")
         _hash(self.config_sha256, "config_sha256")
-        expected = deterministic_uuid("position-snapshot", self.economic_payload)
+        required_parents = (self.position_id, self.source_event_id) + (() if self.source_fill_id is None else (self.source_fill_id,))
+        if self.parent_ids:
+            if not set(required_parents).issubset(self.parent_ids):
+                raise ValueError("PositionSnapshot parent_ids must contain logical source lineage")
+        else:
+            object.__setattr__(self, "parent_ids", required_parents)
+        expected = deterministic_uuid("position-snapshot", self.logical_identity_payload)
         if self.position_snapshot_id is not None and self.position_snapshot_id != expected:
-            raise ValueError("position_snapshot_id does not match deterministic identity")
+            raise ValueError("position_snapshot_id does not match deterministic logical identity")
         object.__setattr__(self, "position_snapshot_id", expected)
 
     @property
+    def logical_identity_payload(self) -> dict[str, object]:
+        return {
+            "run_id": self.run_id,
+            "account_ref": self.account_ref,
+            "position_id": self.position_id,
+            "snapshot_at_utc": self.snapshot_at_utc,
+            "snapshot_kind": self.snapshot_kind,
+            "source_event_id": self.source_event_id,
+            "logical_sequence": self.logical_sequence,
+            "source_fill_id": self.source_fill_id,
+        }
+
+    @property
     def economic_payload(self) -> dict[str, object]:
-        return {"run_id": self.run_id, "position_id": self.position_id, "series_identity_sha256": self.series_identity.series_identity_sha256, "accounting_mode": self.accounting_mode, "snapshot_at_utc": self.snapshot_at_utc, "quantity": self.quantity, "average_entry_price": self.average_entry_price, "mark_price": self.mark_price, "realized_pnl": self.realized_pnl, "unrealized_pnl": self.unrealized_pnl, "stale_mark_age_seconds": self.stale_mark_age_seconds, "source_fill_id": self.source_fill_id, "config_sha256": self.config_sha256}
+        return self.logical_identity_payload | {
+            "series_identity_sha256": self.series_identity.series_identity_sha256,
+            "accounting_mode": self.accounting_mode,
+            "quantity": self.quantity,
+            "average_entry_price": self.average_entry_price,
+            "mark_price": self.mark_price,
+            "mark_source": self.mark_source,
+            "realized_pnl": self.realized_pnl,
+            "unrealized_pnl": self.unrealized_pnl,
+            "stale_mark_age_seconds": self.stale_mark_age_seconds,
+            "config_sha256": self.config_sha256,
+        }
 
     @property
     def record_sha256(self) -> str:
         return sha256_payload(self.economic_payload)
-
 
 @dataclass(frozen=True)
 class CashLedgerEntry:
@@ -514,6 +590,7 @@ class CashLedgerEntry:
     balance_after: Decimal
     currency: str
     config_sha256: str
+    ledger_sequence: int
     series_identity: SeriesIdentity | None = None
     fill_id: UUID | None = None
     funding_payment_id: UUID | None = None
@@ -526,20 +603,38 @@ class CashLedgerEntry:
         _finite(self.amount, "amount")
         _finite(self.balance_after, "balance_after")
         object.__setattr__(self, "currency", _text(self.currency, "currency").upper())
+        if isinstance(self.ledger_sequence, bool) or self.ledger_sequence < 0:
+            raise ValueError("ledger_sequence must be a non-negative integer")
         _hash(self.config_sha256, "config_sha256")
-        expected = deterministic_uuid("cash-ledger", self.economic_payload)
+        expected = deterministic_uuid("cash-ledger", self.logical_identity_payload)
         if self.cash_ledger_entry_id is not None and self.cash_ledger_entry_id != expected:
-            raise ValueError("cash_ledger_entry_id does not match deterministic identity")
+            raise ValueError("cash_ledger_entry_id does not match deterministic logical identity")
         object.__setattr__(self, "cash_ledger_entry_id", expected)
 
     @property
+    def logical_identity_payload(self) -> dict[str, object]:
+        return {
+            "run_id": self.run_id,
+            "ledger_sequence": self.ledger_sequence,
+            "event_timestamp_utc": self.event_timestamp_utc,
+            "entry_type": self.entry_type,
+            "series_identity_sha256": None if self.series_identity is None else self.series_identity.series_identity_sha256,
+            "fill_id": self.fill_id,
+            "funding_payment_id": self.funding_payment_id,
+        }
+
+    @property
     def economic_payload(self) -> dict[str, object]:
-        return {"run_id": self.run_id, "event_timestamp_utc": self.event_timestamp_utc, "entry_type": self.entry_type, "amount": self.amount, "balance_after": self.balance_after, "currency": self.currency, "series_identity_sha256": None if self.series_identity is None else self.series_identity.series_identity_sha256, "fill_id": self.fill_id, "funding_payment_id": self.funding_payment_id, "config_sha256": self.config_sha256}
+        return self.logical_identity_payload | {
+            "amount": self.amount,
+            "balance_after": self.balance_after,
+            "currency": self.currency,
+            "config_sha256": self.config_sha256,
+        }
 
     @property
     def record_sha256(self) -> str:
         return sha256_payload(self.economic_payload)
-
 
 @dataclass(frozen=True)
 class FundingPayment:
@@ -585,6 +680,7 @@ class FundingPayment:
 @dataclass(frozen=True)
 class AccountSnapshot:
     run_id: UUID
+    account_ref: str
     snapshot_at_utc: datetime
     cash: Decimal
     equity: Decimal
@@ -601,6 +697,7 @@ class AccountSnapshot:
 
     def __post_init__(self) -> None:
         require_utc_datetime(self.snapshot_at_utc, field_name="AccountSnapshot snapshot_at_utc")
+        object.__setattr__(self, "account_ref", _text(self.account_ref, "account_ref"))
         for name in ("cash", "equity", "gross_exposure", "net_exposure", "realized_pnl", "unrealized_pnl", "total_fees", "total_funding"):
             _finite(getattr(self, name), name)
         if self.gross_exposure < 0 or self.total_fees < 0:
@@ -608,19 +705,18 @@ class AccountSnapshot:
         if self.stale_mark_count < 0:
             raise ValueError("stale_mark_count must be non-negative")
         _hash(self.config_sha256, "config_sha256")
-        expected = deterministic_uuid("account-snapshot", self.economic_payload)
+        expected = deterministic_uuid("account-snapshot", {"run_id": self.run_id, "account_ref": self.account_ref, "snapshot_at_utc": self.snapshot_at_utc})
         if self.account_snapshot_id is not None and self.account_snapshot_id != expected:
-            raise ValueError("account_snapshot_id does not match deterministic identity")
+            raise ValueError("account_snapshot_id does not match deterministic logical identity")
         object.__setattr__(self, "account_snapshot_id", expected)
 
     @property
     def economic_payload(self) -> dict[str, object]:
-        return {"run_id": self.run_id, "snapshot_at_utc": self.snapshot_at_utc, "cash": self.cash, "equity": self.equity, "gross_exposure": self.gross_exposure, "net_exposure": self.net_exposure, "realized_pnl": self.realized_pnl, "unrealized_pnl": self.unrealized_pnl, "total_fees": self.total_fees, "total_funding": self.total_funding, "stale_mark_count": self.stale_mark_count, "config_sha256": self.config_sha256}
+        return {"run_id": self.run_id, "account_ref": self.account_ref, "snapshot_at_utc": self.snapshot_at_utc, "cash": self.cash, "equity": self.equity, "gross_exposure": self.gross_exposure, "net_exposure": self.net_exposure, "realized_pnl": self.realized_pnl, "unrealized_pnl": self.unrealized_pnl, "total_fees": self.total_fees, "total_funding": self.total_funding, "stale_mark_count": self.stale_mark_count, "config_sha256": self.config_sha256}
 
     @property
     def record_sha256(self) -> str:
         return sha256_payload(self.economic_payload)
-
 
 @dataclass(frozen=True)
 class ExecutionEvent:

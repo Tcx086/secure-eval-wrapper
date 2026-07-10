@@ -24,8 +24,9 @@ def empty_position(
     accounting_mode: AccountingMode,
     timestamp_utc: datetime,
     config_sha256: str,
+    account_ref: str = "public-simulation",
 ) -> PositionState:
-    return PositionState(run_id, series_identity, accounting_mode, Decimal(0), None, Decimal(0), timestamp_utc, config_sha256)
+    return PositionState(run_id, account_ref, series_identity, accounting_mode, Decimal(0), None, Decimal(0), timestamp_utc, config_sha256)
 
 
 def apply_fill_to_position(current: PositionState, fill: Fill) -> PositionTransition:
@@ -72,6 +73,7 @@ def apply_fill_to_position(current: PositionState, fill: Fill) -> PositionTransi
 
     state = PositionState(
         run_id=current.run_id,
+        account_ref=current.account_ref,
         series_identity=current.series_identity,
         accounting_mode=current.accounting_mode,
         quantity=new_q,
@@ -90,6 +92,4 @@ def unrealized_pnl(state: PositionState, mark_price: Decimal | None) -> Decimal:
         return Decimal(0)
     if not mark_price.is_finite() or mark_price <= 0:
         raise ValueError("mark_price must be finite and positive")
-    if state.accounting_mode is AccountingMode.SPOT:
-        return Decimal(0)
     return state.quantity * (mark_price - (state.average_entry_price or mark_price))

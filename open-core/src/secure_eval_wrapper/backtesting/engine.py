@@ -32,6 +32,7 @@ from secure_eval_wrapper.execution.models import (
     AccountingMode,
     ExecutionEvent,
     ExecutionEventType,
+    MarkSource,
     OrderIntent,
     OrderIntentStatus,
     OrderSide,
@@ -118,12 +119,16 @@ class BacktestEngine:
                 _Event(opened, 5, ExecutionEventType.BAR_OPEN_EXECUTION, identity.series_identity_sha256, digest, bar),
             ))
         for identity in identities.values():
-            settlement = identity.settlement_asset
             if identity.instrument_type is InstrumentType.SPOT:
-                parts = identity.canonical_symbol.replace("/", "-").split("-")
-                settlement = parts[-1] if len(parts) >= 2 else None
-            if settlement is None or settlement.upper() != request.configuration.base_currency:
-                raise ValueError("all instruments must settle or quote in the configured base currency; FX conversion is not supported")
+                normalized = identity.canonical_symbol.replace("/", "-")
+                if "-" not in normalized:
+                    raise ValueError("Spot canonical_symbol must expose a quote asset")
+                _, quote_asset = normalized.rsplit("-", 1)
+                if not quote_asset or quote_asset.upper() != request.configuration.base_currency:
+                    raise ValueError("Spot quote asset must equal base_currency; FX conversion is not supported")
+            elif identity.instrument_type is InstrumentType.PERPETUAL_SWAP:
+                if identity.settlement_asset is None or identity.settlement_asset.upper() != request.configuration.base_currency:
+                    raise ValueError("perpetual settlement asset must equal base_currency; FX conversion is not supported")
 
         signal_keys: set[tuple[str, datetime]] = set()
         for signal in request.signals:
@@ -143,6 +148,10 @@ class BacktestEngine:
             identity = series_identity_from_record(rate)
             if identity.instrument_type is not InstrumentType.PERPETUAL_SWAP:
                 raise ValueError("funding records require perpetual series identity")
+            if identity.settlement_asset is None or identity.settlement_asset.upper() != request.configuration.base_currency:
+                raise ValueError("funding settlement asset must equal base_currency; FX conversion is not supported")
+            if not any(self._same_instrument(identity, bar_identity) for bar_identity in identities.values()):
+                raise ValueError("funding record references an instrument absent from backtest bars")
             key = (identity.series_identity_sha256, rate.funding_time_utc)
             if key in funding_keys:
                 raise ValueError("duplicate logical funding event")
@@ -192,11 +201,12 @@ class BacktestEngine:
         identities, internal_events = self._validate(request)
         started_at = internal_events[0].timestamp
         completed_at = internal_events[-1].timestamp
+        execution_run_id = request.execution_lineage_id
         fee_model = FixedBasisPointFeeModel(request.configuration.fees)
         slippage_model = FixedAdverseBasisPointSlippage(request.configuration.slippage)
         broker = SimulatedBroker(request.configuration.broker, fee_model=fee_model, slippage_model=slippage_model)
         risk_guard = RiskGuard(request.configuration.risk_limits)
-        portfolio = Portfolio(run_id=request.run_id, initial_cash=request.configuration.initial_cash, base_currency=request.configuration.base_currency, config_sha256=request.configuration.config_sha256, started_at_utc=started_at)
+        portfolio = Portfolio(run_id=execution_run_id, account_ref=request.configuration.broker.account_ref, initial_cash=request.configuration.initial_cash, base_currency=request.configuration.base_currency, config_sha256=request.configuration.config_sha256, started_at_utc=started_at)
 
         intents = []
         intent_by_id = {}
@@ -212,7 +222,7 @@ class BacktestEngine:
             nonlocal event_sequence
             event_sequence += 1
             payload = economic if economic is not None else {"event_type": event_type, "timestamp": timestamp, "series_identity_sha256": None if identity is None else identity.series_identity_sha256, "parent": parent, "metadata": metadata or {}}
-            row = ExecutionEvent(request.run_id, event_sequence, timestamp, priority, event_type, sha256_payload(payload), request.configuration.config_sha256, identity, parent, metadata or {})
+            row = ExecutionEvent(execution_run_id, event_sequence, timestamp, priority, event_type, sha256_payload(payload), request.configuration.config_sha256, identity, parent, metadata or {})
             audit_events.append(row)
             return row
 
@@ -233,9 +243,9 @@ class BacktestEngine:
                 record_event(event_type, timestamp, priority, identity=order.series_identity, parent=order.order_id, metadata={"status": order.status.value, "reason": order.activation_reason}, economic={"order_id": order.order_id, "status": order.status, "triggered_at_utc": order.triggered_at_utc, "reason": order.activation_reason})
             for fill in result.fills:
                 fills.append(fill)
-                record_event(ExecutionEventType.FILL, timestamp, priority, identity=fill.series_identity, parent=fill.fill_id, metadata={"fill_reason": fill.fill_reason, "liquidity": fill.liquidity_flag.value}, economic=fill.economic_payload)
-                snap = portfolio.apply_fill(fill)
-                record_event(ExecutionEventType.POSITION, timestamp, priority, identity=fill.series_identity, parent=snap.position_snapshot_id, metadata={"source": "fill"}, economic=snap.economic_payload)
+                fill_event = record_event(ExecutionEventType.FILL, timestamp, priority, identity=fill.series_identity, parent=fill.fill_id, metadata={"fill_reason": fill.fill_reason, "liquidity": fill.liquidity_flag.value}, economic=fill.economic_payload)
+                snap = portfolio.apply_fill(fill, source_event_id=fill_event.execution_event_id, logical_sequence=fill_event.sequence)
+                record_event(ExecutionEventType.POSITION, timestamp, priority, identity=fill.series_identity, parent=snap.position_snapshot_id, metadata={"source": "fill", "mark_source": None if snap.mark_source is None else snap.mark_source.value, "snapshot_kind": snap.snapshot_kind.value}, economic=snap.economic_payload)
 
         for timestamp, grouped in groupby(internal_events, key=lambda item: item.timestamp):
             for event in grouped:
@@ -245,15 +255,15 @@ class BacktestEngine:
                     record_event(event.event_type, timestamp, event.priority, identity=identity, metadata={"bar_open_time_utc": bar.bar_open_time_utc}, economic=stable_economic_record(bar))
 
                     def prefill(order, price, liquidity, fee):
-                        return risk_guard.assess(intent_by_id[order.order_intent_id], price=price, stage=RiskStage.PRE_FILL, decision_timestamp_utc=timestamp, portfolio=self._risk_view(portfolio, broker, timestamp), fee_amount=fee)
+                        return risk_guard.assess(intent_by_id[order.order_intent_id], price=price, stage=RiskStage.PRE_FILL, decision_timestamp_utc=timestamp, portfolio=self._risk_view(portfolio, broker, timestamp), fee_amount=fee, order_id=order.order_id)
 
                     handle_broker_result(broker.process_completed_bar(series_identity=identity, timestamp_utc=timestamp, open_price=bar.open, high=bar.high, low=bar.low, close=bar.close, risk_check=prefill), timestamp, event.priority)
                 elif event.event_type is ExecutionEventType.MARK_UPDATE:
                     bar = event.payload
-                    record_event(event.event_type, timestamp, event.priority, identity=identity, metadata={"close": str(bar.close)}, economic={"series_identity_sha256": event.series_hash, "timestamp": timestamp, "close": bar.close})
-                    snap = portfolio.set_mark(identity, bar.close, timestamp)
+                    mark_event = record_event(event.event_type, timestamp, event.priority, identity=identity, metadata={"close": str(bar.close), "mark_source": MarkSource.BAR_CLOSE.value}, economic={"series_identity_sha256": event.series_hash, "timestamp": timestamp, "close": bar.close, "mark_source": MarkSource.BAR_CLOSE})
+                    snap = portfolio.set_mark(identity, bar.close, timestamp, mark_source=MarkSource.BAR_CLOSE, source_event_id=mark_event.execution_event_id, logical_sequence=mark_event.sequence)
                     if snap is not None:
-                        record_event(ExecutionEventType.POSITION, timestamp, event.priority, identity=identity, parent=snap.position_snapshot_id, metadata={"source": "mark"}, economic=snap.economic_payload)
+                        record_event(ExecutionEventType.POSITION, timestamp, event.priority, identity=identity, parent=snap.position_snapshot_id, metadata={"source": "mark", "mark_source": snap.mark_source.value, "snapshot_kind": snap.snapshot_kind.value}, economic=snap.economic_payload)
                 elif event.event_type is ExecutionEventType.FUNDING:
                     rate: FundingRate = event.payload
                     funding_identity = series_identity_from_record(rate)
@@ -284,19 +294,23 @@ class BacktestEngine:
                         record_event(ExecutionEventType.NO_ACTION, timestamp, event.priority, identity=identity, parent=signal.signal_id, metadata={"reason": sizing.no_action_reason, "target_quantity": str(sizing.target_quantity)}, economic={"signal_id": signal.signal_id, "target_quantity": sizing.target_quantity, "current_quantity": sizing.current_quantity, "reason": sizing.no_action_reason, "sizing_config_sha256": sizing.config_sha256})
                         continue
                     limit_price, stop_price = self._order_prices(request.configuration, sizing.side, sizing.reference_price)
-                    intent = OrderIntent(request.run_id, signal.signal_id, identity, timestamp, sizing.side, request.configuration.order_type, abs(sizing.delta_quantity), sizing.target_quantity, sizing.current_quantity, sizing.delta_quantity, sizing.reference_price, mode, request.configuration.time_in_force, request.configuration.config_sha256, signal.record_sha256, request.implementation_code_sha256, request.repository_commit_sha, limit_price, stop_price, parent_ids=(signal.signal_id,), provenance={"sizing_config_sha256": sizing.config_sha256})
+                    intent = OrderIntent(execution_run_id, signal.signal_id, identity, timestamp, sizing.side, request.configuration.order_type, abs(sizing.delta_quantity), sizing.target_quantity, sizing.current_quantity, sizing.delta_quantity, sizing.reference_price, mode, request.configuration.time_in_force, request.configuration.config_sha256, signal.record_sha256, request.implementation_code_sha256, request.repository_commit_sha, limit_price, stop_price, parent_ids=(signal.signal_id,), provenance={"sizing_config_sha256": sizing.config_sha256})
                     risk = risk_guard.assess(intent, price=sizing.reference_price, stage=RiskStage.PRE_SUBMIT, decision_timestamp_utc=timestamp, portfolio=self._risk_view(portfolio, broker, timestamp))
                     intent = replace(intent, status=OrderIntentStatus.SUBMITTED if risk.status is RiskDecisionStatus.ACCEPTED else OrderIntentStatus.BLOCKED)
                     intents.append(intent); intent_by_id[intent.order_intent_id] = intent; risk_decisions.append(risk)
                     record_event(ExecutionEventType.INTENT, timestamp, event.priority, identity=identity, parent=intent.order_intent_id, metadata={"status": intent.status.value}, economic=intent.economic_payload)
                     record_event(ExecutionEventType.RISK_DECISION, timestamp, event.priority, identity=identity, parent=risk.risk_decision_id, metadata={"stage": risk.stage.value, "status": risk.status.value, "reason_code": risk.reason_code}, economic=risk.economic_payload)
-                    handle_broker_result(broker.submit_order_intent(intent, risk), timestamp, event.priority)
+                    if risk.status is RiskDecisionStatus.ACCEPTED:
+                        handle_broker_result(broker.submit_order_intent(intent, risk), timestamp, event.priority)
                 elif event.event_type is ExecutionEventType.BAR_OPEN_EXECUTION:
                     bar = event.payload
-                    record_event(event.event_type, timestamp, event.priority, identity=identity, metadata={"open": str(bar.open)}, economic={"series_identity_sha256": event.series_hash, "timestamp": timestamp, "open": bar.open})
+                    open_event = record_event(event.event_type, timestamp, event.priority, identity=identity, metadata={"open": str(bar.open), "mark_source": MarkSource.BAR_OPEN.value}, economic={"series_identity_sha256": event.series_hash, "timestamp": timestamp, "open": bar.open, "mark_source": MarkSource.BAR_OPEN})
+                    open_snapshot = portfolio.set_mark(identity, bar.open, timestamp, mark_source=MarkSource.BAR_OPEN, source_event_id=open_event.execution_event_id, logical_sequence=open_event.sequence)
+                    if open_snapshot is not None:
+                        record_event(ExecutionEventType.POSITION, timestamp, event.priority, identity=identity, parent=open_snapshot.position_snapshot_id, metadata={"source": "mark", "mark_source": open_snapshot.mark_source.value, "snapshot_kind": open_snapshot.snapshot_kind.value}, economic=open_snapshot.economic_payload)
 
                     def prefill(order, price, liquidity, fee):
-                        return risk_guard.assess(intent_by_id[order.order_intent_id], price=price, stage=RiskStage.PRE_FILL, decision_timestamp_utc=timestamp, portfolio=self._risk_view(portfolio, broker, timestamp), fee_amount=fee)
+                        return risk_guard.assess(intent_by_id[order.order_intent_id], price=price, stage=RiskStage.PRE_FILL, decision_timestamp_utc=timestamp, portfolio=self._risk_view(portfolio, broker, timestamp), fee_amount=fee, order_id=order.order_id)
 
                     handle_broker_result(broker.process_bar_open(series_identity=identity, timestamp_utc=timestamp, open_price=bar.open, risk_check=prefill), timestamp, event.priority)
 
@@ -305,15 +319,32 @@ class BacktestEngine:
             peak = max((row.equity for row in portfolio.account_snapshots), default=account.equity)
             drawdown = max(Decimal(0), peak - account.equity)
             drawdown_fraction = None if peak <= 0 else drawdown / peak
-            equity_curve.append(EquityCurvePoint(request.run_id, timestamp, account.cash, account.equity, drawdown, drawdown_fraction, account.gross_exposure, account.net_exposure, account.stale_mark_count, request.configuration.config_sha256))
+            equity_curve.append(EquityCurvePoint(execution_run_id, timestamp, account.cash, account.equity, drawdown, drawdown_fraction, account.gross_exposure, account.net_exposure, account.stale_mark_count, request.configuration.config_sha256))
 
         handle_broker_result(broker.expire_remaining_orders(expired_at_utc=completed_at), completed_at, 7)
         positions = tuple(sorted(portfolio.positions.values(), key=lambda row: row.series_identity.series_identity_sha256))
         orders = tuple(sorted(order_by_id.values(), key=lambda row: (row.submitted_at_utc, str(row.order_id))))
         metrics = calculate_metrics(initial_cash=request.configuration.initial_cash, fills=tuple(fills), intents=tuple(intents), orders=orders, positions=positions, snapshots=tuple(portfolio.position_snapshots), ledger=tuple(portfolio.ledger), funding_payments=tuple(funding_payments), equity_curve=tuple(equity_curve))
-        metric_rows = metric_records(request.run_id, metrics, request.configuration.config_sha256)
-        run_payload = {"backtest_run_id": request.run_id, "signal_run_id": request.signal_run_id, "started_at_utc": started_at, "completed_at_utc": completed_at, "initial_cash": request.configuration.initial_cash, "base_currency": request.configuration.base_currency, "config_sha256": request.configuration.config_sha256, "data_sha256": request.data_sha256, "implementation_code_sha256": request.implementation_code_sha256, "repository_commit_sha": request.repository_commit_sha, "status": BacktestRunStatus.COMPLETED}
-        run = BacktestRun(request.run_id, request.run_id, request.signal_run_id, started_at, completed_at, BacktestRunStatus.COMPLETED, request.configuration.initial_cash, request.configuration.base_currency, request.configuration.config_sha256, request.data_sha256, request.implementation_code_sha256, request.repository_commit_sha, sha256_payload(run_payload), {"public_safe": True})
+        metric_rows = metric_records(execution_run_id, metrics, request.configuration.config_sha256)
+        run_payload = {"backtest_run_id": request.run_id, "run_id": execution_run_id, "signal_run_id": request.signal_run_id, "started_at_utc": started_at, "completed_at_utc": completed_at, "initial_cash": request.configuration.initial_cash, "base_currency": request.configuration.base_currency, "fee_currency": request.configuration.fees.fee_currency, "account_ref": request.configuration.broker.account_ref, "config_sha256": request.configuration.config_sha256, "data_sha256": request.data_sha256, "implementation_code_sha256": request.implementation_code_sha256, "repository_commit_sha": request.repository_commit_sha, "status": BacktestRunStatus.COMPLETED}
+        run = BacktestRun(
+            backtest_run_id=request.run_id,
+            run_id=execution_run_id,
+            signal_run_id=request.signal_run_id,
+            started_at_utc=started_at,
+            completed_at_utc=completed_at,
+            status=BacktestRunStatus.COMPLETED,
+            initial_cash=request.configuration.initial_cash,
+            base_currency=request.configuration.base_currency,
+            fee_currency=request.configuration.fees.fee_currency,
+            account_ref=request.configuration.broker.account_ref,
+            config_sha256=request.configuration.config_sha256,
+            data_sha256=request.data_sha256,
+            implementation_code_sha256=request.implementation_code_sha256,
+            repository_commit_sha=request.repository_commit_sha,
+            record_sha256=sha256_payload(run_payload),
+            metadata={"public_safe": True, "run_identity_version": "phase5-backtest-run-v2"},
+        )
         result = BacktestResult(run, tuple(intents), tuple(risk_decisions), orders, tuple(fills), positions, tuple(portfolio.position_snapshots), tuple(portfolio.ledger), tuple(funding_payments), tuple(portfolio.account_snapshots), tuple(audit_events), tuple(equity_curve), metrics, metric_rows)
         if self.persistence_repository is not None:
             self.persistence_repository.persist(result)

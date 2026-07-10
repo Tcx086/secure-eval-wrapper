@@ -18,7 +18,9 @@ validated final bars -> public alpha values -> standardized signals -> target si
 Signals are research decisions. A signal never changes cash, a position, equity, or PnL. Sizing
 creates a target and delta; an accepted order intent still does not change the portfolio. Only a
 `Fill` can change a position. Cash changes are represented by ledger entries for initial cash, Spot
-notional, realized perpetual PnL, fees, and funding.
+notional, realized perpetual PnL, fees, and funding. The configured `BrokerConfiguration.account_ref`
+is propagated through the portfolio, positions, position snapshots, account snapshots, hashes, and
+PostgreSQL foreign keys.
 
 ## Identity and deterministic audit records
 
@@ -26,16 +28,19 @@ Every series uses the Phase 3-4 `SeriesIdentity`: provider, exchange, provider i
 canonical symbol, instrument type, timeframe, and settlement asset. Symbol alone is never an
 execution key. Two venues, two timeframes, and Spot versus perpetual remain distinct positions.
 
-Economic records are frozen dataclasses containing the run ID, event/as-of time, parent IDs,
-configuration SHA-256, stable record SHA-256, source-tree identity, full series identity where
-applicable, and public-safe provenance. IDs are UUIDv5 values over stable economic content.
-Collection-run IDs, source observation IDs, ingestion timestamps, database timestamps, connection
-details, and local paths are excluded from economic hashes. Recollection with different source IDs
-therefore preserves execution results.
+Economic records are frozen dataclasses containing event/as-of time, parent IDs, configuration
+SHA-256, stable record SHA-256, source-tree identity, full series identity where applicable, and
+public-safe provenance. The complete backtest run ID is a caller-verifiable UUIDv5 over the stable
+economic input hash, configuration hash, implementation hash, repository/source-tree identity,
+signal-run identity, and explicit public run mode/version. An explicitly supplied run ID must match.
+A separate deterministic execution-lineage UUID excludes future input, so appending later bars changes
+the complete run ID while preserving historical child IDs and hashes through the prior cutoff.
 
+Collection-run IDs, source observation IDs, ingestion timestamps, database timestamps, connection
+details, random UUIDs, and local paths are excluded from economic identities. Recollection with new
+source IDs and shuffled input order therefore preserve the complete run ID and execution output.
 Appending, changing, or deleting input strictly after a historical cutoff cannot change earlier
-intent, risk, order, fill, position/account snapshot, equity-point, or event records. Run-level final
-metrics naturally describe the requested run horizon; the same cutoff produces the same metrics.
+intent, risk, order, fill, position/account snapshot, equity-point, or event records.
 
 ## Event priority and anti-lookahead
 
@@ -46,7 +51,7 @@ engine always processes:
 2. close mark update;
 3. realized funding;
 4. signal sizing, supersession, risk, and order submission; and
-5. open execution for the bar beginning now.
+5. mark the series at the actual bar open, then run open pre-fill risk and execution.
 
 A signal derived at a close cannot use that bar's open, high, low, or close as an execution price.
 It may fill at the next actual bar open when that open timestamp equals the prior close, because the
@@ -55,8 +60,10 @@ for the next real eligible event; a market order without one expires at run end.
 
 ## Sizing
 
-Fixed-quantity sizing maps long to a positive target, short to a negative perpetual target, and flat
-to zero. Spot short targets are rejected. Fixed-notional sizing divides configured notional by the
+Fixed-quantity sizing maps long to a positive target, short to a negative target, and flat to zero.
+A Spot short target is retained long enough to construct an order intent, then `RiskGuard` blocks it
+with `spot_short_prohibited`; the blocked intent and risk decision are audited, and no order or fill
+is created. Fixed-notional sizing divides configured notional by the
 latest completed close available at the signal timestamp using `Decimal`. An optional quantity step
 rounds absolute quantity down. A rounded-zero target and an already-reached target emit explicit
 no-action audit events.
@@ -87,7 +94,9 @@ The fee interface includes zero fees and fixed maker/taker basis points. The sli
 includes zero and fixed adverse basis points. Buys move up and sells move down. Market and stop
 orders use taker slippage. Limit and stop-limit fills are never slipped beyond their limit. Every
 fill persists base price, final price, slippage amount/basis points, maker/taker flag, fee amount,
-and settlement currency. Fees reduce cash through ledger rows; metrics cannot invent a fee.
+and settlement currency. `fee_currency`, run base currency, Spot quote asset, perpetual settlement
+asset, fill fee currency, and fee-ledger currency must agree. Phase 5 performs no FX conversion or
+silent currency reinterpretation. Fees reduce cash through ledger rows; metrics cannot invent a fee.
 
 ## Risk guard
 
@@ -95,14 +104,17 @@ The same deterministic `RiskGuard` runs before submission and immediately before
 actual simulated price and fee. It can block maximum order notional, per-series position notional,
 gross exposure, absolute net exposure, open orders per series, gross-exposure/equity, and optional
 drawdown. It also blocks invalid quantity/price, unsupported accounting, Spot shorts, and Spot buys
-whose notional plus fee exceeds cash. Every accepted or blocked decision is persisted and emitted;
-a blocked pre-fill decision rejects the order and creates no fill.
+whose notional plus fee exceeds cash. Every accepted or blocked decision is persisted and emitted.
+Pre-fill decisions carry the simulated
+`order_id`, and their parent lineage contains both order intent and order. A blocked pre-fill decision
+rejects the order and creates no fill.
 
 ## Accounting
 
 Spot buys reduce cash by notional plus fee; sells increase cash by notional minus fee. Inventory
-uses weighted average cost, cannot be negative by default, and realizes PnL on sales. Spot equity is
-cash plus marked inventory.
+uses weighted average cost, cannot be negative by default, and realizes PnL on sales. Open Spot
+unrealized PnL is `quantity * (mark_price - average_entry_price)`. Spot equity remains cash plus
+marked inventory; unrealized PnL is reported but is not added to Spot equity a second time.
 
 Linear perpetual opening notional does not transfer principal. Fees reduce cash. Reductions,
 closures, and reversals realize signed PnL into cash. A reversal first realizes the closed quantity,
@@ -111,8 +123,11 @@ times mark minus average entry, and equity is cash plus unrealized PnL. All long
 increase, reduce, close, and reversal transitions are tested. There is no leverage, collateral,
 margin, liquidation, or forced final close model.
 
-Every fill produces a position snapshot. Zero quantity always means a null average entry. Fill IDs
-are replay-protected, deterministic replay recreates state, and ledger balances reconcile to cash.
+Every fill produces a `fill` position snapshot, and mark events produce distinct `bar_open_mark` or
+`bar_close_mark` snapshots. Each carries `mark_source`, source event ID, and deterministic logical
+sequence. Snapshot and ledger logical identities are independent of record content, so a retry with
+the same logical key and different hash is rejected. Zero quantity always means a null average entry.
+Fill IDs are replay-protected, deterministic replay recreates state, and ledger balances reconcile.
 
 ## Funding
 
@@ -131,8 +146,11 @@ that payment. Zero payments are omitted unless explicitly configured.
 ## Missing candles, marks, and final positions
 
 Crypto is treated as 24/7, but the engine never invents a candle, execution price, zero return, or
-forward-filled fill. Marks may become stale; account and position snapshots carry stale counts or
-age. Final open positions remain open and are valued at the latest available mark. No implicit
+forward-filled fill. At BAR_OPEN_EXECUTION, the open becomes the current mark before risk or
+fills; funding at the same
+timestamp still uses the preceding close because funding has higher priority. Marks may otherwise
+become stale; account and position snapshots carry stale counts or age plus explicit provenance.
+Final open positions remain open and are valued at the latest available mark. No implicit
 liquidation or end-of-run sale occurs.
 
 ## Metrics
@@ -140,15 +158,20 @@ liquidation or end-of-run sale occurs.
 Metrics are derived from fills, cash ledger, funding, positions, marks, and the actual equity curve:
 cash/equity/PnL, fees, funding, return, drawdown, gross/net exposure, turnover, lifecycle counts,
 open positions, completed/winning/losing round trips, win rate, gross profit/loss, profit factor, and
-non-positive equity. Undefined win rate, profit factor, drawdown fraction, or return is null rather
+non-positive equity. Round-trip classification, gross profit/loss, and profit factor use net economic
+round-trip PnL after allocated fees and realized funding. `gross_pnl` is explicitly realized plus
+unrealized PnL plus funding before fees; `net_pnl = gross_pnl - total_fees`. Undefined win rate,
+profit factor, drawdown fraction, or return is null rather
 than a convenient zero. Sharpe, CAGR, annualized return, alpha/beta, and probability statistics are
 not fabricated.
 
 ## PostgreSQL and atomic persistence
 
-Migration `0009_phase5_simulated_execution_backtesting.sql` preserves migrations `0001` through
-`0008`, strengthens the original order-intent/order/fill/position/account and backtest tables, and
-adds `execution.risk_decisions`, `execution.position_snapshots`,
+Migration `0009_phase5_simulated_execution_backtesting.sql` introduced the Phase 5 schema without
+rewriting earlier migrations. Migration `0010_phase5_second_audit_repairs.sql` preserves migrations
+`0001` through `0009`, upgrade-safely backfills the new logical identity, account, currency, hash,
+and risk-lineage columns, and adds the required unique, check, and foreign-key constraints. The
+Phase 5 schema includes `execution.risk_decisions`, `execution.position_snapshots`,
 `execution.funding_payments`, `execution.cash_ledger_entries`, and
 `backtesting.backtest_events`.
 

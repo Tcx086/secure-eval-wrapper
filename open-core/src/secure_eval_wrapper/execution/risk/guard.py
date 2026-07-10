@@ -42,6 +42,7 @@ class RiskGuard:
         decision_timestamp_utc: datetime,
         portfolio: PortfolioRiskView,
         fee_amount: Decimal = Decimal(0),
+        order_id=None,
     ) -> RiskDecision:
         stage = RiskStage(stage)
         series_hash = intent.series_identity.series_identity_sha256
@@ -68,7 +69,14 @@ class RiskGuard:
                 observed_value=observed,
                 configured_limit=limit,
                 config_sha256=self.configuration.config_sha256,
-                parent_ids=(intent.order_intent_id,),
+                order_id=order_id,
+                provenance={
+                    "assessed_price": str(price),
+                    "portfolio_cash": str(portfolio.cash),
+                    "portfolio_equity": str(portfolio.equity),
+                    "portfolio_peak_equity": str(portfolio.peak_equity),
+                    "fee_amount": str(fee_amount),
+                },
             )
 
         if not isinstance(price, Decimal) or not price.is_finite() or price <= 0:

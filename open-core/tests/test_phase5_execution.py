@@ -61,10 +61,11 @@ def signal(index, direction, *, kind=InstrumentType.SPOT, provider="fixture", ex
     return StandardizedSignal(sid, uuid5(NAMESPACE_URL, "signal-run"), ("momentum:1.1.0",), (uuid5(NAMESPACE_URL, "alpha-run"),), identity.canonical_symbol, timestamp, SignalDirection(direction), Decimal(1) if direction == "long" else Decimal(-1) if direction == "short" else Decimal(0), Decimal(1) if direction == "long" else Decimal(-1) if direction == "short" else Decimal(0), None, None, Decimal("0.8") if direction != "flat" else Decimal(0), "1m", (uuid5(NAMESPACE_URL, f"alpha-value:{index}"),), H, H, H, {"public_safe": True}, identity)
 
 
-def config(*, mode=SizingMode.FIXED_QUANTITY, target="1", order_type=OrderType.MARKET, tif=TimeInForce.GTC, fees="0", slip="0", risk=None, initial="1000", **offsets):
+def config(*, mode=SizingMode.FIXED_QUANTITY, target="1", order_type=OrderType.MARKET, tif=TimeInForce.GTC, fees="0", slip="0", risk=None, initial="1000", base_currency="USDT", fee_currency=None, account_ref="public-simulation", **offsets):
     return BacktestConfiguration(
-        Decimal(initial), "USDT", SizingConfiguration(mode, Decimal(target)),
-        fees=FeeConfiguration(Decimal(fees), Decimal(fees), "USDT"),
+        Decimal(initial), base_currency, SizingConfiguration(mode, Decimal(target)),
+        broker=BrokerConfiguration(account_ref=account_ref),
+        fees=FeeConfiguration(Decimal(fees), Decimal(fees), fee_currency or base_currency),
         slippage=SlippageConfiguration(Decimal(slip)), risk_limits=risk or RiskLimitConfiguration(),
         order_type=order_type, time_in_force=tif,
         limit_offset_bps=Decimal(offsets.get("limit", 0)), stop_offset_bps=Decimal(offsets.get("stop", 0)),
@@ -72,8 +73,8 @@ def config(*, mode=SizingMode.FIXED_QUANTITY, target="1", order_type=OrderType.M
     )
 
 
-def run_engine(bars, signals, *, funding=(), configuration=None, run_id=RUN):
-    request = BacktestRequest(run_id, tuple(bars), tuple(signals), tuple(funding), configuration or config(), H, "test-tree")
+def run_engine(bars, signals, *, funding=(), configuration=None, run_id=None, implementation_code_sha256=H, repository_commit_sha="test-tree"):
+    request = BacktestRequest(run_id, tuple(bars), tuple(signals), tuple(funding), configuration or config(), implementation_code_sha256, repository_commit_sha, signals[0].signal_run_id if signals else None)
     return BacktestEngine().run(request)
 
 
@@ -88,7 +89,7 @@ def accepted(value):
 
 
 def always_accept(order, price, liquidity, fee):
-    return RiskDecision(order.run_id, order.order_intent_id, order.series_identity, T0 + timedelta(minutes=2), RiskStage.PRE_FILL, RiskDecisionStatus.ACCEPTED, "accepted", "accepted", RiskLimitConfiguration().config_sha256)
+    return RiskDecision(order.run_id, order.order_intent_id, order.series_identity, T0 + timedelta(minutes=2), RiskStage.PRE_FILL, RiskDecisionStatus.ACCEPTED, "accepted", "accepted", RiskLimitConfiguration().config_sha256, order_id=order.order_id)
 
 
 class ContractSizingFeeSlippageTests(unittest.TestCase):
@@ -120,9 +121,9 @@ class ContractSizingFeeSlippageTests(unittest.TestCase):
         self.assertTrue(zero.is_no_action)
         self.assertEqual(zero.no_action_reason, "rounded_target_zero")
 
-    def test_spot_short_sizing_fails(self):
-        with self.assertRaises(ValueError):
-            size_signal(signal(1, "short"), current_quantity=Decimal(0), reference_price=Decimal(100), accounting_mode=AccountingMode.SPOT, configuration=SizingConfiguration(SizingMode.FIXED_QUANTITY, Decimal(1)))
+    def test_spot_short_sizing_preserves_requested_negative_target_for_risk(self):
+        sized = size_signal(signal(1, "short"), current_quantity=Decimal(0), reference_price=Decimal(100), accounting_mode=AccountingMode.SPOT, configuration=SizingConfiguration(SizingMode.FIXED_QUANTITY, Decimal(1)))
+        self.assertEqual((sized.target_quantity, sized.delta_quantity, sized.side), (Decimal(-1), Decimal(-1), OrderSide.SELL))
 
     def test_fee_and_slippage_exact(self):
         fee = FixedBasisPointFeeModel(FeeConfiguration(Decimal(1), Decimal(2), "USDT"))
@@ -207,7 +208,7 @@ class SimulatedBrokerOrderSemanticsTests(unittest.TestCase):
         value = intent()
         broker = self.submit(value)
         def block(order, price, liquidity, fee):
-            return RiskDecision(order.run_id, order.order_intent_id, order.series_identity, value.event_timestamp_utc, RiskStage.PRE_FILL, RiskDecisionStatus.BLOCKED, "gap", "blocked", RiskLimitConfiguration().config_sha256)
+            return RiskDecision(order.run_id, order.order_intent_id, order.series_identity, value.event_timestamp_utc, RiskStage.PRE_FILL, RiskDecisionStatus.BLOCKED, "gap", "blocked", RiskLimitConfiguration().config_sha256, order_id=order.order_id)
         result = broker.process_bar_open(series_identity=value.series_identity, timestamp_utc=value.event_timestamp_utc, open_price=Decimal(100), risk_check=block)
         self.assertFalse(result.fills)
         self.assertEqual(result.order_updates[0].status, OrderStatus.REJECTED)
@@ -242,15 +243,15 @@ class PositionAccountingFundingTests(unittest.TestCase):
 
     def test_spot_cash_inventory_fee_and_replay(self):
         _, identity = instrument()
-        portfolio = Portfolio(run_id=RUN, initial_cash=Decimal(1000), base_currency="USDT", config_sha256=H, started_at_utc=T0)
+        portfolio = Portfolio(run_id=RUN, account_ref="public-simulation", initial_cash=Decimal(1000), base_currency="USDT", config_sha256=H, started_at_utc=T0)
         state = portfolio.position(identity, AccountingMode.SPOT, T0)
         from secure_eval_wrapper.execution.models import Fill
         buy = Fill(RUN, uuid4(), uuid4(), identity, T0 + timedelta(minutes=1), OrderSide.BUY, Decimal(2), Decimal(100), Decimal(100), AccountingMode.SPOT, LiquidityFlag.TAKER, Decimal(1), "USDT", Decimal(0), Decimal(0), "test", H)
-        portfolio.apply_fill(buy)
+        portfolio.apply_fill(buy, source_event_id=uuid4(), logical_sequence=1)
         self.assertEqual(portfolio.cash, Decimal(799))
         self.assertEqual(portfolio.positions[identity.series_identity_sha256].quantity, Decimal(2))
         self.assertEqual([row.entry_type for row in portfolio.ledger], [LedgerEntryType.INITIAL_CASH, LedgerEntryType.SPOT_NOTIONAL, LedgerEntryType.FEE])
-        with self.assertRaises(ValueError): portfolio.apply_fill(buy)
+        with self.assertRaises(ValueError): portfolio.apply_fill(buy, source_event_id=uuid4(), logical_sequence=2)
 
     def test_perpetual_realized_unrealized_and_fee_reconcile(self):
         _, identity = instrument(InstrumentType.PERPETUAL_SWAP)
@@ -263,14 +264,14 @@ class PositionAccountingFundingTests(unittest.TestCase):
     def test_funding_long_short_negative_and_spot(self):
         key, identity = instrument(InstrumentType.PERPETUAL_SWAP)
         rate = FundingRate(uuid4(), "BTC-USDT", "fixture-x", T0 + timedelta(minutes=1), Decimal("0.001"), (uuid4(),), "1h", FundingIntervalSource.METADATA_REPORTED, instrument_key=key)
-        long = PositionState(RUN, identity, AccountingMode.LINEAR_PERPETUAL, Decimal(2), Decimal(100), Decimal(0), T0, H)
-        short = PositionState(RUN, identity, AccountingMode.LINEAR_PERPETUAL, Decimal(-2), Decimal(100), Decimal(0), T0, H)
+        long = PositionState(RUN, "public-simulation", identity, AccountingMode.LINEAR_PERPETUAL, Decimal(2), Decimal(100), Decimal(0), T0, H)
+        short = PositionState(RUN, "public-simulation", identity, AccountingMode.LINEAR_PERPETUAL, Decimal(-2), Decimal(100), Decimal(0), T0, H)
         self.assertEqual(funding_payment_for_position(rate, position=long, mark_price=Decimal(100), config_sha256=H).cash_flow, Decimal("-0.2"))
         self.assertEqual(funding_payment_for_position(rate, position=short, mark_price=Decimal(100), config_sha256=H).cash_flow, Decimal("0.2"))
         negative = FundingRate(uuid4(), "BTC-USDT", "fixture-x", T0 + timedelta(minutes=1), Decimal("-0.001"), (uuid4(),), "4h", FundingIntervalSource.PROVIDER_REPORTED, instrument_key=key)
         self.assertEqual(funding_payment_for_position(negative, position=long, mark_price=Decimal(100), config_sha256=H).cash_flow, Decimal("0.2"))
         spot_key, spot_identity = instrument()
-        spot = PositionState(RUN, spot_identity, AccountingMode.SPOT, Decimal(1), Decimal(100), Decimal(0), T0, H)
+        spot = PositionState(RUN, "public-simulation", spot_identity, AccountingMode.SPOT, Decimal(1), Decimal(100), Decimal(0), T0, H)
         self.assertIsNone(funding_payment_for_position(rate, position=spot, mark_price=Decimal(100), config_sha256=H))
 
 

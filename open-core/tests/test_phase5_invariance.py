@@ -79,8 +79,10 @@ class AntiLookaheadAndInvarianceTests(unittest.TestCase):
     def test_missing_candle_stale_age_is_explicit(self):
         result = run_engine([bar(0, "100", "101", "99", "100"), bar(3, "105", "106", "104", "105")], [signal(1, "long")])
         at_fill = [row for row in result.position_snapshots if row.source_fill_id is not None][0]
-        self.assertEqual(at_fill.stale_mark_age_seconds, Decimal("120.0"))
-        self.assertTrue(any(row.stale_mark_count > 0 for row in result.account_snapshots))
+        self.assertEqual(at_fill.stale_mark_age_seconds, Decimal("0.0"))
+        self.assertEqual(at_fill.mark_source.value, "bar_open")
+        account_at_fill = next(row for row in result.account_snapshots if row.snapshot_at_utc == at_fill.snapshot_at_utc)
+        self.assertEqual(account_at_fill.stale_mark_count, 0)
 
     def test_superseding_signal_cancels_active_order(self):
         bars = [bar(0, "100", "101", "99", "100"), bar(1, "100", "101", "99", "100"), bar(2, "100", "101", "99", "100")]

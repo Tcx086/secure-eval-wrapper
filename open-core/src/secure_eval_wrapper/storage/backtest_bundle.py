@@ -32,8 +32,9 @@ def persist_backtest_bundle(repository, result) -> BacktestBundleSummary:
         with repository.transaction():
             repository.record_backtest_run(result.run)
             for value in result.order_intents: repository.record_order_intent(value)
-            for value in result.risk_decisions: repository.record_risk_decision(value)
+            # Orders are inserted before pre-fill decisions because those decisions carry an order FK.
             for value in result.orders: repository.record_order(value)
+            for value in result.risk_decisions: repository.record_risk_decision(value)
             for value in result.fills: repository.record_fill(value)
             for value in result.positions: repository.upsert_position(value)
             for value in result.position_snapshots: repository.record_position_snapshot(value)

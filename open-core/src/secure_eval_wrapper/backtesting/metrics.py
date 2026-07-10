@@ -8,23 +8,56 @@ from secure_eval_wrapper.backtesting.models import BacktestMetric, BacktestMetri
 from secure_eval_wrapper.execution.models import LedgerEntryType, OrderIntentStatus, OrderStatus
 
 
-def _round_trip_pnls(position_snapshots) -> list[Decimal]:
-    previous_quantity: dict[str, Decimal] = {}
-    previous_realized: dict[str, Decimal] = {}
+def _round_trip_pnls(fills, position_snapshots, ledger) -> list[Decimal]:
+    """Return completed round-trip PnL net of allocated fees and realized funding."""
+
+    fills_by_id = {row.fill_id: row for row in fills}
+    fees_by_fill: dict[object, Decimal] = {}
+    timeline = []
+    for row in ledger:
+        if row.entry_type is LedgerEntryType.FEE and row.fill_id is not None:
+            fees_by_fill[row.fill_id] = fees_by_fill.get(row.fill_id, Decimal(0)) + row.amount
+        elif row.entry_type is LedgerEntryType.FUNDING and row.series_identity is not None:
+            timeline.append((row.event_timestamp_utc, 0, row.ledger_sequence, row.series_identity.series_identity_sha256, "funding", row))
+    for row in position_snapshots:
+        if row.source_fill_id is not None:
+            timeline.append((row.snapshot_at_utc, 1, row.logical_sequence, row.series_identity.series_identity_sha256, "fill", row))
+    timeline.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
+
+    quantities: dict[str, Decimal] = {}
+    realized: dict[str, Decimal] = {}
     accumulated: dict[str, Decimal] = {}
     results: list[Decimal] = []
-    for row in position_snapshots:
-        if row.source_fill_id is None:
+    for _, _, _, key, event_type, row in timeline:
+        old_q = quantities.get(key, Decimal(0))
+        if event_type == "funding":
+            if old_q != 0:
+                accumulated[key] = accumulated.get(key, Decimal(0)) + row.amount
             continue
-        key = row.series_identity.series_identity_sha256
-        old_q = previous_quantity.get(key, Decimal(0))
-        old_realized = previous_realized.get(key, Decimal(0))
-        accumulated[key] = accumulated.get(key, Decimal(0)) + (row.realized_pnl - old_realized)
-        if old_q != 0 and (row.quantity == 0 or old_q * row.quantity < 0):
+
+        new_q = row.quantity
+        realized_delta = row.realized_pnl - realized.get(key, Decimal(0))
+        fee = fees_by_fill.get(row.source_fill_id, Decimal(0))
+        fill = fills_by_id.get(row.source_fill_id)
+        if fill is None:
+            raise ValueError("round-trip metrics require every fill snapshot to reference a fill")
+
+        if old_q == 0:
+            accumulated[key] = fee
+        elif old_q * new_q < 0:
+            closing_fraction = abs(old_q) / fill.quantity
+            closing_fee = fee * closing_fraction
+            opening_fee = fee - closing_fee
+            accumulated[key] = accumulated.get(key, Decimal(0)) + realized_delta + closing_fee
             results.append(accumulated[key])
-            accumulated[key] = Decimal(0)
-        previous_quantity[key] = row.quantity
-        previous_realized[key] = row.realized_pnl
+            accumulated[key] = opening_fee
+        else:
+            accumulated[key] = accumulated.get(key, Decimal(0)) + realized_delta + fee
+            if new_q == 0:
+                results.append(accumulated[key])
+                accumulated[key] = Decimal(0)
+        quantities[key] = new_q
+        realized[key] = row.realized_pnl
     return results
 
 
@@ -40,14 +73,16 @@ def calculate_metrics(*, initial_cash, fills, intents, orders, positions, snapsh
     fees = -sum((row.amount for row in ledger if row.entry_type is LedgerEntryType.FEE), Decimal(0))
     funding = sum((row.amount for row in ledger if row.entry_type is LedgerEntryType.FUNDING), Decimal(0))
     net = final.equity - initial_cash
-    gross = net + fees
+    gross = realized + unrealized + funding
+    if net != gross - fees:
+        raise ValueError("net PnL must reconcile to realized plus unrealized plus funding minus fees")
     total_return = None if initial_cash == 0 else net / initial_cash
     max_dd_amount = max((row.drawdown_amount for row in equity_curve), default=Decimal(0))
     dd_fractions = [row.drawdown_fraction for row in equity_curve if row.drawdown_fraction is not None]
     max_dd_fraction = max(dd_fractions) if dd_fractions else None
     turnover = sum((row.notional for row in fills), Decimal(0))
     latest_orders = {row.order_id: row for row in orders}
-    round_trips = _round_trip_pnls(snapshots)
+    round_trips = _round_trip_pnls(fills, snapshots, ledger)
     winning = [value for value in round_trips if value > 0]
     losing = [value for value in round_trips if value < 0]
     gross_profit = sum(winning, Decimal(0))
@@ -93,6 +128,7 @@ def calculate_metrics(*, initial_cash, fills, intents, orders, positions, snapsh
 def metric_records(run_id, metrics: BacktestMetrics, config_sha256: str) -> tuple[BacktestMetric, ...]:
     count_names = {name for name in metrics.__dataclass_fields__ if name.endswith("_count") or name in {"winning_round_trips", "losing_round_trips"}}
     fraction_names = {"total_return", "maximum_drawdown_fraction", "win_rate", "profit_factor"}
+    net_round_trip_names = {"completed_round_trip_count", "winning_round_trips", "losing_round_trips", "win_rate", "gross_profit", "gross_loss", "profit_factor"}
     rows = []
     for name, raw in metrics.as_dict().items():
         if isinstance(raw, bool):
@@ -103,5 +139,10 @@ def metric_records(run_id, metrics: BacktestMetrics, config_sha256: str) -> tupl
             value = raw
             unit = "fraction" if name in fraction_names else "base_currency"
         status = MetricStatus.UNAVAILABLE if value is None else MetricStatus.AVAILABLE
-        rows.append(BacktestMetric(run_id, name, value, status, unit, config_sha256))
+        details = {}
+        if name in net_round_trip_names:
+            details["round_trip_semantics"] = "net_of_fees_and_realized_funding"
+        if name == "gross_pnl":
+            details["semantics"] = "realized_plus_unrealized_plus_funding_before_fees"
+        rows.append(BacktestMetric(run_id, name, value, status, unit, config_sha256, details))
     return tuple(rows)

@@ -19,7 +19,13 @@ class Phase5ConflictError(RuntimeError):
 
 
 class PostgresPhase5Repository(_PostgresRepositoryBase):
+    def __init__(self, connection, *, commit_on_write: bool = True) -> None:
+        super().__init__(connection, commit_on_write=commit_on_write)
+        self._backtest_run_id: UUID | None = None
+
     def _record(self, *, table: str, id_column: str, row: dict[str, object], logical_where: str, logical_params: Sequence[object], label: str) -> UUID:
+        if table != "backtesting.backtest_runs" and "backtest_run_id" in row and self._backtest_run_id is not None:
+            row = row | {"backtest_run_id": self._backtest_run_id}
         columns = tuple(row)
         params = tuple(_json_param(row[name]) if name.endswith("_jsonb") else row[name] for name in columns)
         sql = f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({', '.join(['%s'] * len(columns))}) ON CONFLICT DO NOTHING RETURNING {id_column}, record_sha256"
@@ -49,7 +55,9 @@ class PostgresPhase5Repository(_PostgresRepositoryBase):
 
     def record_backtest_run(self, value):
         row = backtest_run_row(value)
-        return self._record(table="backtesting.backtest_runs", id_column="backtest_run_id", row=row, logical_where="backtest_run_id = %s", logical_params=(row["backtest_run_id"],), label="backtest run")
+        result = self._record(table="backtesting.backtest_runs", id_column="backtest_run_id", row=row, logical_where="backtest_run_id = %s", logical_params=(row["backtest_run_id"],), label="backtest run")
+        self._backtest_run_id = value.backtest_run_id
+        return result
 
     def record_order_intent(self, value):
         row = order_intent_row(value)
@@ -73,7 +81,7 @@ class PostgresPhase5Repository(_PostgresRepositoryBase):
 
     def record_position_snapshot(self, value):
         row = position_snapshot_row(value)
-        return self._record(table="execution.position_snapshots", id_column="position_snapshot_id", row=row, logical_where="position_snapshot_id = %s", logical_params=(row["position_snapshot_id"],), label="position snapshot")
+        return self._record(table="execution.position_snapshots", id_column="position_snapshot_id", row=row, logical_where="run_id = %s AND account_ref = %s AND position_id = %s AND snapshot_at_utc = %s AND snapshot_kind = %s AND source_event_id = %s AND logical_sequence = %s", logical_params=(row["run_id"], row["account_ref"], row["position_id"], row["snapshot_at_utc"], row["snapshot_kind"], row["source_event_id"], row["logical_sequence"]), label="position snapshot")
 
     def record_funding_payment(self, value):
         row = funding_payment_row(value)
@@ -81,7 +89,7 @@ class PostgresPhase5Repository(_PostgresRepositoryBase):
 
     def record_cash_ledger_entry(self, value):
         row = cash_ledger_row(value)
-        return self._record(table="execution.cash_ledger_entries", id_column="cash_ledger_entry_id", row=row, logical_where="run_id = %s AND record_sha256 = %s", logical_params=(row["run_id"], row["record_sha256"]), label="cash ledger entry")
+        return self._record(table="execution.cash_ledger_entries", id_column="cash_ledger_entry_id", row=row, logical_where="run_id = %s AND ledger_sequence = %s", logical_params=(row["run_id"], row["ledger_sequence"]), label="cash ledger entry")
 
     def record_account_snapshot(self, value):
         row = account_snapshot_row(value)
@@ -89,15 +97,18 @@ class PostgresPhase5Repository(_PostgresRepositoryBase):
 
     def record_backtest_event(self, value):
         row = event_row(value)
-        return self._record(table="backtesting.backtest_events", id_column="backtest_event_id", row=row, logical_where="backtest_run_id = %s AND deterministic_sequence = %s", logical_params=(row["backtest_run_id"], row["deterministic_sequence"]), label="backtest event")
+        backtest_run_id = self._backtest_run_id or row["backtest_run_id"]
+        return self._record(table="backtesting.backtest_events", id_column="backtest_event_id", row=row, logical_where="backtest_run_id = %s AND deterministic_sequence = %s", logical_params=(backtest_run_id, row["deterministic_sequence"]), label="backtest event")
 
     def record_equity_curve_point(self, value):
         row = equity_row(value)
-        return self._record(table="backtesting.equity_curves", id_column="equity_curve_id", row=row, logical_where="backtest_run_id = %s AND timestamp_utc = %s", logical_params=(row["backtest_run_id"], row["timestamp_utc"]), label="equity point")
+        backtest_run_id = self._backtest_run_id or row["backtest_run_id"]
+        return self._record(table="backtesting.equity_curves", id_column="equity_curve_id", row=row, logical_where="backtest_run_id = %s AND timestamp_utc = %s", logical_params=(backtest_run_id, row["timestamp_utc"]), label="equity point")
 
     def record_backtest_metric(self, value):
         row = metric_row(value)
-        return self._record(table="backtesting.backtest_metrics", id_column="backtest_metric_id", row=row, logical_where="backtest_run_id = %s AND metric_name = %s", logical_params=(row["backtest_run_id"], row["metric_name"]), label="backtest metric")
+        backtest_run_id = self._backtest_run_id or row["backtest_run_id"]
+        return self._record(table="backtesting.backtest_metrics", id_column="backtest_metric_id", row=row, logical_where="backtest_run_id = %s AND metric_name = %s", logical_params=(backtest_run_id, row["metric_name"]), label="backtest metric")
 
     def list_fills(self, *, order_id: UUID):
         return self._fetchall("SELECT * FROM execution.fills WHERE order_id = %s ORDER BY filled_at_utc, fill_id", (order_id,))

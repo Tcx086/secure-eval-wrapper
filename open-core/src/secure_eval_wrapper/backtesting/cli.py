@@ -113,8 +113,7 @@ def build_result(fixture: Path):
         slippage=SlippageConfiguration(Decimal("5")),
         risk_limits=RiskLimitConfiguration(max_order_notional=Decimal("2000"), max_position_notional_per_series=Decimal("2000"), max_gross_exposure=Decimal("3000")),
     )
-    run_id = uuid5(NAMESPACE_URL, f"phase5-public-demo-run:{sha256_payload({'fixture': [bar.close for bar in bars], 'config': configuration.config_sha256})}")
-    request = BacktestRequest(run_id, bars, signals, (), configuration, IMPLEMENTATION_SHA256, "source-tree", signals[0].signal_run_id, {"classification": "synthetic_public_safe"})
+    request = BacktestRequest(None, bars, signals, (), configuration, IMPLEMENTATION_SHA256, "source-tree", signals[0].signal_run_id, {"classification": "synthetic_public_safe"})
     return BacktestEngine().run(request), signals
 
 
@@ -143,7 +142,7 @@ def main(argv=None) -> int:
             connection.close()
         persistence_status = "postgresql"
     summary = {
-        "classification": "synthetic_public_safe", "run_id": str(result.run.run_id),
+        "classification": "synthetic_public_safe", "run_id": str(result.run.backtest_run_id), "execution_lineage_id": str(result.run.run_id),
         "config_sha256": result.run.config_sha256, "data_sha256": result.run.data_sha256,
         "record_sha256": result.run.record_sha256, "initial_equity": str(result.metrics.initial_cash),
         "final_equity": str(result.metrics.final_equity), "net_pnl": str(result.metrics.net_pnl),

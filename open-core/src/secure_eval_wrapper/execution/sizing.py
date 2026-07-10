@@ -71,8 +71,6 @@ def size_signal(
         raise ValueError("reference_price must be finite and positive")
     accounting_mode = AccountingMode(accounting_mode)
     direction_sign = {SignalDirection.LONG: Decimal(1), SignalDirection.SHORT: Decimal(-1), SignalDirection.FLAT: Decimal(0)}[signal.direction]
-    if accounting_mode is AccountingMode.SPOT and direction_sign < 0:
-        raise ValueError("Spot short target sizing is prohibited")
     absolute = configuration.target_value if configuration.mode is SizingMode.FIXED_QUANTITY else configuration.target_value / reference_price
     target = _round_down_absolute(direction_sign * absolute, configuration.quantity_step)
     delta = target - current_quantity

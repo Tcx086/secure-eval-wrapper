@@ -42,7 +42,7 @@ def risk_decision_row(value):
     return {
         "risk_decision_id": value.risk_decision_id, "run_id": value.run_id,
         "backtest_run_id": value.run_id, "order_intent_id": value.order_intent_id,
-        "order_id": None, **_identity(value.series_identity),
+        "order_id": value.order_id, **_identity(value.series_identity),
         "decision_timestamp_utc": value.decision_timestamp_utc, "stage": value.stage.value,
         "decision_status": value.status.value, "relevant_limit": value.relevant_limit,
         "observed_value": value.observed_value, "configured_limit": value.configured_limit,
@@ -91,7 +91,7 @@ def fill_row(value):
 def position_row(value: PositionState):
     return {
         "position_id": value.position_id, "run_id": value.run_id, "backtest_run_id": value.run_id,
-        "account_ref": "public-simulation", "symbol": value.series_identity.canonical_symbol,
+        "account_ref": value.account_ref, "symbol": value.series_identity.canonical_symbol,
         "quantity": value.quantity, "average_entry_price": value.average_entry_price,
         "realized_pnl": value.realized_pnl, "unrealized_pnl": 0,
         "source_fill_ids": list(value.source_fill_ids), "updated_at_utc": value.updated_at_utc,
@@ -105,7 +105,11 @@ def position_snapshot_row(value):
     return {
         "position_snapshot_id": value.position_snapshot_id, "run_id": value.run_id,
         "backtest_run_id": value.run_id, "position_id": value.position_id,
-        "source_fill_id": value.source_fill_id, **_identity(value.series_identity),
+        "account_ref": value.account_ref, "source_fill_id": value.source_fill_id,
+        "source_event_id": value.source_event_id, "logical_sequence": value.logical_sequence,
+        "snapshot_kind": value.snapshot_kind.value,
+        "mark_source": None if value.mark_source is None else value.mark_source.value,
+        **_identity(value.series_identity),
         "accounting_mode": value.accounting_mode.value, "snapshot_at_utc": value.snapshot_at_utc,
         "quantity": value.quantity, "average_entry_price": value.average_entry_price,
         "mark_price": value.mark_price, "realized_pnl": value.realized_pnl,
@@ -133,6 +137,7 @@ def cash_ledger_row(value):
     return {
         "cash_ledger_entry_id": value.cash_ledger_entry_id, "run_id": value.run_id,
         "backtest_run_id": value.run_id, "event_timestamp_utc": value.event_timestamp_utc,
+        "ledger_sequence": value.ledger_sequence,
         "entry_type": value.entry_type.value, "amount": value.amount,
         "balance_after": value.balance_after, "currency": value.currency,
         "series_identity_sha256": None if value.series_identity is None else value.series_identity.series_identity_sha256,
@@ -145,7 +150,7 @@ def cash_ledger_row(value):
 def account_snapshot_row(value):
     return {
         "account_snapshot_id": value.account_snapshot_id, "run_id": value.run_id,
-        "backtest_run_id": value.run_id, "account_ref": "public-simulation",
+        "backtest_run_id": value.run_id, "account_ref": value.account_ref,
         "snapshot_at_utc": value.snapshot_at_utc, "equity": value.equity, "cash": value.cash,
         "margin_used": 0, "balances_jsonb": {"base_currency_only": True},
         "classification": "public_synthetic", "gross_exposure": value.gross_exposure,
@@ -164,7 +169,8 @@ def backtest_run_row(value):
         "config_sha256": value.config_sha256, "started_at_utc": value.started_at_utc,
         "completed_at_utc": value.completed_at_utc, "status": value.status.value,
         "metadata_jsonb": dict(value.metadata), "initial_cash": value.initial_cash,
-        "base_currency": value.base_currency, "data_sha256": value.data_sha256,
+        "base_currency": value.base_currency, "fee_currency": value.fee_currency, "account_ref": value.account_ref,
+        "data_sha256": value.data_sha256,
         "implementation_code_sha256": value.implementation_code_sha256,
         "repository_commit_sha": value.repository_commit_sha, "record_sha256": value.record_sha256,
     }

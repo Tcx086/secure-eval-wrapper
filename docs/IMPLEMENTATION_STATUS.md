@@ -199,7 +199,9 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add one atomic bundled alpha-to-signal persistence boundary with rollback coverage at every child failure point.
 - [x] Complete clean-install, 0007-to-0008 upgrade, schema, migration-hash, full-suite, offline, and security-boundary validation.
 - [x] Re-accept Phase 3 and Phase 4 only after every mandatory audit repair and validation passes.
-### Phase 5: simulated execution + backtesting
+
+### Phase 5: simulated execution + backtesting (baseline before second audit repair)
+
 - [x] Add installable package metadata, console entry points, cross-platform validation, and least-privilege CI.
 - [x] Define immutable deterministic execution, sizing, risk, order, fill, position, cash, funding, account, and event contracts.
 - [x] Implement market, limit, stop, stop-limit, GTC/IOC, fee, slippage, cancellation, rejection, and expiry semantics in `SimulatedBroker`.
@@ -218,7 +220,23 @@ Completed work must be listed under `Completed`. Everything not done must remain
 
 - [ ] Consider additional public OHLCV/trade/funding/instrument adapters after Phase 2; Bybit and Coinbase are not currently implemented.
 
+### Phase 5: second independent audit repairs (in progress)
+
+- [ ] Mark portfolios at the actual bar open before pre-fill risk and fill evaluation, with explicit mark provenance.
+- [ ] Enforce one base, fee, Spot quote, perpetual settlement, fill, and fee-ledger currency without FX conversion.
+- [ ] Route prohibited Spot short targets through an auditable blocked risk decision without aborting the backtest.
+- [ ] Correct Spot unrealized PnL while preserving cash-plus-marked-inventory equity semantics.
+- [ ] Add immutable logical identities and different-hash conflict protection for position snapshots and cash-ledger entries.
+- [ ] Enforce canonical lowercase hexadecimal SHA-256 values in contracts and PostgreSQL.
+- [ ] Derive and enforce deterministic backtest run IDs from stable economic and implementation inputs.
+- [ ] Propagate the configured simulation account identity consistently through contracts, hashes, and persistence.
+- [ ] Add simulated-order lineage to pre-fill risk decisions.
+- [ ] Define fee- and funding-aware net economic round-trip metric semantics.
+- [ ] Strengthen the public/private CI boundary scan.
+- [ ] Add migration `0010`, dedicated regression coverage, PostgreSQL upgrade validation, and final CI validation.
+
 ### Phase 6: monitoring + simulated FIX API
+
 - [ ] Implement monitoring event schema.
 - [ ] Implement data health monitoring.
 - [ ] Implement signal health monitoring.

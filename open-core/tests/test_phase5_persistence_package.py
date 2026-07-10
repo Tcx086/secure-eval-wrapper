@@ -218,9 +218,10 @@ class PackageCliCiBoundaryTests(unittest.TestCase):
         combined = "\n".join(path.read_text(encoding="utf-8", errors="ignore") for path in (OPEN_CORE / "src" / "secure_eval_wrapper").rglob("*.py"))
         self.assertNotRegex(combined, r"class\s+(?:PaperBroker|LiveBroker)\b")
         self.assertNotRegex(combined, r"(^|\n)\s*(?:import sqlite3|from sqlite3)")
-        self.assertNotIn("authenticated exchange", combined.lower())
+        from secure_eval_wrapper.validation import boundary_scan
+        boundary_scan()
 
-    def test_migrations_0001_through_0008_are_unchanged(self):
+    def test_migrations_0001_through_0009_are_unchanged(self):
         expected = {
             "0001_initial_schema.sql": "598486e6af2eed4559564593adc0b66deff9e21ea91dbda560980c208a2950c5",
             "0002_schema_migrations.sql": "36c91efa851e10fcc6039ebd8715af1c985237af6ff556e6943e10329458f76f",
@@ -230,6 +231,7 @@ class PackageCliCiBoundaryTests(unittest.TestCase):
             "0006_phase2_final_hardening.sql": "af507329f29e63ab260317b879da5e82917aafd7368d692b343a09ccafdace5d",
             "0007_alpha_signal_library.sql": "0a355d3238afcf8691b5366e46332c3e1e6862a9ed574e740e3435479d8883a4",
             "0008_phase3_phase4_audit_repairs.sql": "a59dff645009c117a5146d2bd4102a9ed048126ca77b61566f8d31bf1fcba64b",
+            "0009_phase5_simulated_execution_backtesting.sql": "9b49718ee48e45dda42916568f815723f94578eff814ffe0e0b236aa3523c0d5",
         }
         import hashlib
         for name, digest in expected.items():
