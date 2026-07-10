@@ -122,6 +122,16 @@ class ThirdAuditPostgresTests(unittest.TestCase):
             sslmode=os.environ.get("POSTGRES_SSLMODE", "disable"),
         )
         cls.run_a, cls.run_b, cls.signals = overlapping_results()
+        with cls.connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM signals.signals WHERE signal_run_id=%s",
+                (cls.signals[0].signal_run_id,),
+            )
+            cursor.execute(
+                "DELETE FROM signals.signal_runs WHERE signal_run_id=%s",
+                (cls.signals[0].signal_run_id,),
+            )
+        cls.connection.commit()
         _persist_upstream_signals(cls.connection, cls.signals)
 
     @classmethod
