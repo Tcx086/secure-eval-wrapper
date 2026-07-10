@@ -1,4 +1,4 @@
-﻿# Secure Eval Wrapper
+# Secure Eval Wrapper
 
 ## What this is
 Secure Eval Wrapper is being rebuilt into a public crypto-focused trading system framework.
@@ -176,3 +176,12 @@ Public sample highlights:
 - `delivery/`: generated artifacts and run outputs
 - `private/`: local-only integration notes
 - `docs/`: flow, reliability, extensibility, scale notes
+
+## Public data quick start
+
+Phase 2 public market data is complete for Binance and OKX. Run the complete offline, socket-free
+fixture pipeline from the repository root:
+
+    python open-core\scripts\run_public_market_data_pipeline.py
+
+See docs/DATA_COLLECTION_AND_VALIDATION.md for verified endpoint contracts and exit criteria.

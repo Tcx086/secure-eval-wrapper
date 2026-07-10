@@ -17,6 +17,8 @@ Current migrations:
 - `0002_schema_migrations.sql`: creates `audit.schema_migrations` for migration metadata.
 - `0003_data_quality_quarantine.sql`: adds indexed quarantine decisions for failed offline validation observations.
 - `0004_reconciliation_persistence.sql`: adds auditable reconciliation summaries and child check results with idempotency constraints.
+- `0005_trade_funding_instrument_hardening.sql`: adds explicit trade/funding identity, immutable
+  instrument metadata versions, conflict hashes, indexes, uniqueness, and foreign-key verification.
 
 Migration metadata tracks:
 

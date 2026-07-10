@@ -15,3 +15,10 @@ The initial migration creates separate PostgreSQL schemas for the major framewor
 The schema is intentionally foundational. It defines storage contracts and metadata/provenance
 anchors without implementing data collection, alpha logic, execution, backtesting, monitoring, or
 live trading.
+
+## Phase 2 completed market-data identity
+
+Migration 0005 extends validated trades and funding rates with provider instrument identity and
+conflict hashes. Instruments are stored as immutable metadata versions keyed by provider,
+provider instrument ID, instrument type, and metadata hash. This prevents Spot and perpetual
+contracts from sharing ambiguous identities while preserving historical metadata drift.

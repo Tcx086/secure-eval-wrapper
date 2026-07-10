@@ -4,8 +4,8 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-10T01:32:59Z",
-  "current_phase": "phase_2_data_collection_validation",
+  "updated_at_utc": "2026-07-10T03:30:00Z",
+  "current_phase": "phase_3_public_alpha_library",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
     "future_functional_prs_must_update_json_status": true,
@@ -110,7 +110,7 @@
     {
       "id": "phase_2_data_collection_validation",
       "title": "Phase 2: data collection + validation",
-      "status": "in_progress",
+      "status": "completed",
       "completed": [
         "Add importable data collection and data validation package skeletons",
         "Define provider, request, raw observation, normalized market data, instrument metadata, and collection run contracts",
@@ -159,14 +159,20 @@
         "Exclude rejected bars from reconciliation and expose provider accepted/rejected eligibility outcomes",
         "Add quality-aware pipeline status semantics for succeeded, partial, and failed runs",
         "Propagate database-selected validation report IDs to accepted bars, quarantine rows, and persistence summaries",
-        "Reject validation report identity conflicts when stored and incoming report hashes differ"
+        "Reject validation report identity conflicts when stored and incoming report hashes differ",
+        "Add unambiguous provider instrument identities separating spot and derivatives",
+        "Verify and document official Binance and OKX trade, funding, and instrument endpoint contracts",
+        "Implement Binance and OKX public spot trade collection",
+        "Implement Binance USD-M and OKX swap public funding-rate collection",
+        "Implement Binance Spot/USD-M and OKX SPOT/SWAP public instrument metadata collection",
+        "Add trade, funding, and instrument normalization, validation reports, accepted gates, and quarantine",
+        "Add PostgreSQL trade/funding persistence and immutable versioned instrument metadata with conflict protection",
+        "Add typed trade, funding-rate, and instrument metadata pipelines",
+        "Add a fixture-default complete public market-data CLI with independent network and PostgreSQL gates",
+        "Add comprehensive offline public-data vertical and security-boundary tests",
+        "Complete the Phase 2 exit review without starting Phase 3"
       ],
-      "todo": [
-        "Implement additional public OHLCV provider adapters beyond Binance and OKX without embedding credentials",
-        "Implement public trade collection",
-        "Implement public funding rate collection",
-        "Implement public instrument metadata collection"
-      ]
+      "todo": []
     },
     {
       "id": "phase_3_public_alpha_library",

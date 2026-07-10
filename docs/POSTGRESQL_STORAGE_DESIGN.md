@@ -254,3 +254,28 @@ implicit fallback is available. Public-network collection is gated independently
 persistence. Before storage, the same canonical validation gate used by reconciliation selects the
 accepted bars; rejected records remain auditable through raw observations and deterministic
 quarantine decisions.
+
+## Phase 2J-2M trade, funding, and instrument hardening
+
+Migration `0005_trade_funding_instrument_hardening.sql` completes the Phase 2 public market-data
+storage contract. Raw observations expose data type, provider instrument ID, and instrument type
+alongside payload and source hash.
+
+Validated trades store provider/instrument identity, instrument type, optional quote quantity and
+provider sequence, and a normalized record hash. Their logical key is provider plus instrument plus
+provider trade ID. Funding rates key provider plus instrument plus type plus funding timestamp,
+preserving settlement and content hash. Both compare hashes on conflicts and return the
+database-selected identifier.
+
+Instrument rows are immutable metadata versions. Identity includes provider, provider instrument,
+and type; `metadata_sha256` distinguishes versions. Spot and perpetual records can share base/quote
+without sharing ambiguous storage identity. Direct columns retain display symbol, settlement,
+contract/margin classification, increments, minimums, contract values, dates, funding interval,
+validation identity, source observations, and provenance. Drift creates a new version with
+structured old/new details instead of mutating history.
+
+Indexes support provider/instrument/time queries and provider/canonical lookups. Uniqueness and
+validation-report foreign keys are verifier-covered. Reads use end-exclusive windows and explicit
+instrument types. Typed persistence writes raw observations, reports/checks, accepted rows, and
+quarantine decisions inside one outer transaction. PostgreSQL remains the only authoritative
+implementation.

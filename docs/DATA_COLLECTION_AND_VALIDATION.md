@@ -21,7 +21,7 @@ Future data types:
 - Account snapshots for paper/live account monitoring.
 
 ## Phase 2A Contract Baseline
-Phase 2 is in progress. The first increment adds importable, inert contracts under:
+Phase 2 is complete. Its first increment added importable, inert contracts under:
 
 ```text
 open-core/src/secure_eval_wrapper/
@@ -112,8 +112,8 @@ The Phase 2 registry records the following current capability metadata:
 
 | Provider | OHLCV | Trades | Funding rates | Instruments |
 |---|---|---|---|---|
-| Binance | implemented | planned | planned | planned |
-| OKX | implemented | planned | planned | planned |
+| Binance | implemented | implemented | implemented | implemented |
+| OKX | implemented | implemented | implemented | implemented |
 | Bybit | planned | planned | planned | planned |
 | Coinbase | planned | planned | unknown | planned |
 
@@ -123,7 +123,7 @@ authentication configuration, or credentials; fetch behavior stays in provider m
 
 The offline sample provider remains a fixture reader rather than an exchange adapter. Binance Spot
 OHLCV is implemented in Phase 2E and OKX V5 public historical OHLCV is implemented in Phase 2G.
-Trades, funding rates, instrument metadata, and all Bybit/Coinbase adapters remain planned or unknown.
+Trades, funding rates, and instrument metadata are implemented for Binance and OKX. All Bybit/Coinbase adapters remain future enhancements or unknown.
 
 Provider adapters must normalize symbol naming, timestamp format, timezone to UTC, numeric
 precision, timeframe names, funding interval representation, and instrument metadata fields.
@@ -190,13 +190,13 @@ Implemented offline for normalized OHLCV in Phase 2C:
 - Negative or configured-impossible volume.
 - Partial candles when an explicit finality flag is available.
 
-Still planned for later Phase 2 increments:
-- Price outliers.
-- Volume anomalies beyond an explicit maximum.
-- Stale data.
-- Symbol mapping consistency across provider metadata.
-- Funding timestamp gaps.
-- Instrument metadata drift.
+Additional future checks beyond the Phase 2 exit criteria:
+- Broader price-outlier policies.
+- Broader volume-anomaly policies beyond an explicit maximum.
+- Long-horizon stale-data policies.
+
+Phase 2J-2M implements provider symbol consistency, funding timestamp gaps, and instrument metadata
+drift for the new public data types.
 
 ## Cross-Source Reconciliation
 Phase 2F compares two or more provider datasets for one canonical symbol and timeframe. Inputs are
@@ -364,8 +364,8 @@ flag, derived close time, full request provenance, and deterministic source SHA-
 The default API base is `https://openapi.okx.com`. A small allowlist supports OKX's documented regional
 domain requirement (`openapi.okx.com`, `us.okx.com`, and `eea.okx.com`) without
 allowing an arbitrary host. The adapter sends no authentication headers and exposes no private,
-account, order, execution, signing, or credential behavior. Trades, funding rates, and instruments
-remain explicitly unimplemented.
+account, order, execution, signing, or credential behavior. The compatibility class remains
+OHLCV-only; OkxPublicProvider adds the verified public trade, funding, and instrument routes.
 
 ## Phase 2H reconciliation persistence
 
@@ -414,3 +414,74 @@ requires `ENABLE_PUBLIC_NETWORK_SMOKE=true`, uses a two-candle one-page complete
 no downloaded output. Persistence requires both `--persist` and
 `ENABLE_POSTGRES_PERSISTENCE=true`; PostgreSQL settings and a driver are loaded only after both
 explicit gates pass. The CLI never prints raw payloads or connection settings.
+
+## Phase 2J-2M complete public data layer
+
+Phase 2 is complete as of 2026-07-09. The final milestone adds public trades, funding-rate history,
+and instrument metadata for Binance and OKX without credentials, private endpoints, account data,
+order behavior, alpha logic, or execution behavior.
+
+### Verified public endpoint contracts
+
+All contracts below were re-verified against current official primary documentation on 2026-07-09.
+Every adapter sends empty headers and permits only its documented allowlisted path.
+
+| Provider / API family | Endpoint | Request and pagination contract | Response contract | Authentication |
+|---|---|---|---|---|
+| Binance Spot REST | GET /api/v3/aggTrades | Required symbol; optional inclusive fromId, inclusive startTime/endTime, and limit (default 500, maximum 1000). Later pages use fromId only when needed. | JSON array of a,p,q,f,l,T,m,M aggregate-trade objects. | Public market data; no API key or signing. |
+| Binance Spot REST | GET /api/v3/exchangeInfo | Optional symbol/symbols, permission, and status filters. The adapter supplies an explicit bounded subset. | Object with timezone, rate limits, exchange filters, and symbol assets, status, precision, and rules. | Public general/market data; no API key or signing. |
+| Binance USDⓈ-M Futures REST | GET /fapi/v1/fundingRate | Optional symbol, inclusive startTime/endTime, and limit (default 100, maximum 1000). Results are ascending; pagination advances one millisecond past the last funding time. | Array with symbol, fundingRate, fundingTime, and markPrice. | Public market data; no API key or signing. |
+| Binance USDⓈ-M Futures REST | GET /fapi/v1/exchangeInfo | No parameters. The catalog is filtered to the explicit requested subset. | Object with assets and symbols exposing contract type, dates, assets, status, precision, and filters. | Public market data; no API key or signing. |
+| OKX V5 Market Data | GET /api/v5/market/history-trades | Required instId; optional type, after, before, and limit (maximum/default 100). Timestamp pagination has cursor/page guards. History covers the recent three months. | V5 code/msg/data envelope with instId, tradeId, px, sz, taker side, source, and ts. | Public market data; no authentication headers. |
+| OKX V5 Public Data | GET /api/v5/public/funding-rate-history | Required swap instId; optional before, after, and limit (maximum/default 400). The adapter moves backward then returns ascending output. History covers up to three months. | V5 envelope with instType, instId, formula/method, predicted fundingRate, actual realizedRate, and fundingTime. | Public Data; no authentication. |
+| OKX V5 Public Data | GET /api/v5/public/instruments | Required instType; optional instFamily and instId. Each explicit SPOT or SWAP identity is requested by instId. | V5 envelope with identity, assets/settlement, state, increments, contract values, dates, and rules. | Public Data; no authentication. |
+
+Official references:
+
+- [Binance Spot market endpoints](https://developers.binance.com/en/docs/catalog/core-trading-spot-trading/api/rest-api/market)
+- [Binance Spot general endpoints](https://developers.binance.com/en/docs/catalog/core-trading-spot-trading/api/rest-api/general)
+- [Binance USDⓈ-M market data](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data)
+- [OKX V5 API guide](https://www.okx.com/docs-v5/en/)
+
+### Identity, validation, persistence, and pipelines
+
+InstrumentKey preserves provider, exchange, provider instrument ID, base, quote, settlement,
+instrument type, display symbol, and contract/margin classification. Spot remains BASE-QUOTE.
+Derivatives use explicit identities such as BTC-USDT:USDT:PERPETUAL_SWAP. Deterministic hashes and
+UUIDs prevent spot/perpetual conflation.
+
+BinanceSpotPublicProvider handles Spot OHLCV/trades/instruments; BinanceUsdmPublicProvider handles
+USDⓈ-M funding/instruments; OkxPublicProvider handles V5 Spot OHLCV/trades/instruments and SWAP
+funding/instruments. The registry reports all four Phase 2 types implemented for Binance and OKX.
+Bybit and Coinbase remain future enhancements and are not represented as implemented.
+
+Trades, funding, and instruments have Decimal/UTC normalization, deterministic IDs/source hashes,
+complete provenance, stable validation reports, canonical accepted gates, and quarantine. Checks
+cover duplicates, numeric validity, windows, ordering, identity, signed funding rates, intervals,
+instrument rules, and structured old/new metadata drift.
+
+Migration 0005_trade_funding_instrument_hardening.sql adds provider/instrument identity, content
+hashes, immutable versioned instrument metadata, indexes, uniqueness, and a validation-report
+foreign key. PostgreSQL remains the sole authoritative target. Writes are parameterized and
+idempotent, reads are half-open and instrument-type aware, and database-selected report IDs flow to
+accepted and quarantine children.
+
+TradePipeline, FundingRatePipeline, and InstrumentMetadataPipeline preserve audit records and
+failures, expose accepted records, implement deterministic fail-fast/partial policies, and use one
+outer PostgreSQL transaction when enabled. The fixture-default run_public_market_data_pipeline.py
+CLI runs all four public data types without sockets or persistence. Network mode requires
+ENABLE_PUBLIC_NETWORK_SMOKE=true. Persistence also requires --persist and
+ENABLE_POSTGRES_PERSISTENCE=true. Summaries never print payloads or connection settings.
+
+### Phase 2 exit review
+
+- Binance and OKX OHLCV collection, normalization, validation, gating, reconciliation, persistence,
+  and safe CLI are complete.
+- Binance and OKX trades are complete through collection, validation, quarantine, persistence, and
+  typed pipelines.
+- Binance USDⓈ-M and OKX SWAP funding are complete with unambiguous derivative identity.
+- Binance Spot/USDⓈ-M and OKX SPOT/SWAP instruments are complete with drift-safe versioning.
+- UTC, deterministic hashes/IDs, provenance, reports, gates, quarantine, PostgreSQL-only storage,
+  offline tests, classified fixtures, and explicit network gating are complete.
+
+Optional third/fourth provider expansion remains future backlog rather than a Phase 2 exit blocker.

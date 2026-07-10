@@ -135,13 +135,25 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Propagate database-selected validation report IDs to accepted bars, quarantine rows, and persistence summaries.
 - [x] Reject validation report identity conflicts when stored and incoming report hashes differ.
 
+### Phase 2J-2M: public trades, funding, instruments, and Phase 2 completion
+
+- [x] Add unambiguous provider instrument identities that separate Spot, perpetual swaps, and dated futures.
+- [x] Verify and document current official public endpoint, request, response, pagination, limit, and authentication contracts.
+- [x] Implement Binance and OKX public Spot trade collection through injectable transports.
+- [x] Implement Binance USDⓈ-M and OKX SWAP public funding history.
+- [x] Implement Binance Spot/USDⓈ-M and OKX SPOT/SWAP public instrument metadata.
+- [x] Add deterministic normalization, validation reports, accepted/rejected gates, and quarantine for all three data types.
+- [x] Add PostgreSQL trade/funding persistence, immutable instrument metadata versions, conflict hashes, reads, indexes, constraints, and foreign-key verification.
+- [x] Add provider-neutral typed trade, funding, and instrument pipelines with fail-fast, partial, warning, and one-transaction persistence semantics.
+- [x] Add a classified fixture-default complete public-data CLI with independently gated public network and PostgreSQL modes.
+- [x] Add comprehensive offline provider, pagination, normalization, validation, gating, persistence, pipeline, CLI, socket-isolation, and boundary tests.
+- [x] Complete the Phase 2 exit review without starting Phase 3 alpha implementation.
+
 ## Todo
 
-### Phase 2: data collection + validation (in progress)
-- [ ] Implement additional public OHLCV provider adapters beyond Binance and OKX without embedding credentials.
-- [ ] Implement public trade collection.
-- [ ] Implement public funding rate collection.
-- [ ] Implement public instrument metadata collection.
+### Future provider enhancements
+
+- [ ] Consider additional public OHLCV/trade/funding/instrument adapters after Phase 2; Bybit and Coinbase are not currently implemented.
 
 ### Phase 3: public alpha library
 - [ ] Create public alpha registry.
