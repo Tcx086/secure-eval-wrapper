@@ -200,7 +200,7 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Complete clean-install, 0007-to-0008 upgrade, schema, migration-hash, full-suite, offline, and security-boundary validation.
 - [x] Re-accept Phase 3 and Phase 4 only after every mandatory audit repair and validation passes.
 
-### Phase 5: simulated execution + backtesting (baseline before second audit repair)
+### Phase 5: simulated execution + backtesting (second audit accepted)
 
 - [x] Add installable package metadata, console entry points, cross-platform validation, and least-privilege CI.
 - [x] Define immutable deterministic execution, sizing, risk, order, fill, position, cash, funding, account, and event contracts.
@@ -214,26 +214,24 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Pass local PostgreSQL 16 clean install, seeded `0008` to `0009` upgrade, catalog/hash checks, real writes/reads, conflicts, and rollback injection.
 - [x] Document exact Phase 5 semantics, persistence, validation, and limitations.
 - [x] Pass independent GitHub Actions validation on the checkpoint branch and `main` implementation SHA.
+- [x] Mark portfolios at the actual bar open before pre-fill risk and fill evaluation, with explicit mark provenance.
+- [x] Enforce one base, fee, Spot quote, perpetual settlement, fill, and fee-ledger currency without FX conversion.
+- [x] Route prohibited Spot short targets through an auditable blocked risk decision without aborting the backtest.
+- [x] Correct Spot unrealized PnL while preserving cash-plus-marked-inventory equity semantics.
+- [x] Add immutable logical identities and different-hash conflict protection for position snapshots and cash-ledger entries.
+- [x] Enforce canonical lowercase hexadecimal SHA-256 values in contracts and PostgreSQL.
+- [x] Derive and enforce deterministic backtest run IDs from stable economic and implementation inputs.
+- [x] Propagate the configured simulation account identity consistently through contracts, hashes, and persistence.
+- [x] Add simulated-order lineage to pre-fill risk decisions.
+- [x] Define fee- and funding-aware net economic round-trip metric semantics.
+- [x] Strengthen the public/private CI boundary scan.
+- [x] Add migration `0010`, dedicated regression coverage, PostgreSQL upgrade validation, and final CI validation.
+
 ## Todo
 
 ### Future provider enhancements
 
 - [ ] Consider additional public OHLCV/trade/funding/instrument adapters after Phase 2; Bybit and Coinbase are not currently implemented.
-
-### Phase 5: second independent audit repairs (in progress)
-
-- [ ] Mark portfolios at the actual bar open before pre-fill risk and fill evaluation, with explicit mark provenance.
-- [ ] Enforce one base, fee, Spot quote, perpetual settlement, fill, and fee-ledger currency without FX conversion.
-- [ ] Route prohibited Spot short targets through an auditable blocked risk decision without aborting the backtest.
-- [ ] Correct Spot unrealized PnL while preserving cash-plus-marked-inventory equity semantics.
-- [ ] Add immutable logical identities and different-hash conflict protection for position snapshots and cash-ledger entries.
-- [ ] Enforce canonical lowercase hexadecimal SHA-256 values in contracts and PostgreSQL.
-- [ ] Derive and enforce deterministic backtest run IDs from stable economic and implementation inputs.
-- [ ] Propagate the configured simulation account identity consistently through contracts, hashes, and persistence.
-- [ ] Add simulated-order lineage to pre-fill risk decisions.
-- [ ] Define fee- and funding-aware net economic round-trip metric semantics.
-- [ ] Strengthen the public/private CI boundary scan.
-- [ ] Add migration `0010`, dedicated regression coverage, PostgreSQL upgrade validation, and final CI validation.
 
 ### Phase 6: monitoring + simulated FIX API
 
