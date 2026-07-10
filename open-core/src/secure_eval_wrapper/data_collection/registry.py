@@ -41,6 +41,9 @@ PROVIDER_SPECS: Mapping[str, ProviderSpec] = MappingProxyType(
             exchange_name="Binance",
             capabilities=_capabilities(
                 ohlcv=ProviderCapabilityStatus.IMPLEMENTED,
+                trades=ProviderCapabilityStatus.IMPLEMENTED,
+                funding_rates=ProviderCapabilityStatus.IMPLEMENTED,
+                instruments=ProviderCapabilityStatus.IMPLEMENTED,
             ),
         ),
         "okx": ProviderSpec(
@@ -49,6 +52,9 @@ PROVIDER_SPECS: Mapping[str, ProviderSpec] = MappingProxyType(
             exchange_name="OKX",
             capabilities=_capabilities(
                 ohlcv=ProviderCapabilityStatus.IMPLEMENTED,
+                trades=ProviderCapabilityStatus.IMPLEMENTED,
+                funding_rates=ProviderCapabilityStatus.IMPLEMENTED,
+                instruments=ProviderCapabilityStatus.IMPLEMENTED,
             ),
         ),
         "bybit": ProviderSpec(

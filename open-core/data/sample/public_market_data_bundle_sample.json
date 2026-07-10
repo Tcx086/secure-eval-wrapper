@@ -1,0 +1,134 @@
+{
+  "classification": "synthetic_public_safe",
+  "description": "Synthetic offline Binance and OKX Phase 2 public market-data responses.",
+  "responses": {
+    "binance_spot_agg_trades": [
+      {"a": 1001, "p": "100.00", "q": "0.25", "f": 2001, "l": 2001, "T": 1767225600000, "m": false, "M": true},
+      {"a": 1002, "p": "101.00", "q": "0.50", "f": 2002, "l": 2003, "T": 1767225601000, "m": true, "M": true}
+    ],
+    "okx_spot_history_trades": {
+      "code": "0",
+      "msg": "",
+      "data": [
+        {"instId": "BTC-USDT", "side": "sell", "sz": "0.50", "source": "0", "px": "101.00", "tradeId": "3002", "ts": "1767225601000"},
+        {"instId": "BTC-USDT", "side": "buy", "sz": "0.25", "source": "0", "px": "100.00", "tradeId": "3001", "ts": "1767225600000"}
+      ]
+    },
+    "binance_usdm_funding": [
+      {"symbol": "BTCUSDT", "fundingRate": "0.0001", "fundingTime": 1767225600000, "markPrice": "100.50"},
+      {"symbol": "BTCUSDT", "fundingRate": "-0.0002", "fundingTime": 1767254400000, "markPrice": "101.50"}
+    ],
+    "okx_swap_funding": {
+      "code": "0",
+      "msg": "",
+      "data": [
+        {"formulaType": "withRate", "fundingRate": "0.0000", "realizedRate": "-0.0002", "fundingTime": "1767254400000", "instId": "BTC-USDT-SWAP", "instType": "SWAP", "method": "current_period"},
+        {"formulaType": "withRate", "fundingRate": "0.0001", "realizedRate": "0.0001", "fundingTime": "1767225600000", "instId": "BTC-USDT-SWAP", "instType": "SWAP", "method": "current_period"}
+      ]
+    },
+    "binance_spot_exchange_info": {
+      "timezone": "UTC",
+      "serverTime": 1767225600000,
+      "rateLimits": [],
+      "exchangeFilters": [],
+      "symbols": [
+        {
+          "symbol": "BTCUSDT",
+          "status": "TRADING",
+          "baseAsset": "BTC",
+          "baseAssetPrecision": 8,
+          "quoteAsset": "USDT",
+          "quoteAssetPrecision": 8,
+          "permissionSets": [["SPOT"]],
+          "filters": [
+            {"filterType": "PRICE_FILTER", "minPrice": "0.01", "maxPrice": "1000000", "tickSize": "0.01"},
+            {"filterType": "LOT_SIZE", "minQty": "0.00001", "maxQty": "1000", "stepSize": "0.00001"},
+            {"filterType": "NOTIONAL", "minNotional": "5"}
+          ]
+        }
+      ]
+    },
+    "binance_usdm_exchange_info": {
+      "timezone": "UTC",
+      "serverTime": 1767225600000,
+      "rateLimits": [],
+      "exchangeFilters": [],
+      "assets": [{"asset": "USDT", "marginAvailable": true}],
+      "symbols": [
+        {
+          "symbol": "BTCUSDT",
+          "pair": "BTCUSDT",
+          "contractType": "PERPETUAL",
+          "deliveryDate": 4133404800000,
+          "onboardDate": 1609459200000,
+          "status": "TRADING",
+          "baseAsset": "BTC",
+          "quoteAsset": "USDT",
+          "marginAsset": "USDT",
+          "pricePrecision": 2,
+          "quantityPrecision": 3,
+          "underlyingType": "COIN",
+          "filters": [
+            {"filterType": "PRICE_FILTER", "minPrice": "0.01", "maxPrice": "1000000", "tickSize": "0.01"},
+            {"filterType": "LOT_SIZE", "minQty": "0.001", "maxQty": "1000", "stepSize": "0.001"},
+            {"filterType": "MIN_NOTIONAL", "notional": "5"}
+          ]
+        }
+      ]
+    },
+    "okx_spot_instruments": {
+      "code": "0",
+      "msg": "",
+      "data": [
+        {
+          "instType": "SPOT",
+          "instId": "BTC-USDT",
+          "baseCcy": "BTC",
+          "quoteCcy": "USDT",
+          "settleCcy": "",
+          "state": "live",
+          "tickSz": "0.01",
+          "lotSz": "0.00001",
+          "minSz": "0.00001",
+          "ctVal": "",
+          "ctMult": "",
+          "ctType": "",
+          "ctValCcy": "",
+          "instFamily": "",
+          "uly": "",
+          "listTime": "1609459200000",
+          "expTime": "",
+          "ruleType": "normal",
+          "upcChg": []
+        }
+      ]
+    },
+    "okx_swap_instruments": {
+      "code": "0",
+      "msg": "",
+      "data": [
+        {
+          "instType": "SWAP",
+          "instId": "BTC-USDT-SWAP",
+          "baseCcy": "",
+          "quoteCcy": "",
+          "settleCcy": "USDT",
+          "state": "live",
+          "tickSz": "0.01",
+          "lotSz": "0.01",
+          "minSz": "0.01",
+          "ctVal": "0.01",
+          "ctMult": "1",
+          "ctType": "linear",
+          "ctValCcy": "BTC",
+          "instFamily": "BTC-USDT",
+          "uly": "BTC-USDT",
+          "listTime": "1609459200000",
+          "expTime": "",
+          "ruleType": "normal",
+          "upcChg": []
+        }
+      ]
+    }
+  }
+}

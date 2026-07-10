@@ -51,6 +51,48 @@ class MarketDataRepository(ABC):
         end_utc: datetime,
     ) -> Sequence[StorageRecord]:
         """List validated bars for a symbol/exchange/timeframe window."""
+    @abstractmethod
+    def list_validated_trades(
+        self,
+        *,
+        provider_name: str,
+        provider_instrument_id: str,
+        instrument_type: str,
+        start_utc: datetime,
+        end_utc: datetime,
+    ) -> Sequence[StorageRecord]:
+        """List validated trades in a half-open UTC window."""
+
+    @abstractmethod
+    def list_funding_rates(
+        self,
+        *,
+        provider_name: str,
+        provider_instrument_id: str,
+        instrument_type: str,
+        start_utc: datetime,
+        end_utc: datetime,
+    ) -> Sequence[StorageRecord]:
+        """List funding rates in a half-open UTC window."""
+
+    @abstractmethod
+    def get_instrument(
+        self,
+        *,
+        provider_name: str,
+        provider_instrument_id: str,
+        instrument_type: str,
+    ) -> StorageRecord | None:
+        """Return the latest versioned instrument snapshot."""
+
+    @abstractmethod
+    def list_instruments(
+        self,
+        *,
+        provider_name: str | None = None,
+        instrument_type: str | None = None,
+    ) -> Sequence[StorageRecord]:
+        """List instrument metadata snapshots with explicit filters."""
 
 
 class DataQualityRepository(ABC):

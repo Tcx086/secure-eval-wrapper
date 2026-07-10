@@ -23,3 +23,33 @@ __all__ = [
     "ProviderCollectionOutcome",
     "run_ohlcv_pipeline",
 ]
+
+from secure_eval_wrapper.data_pipeline.non_ohlcv_pipelines import (
+    FundingRatePipeline,
+    FundingRatePipelineRequest,
+    InstrumentMetadataPipeline,
+    InstrumentMetadataPipelineRequest,
+    TradePipeline,
+    TradePipelineRequest,
+)
+from secure_eval_wrapper.data_pipeline.typed_pipeline import (
+    MarketDataPipelineFailure,
+    TypedPipelineError,
+    TypedPipelinePersistence,
+    TypedPipelineResult,
+    TypedProviderOutcome,
+)
+
+__all__ += [
+    "FundingRatePipeline",
+    "FundingRatePipelineRequest",
+    "InstrumentMetadataPipeline",
+    "InstrumentMetadataPipelineRequest",
+    "MarketDataPipelineFailure",
+    "TradePipeline",
+    "TradePipelineRequest",
+    "TypedPipelineError",
+    "TypedPipelinePersistence",
+    "TypedPipelineResult",
+    "TypedProviderOutcome",
+]

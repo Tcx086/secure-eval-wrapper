@@ -12,7 +12,14 @@ from datetime import datetime
 from enum import Enum
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from secure_eval_wrapper.data_collection.models import NormalizedBar, RawObservation
+from secure_eval_wrapper.data_collection.hashing import sha256_payload
+from secure_eval_wrapper.data_collection.models import (
+    FundingRate,
+    InstrumentMetadata,
+    NormalizedBar,
+    NormalizedTrade,
+    RawObservation,
+)
 from secure_eval_wrapper.data_validation.gating import accepted_ohlcv_bars
 from secure_eval_wrapper.data_validation.models import (
     QuarantineReason,
@@ -42,6 +49,17 @@ def raw_observation_to_row(observation: RawObservation) -> dict[str, object]:
         "payload_jsonb": observation.payload,
         "source_sha256": observation.source_sha256,
         "collection_run_id": observation.collection_run_id,
+        "data_type": observation.data_type.value,
+        "provider_instrument_id": (
+            observation.instrument_key.provider_instrument_id
+            if observation.instrument_key is not None
+            else observation.raw_symbol
+        ),
+        "instrument_type": (
+            observation.instrument_key.instrument_type.value
+            if observation.instrument_key is not None
+            else None
+        ),
     }
 
 
@@ -234,8 +252,197 @@ def quarantine_decision_rows(
     return tuple(rows)
 
 
+
+def normalized_trade_to_row(
+    trade: NormalizedTrade,
+    *,
+    validation_report_id: UUID,
+    validation_status: ValidationStatus = ValidationStatus.ACCEPTED,
+) -> dict[str, object]:
+    if not isinstance(trade, NormalizedTrade):
+        raise TypeError("trade must be a NormalizedTrade")
+    if validation_status not in (ValidationStatus.ACCEPTED, ValidationStatus.ACCEPTED_WITH_WARNINGS):
+        raise ValueError("validated trades require an accepted validation status")
+    key = trade.instrument_key
+    if key is None or trade.provider_trade_id is None:
+        raise ValueError("validated trades require provider instrument and trade identities")
+    stable = {
+        "provider_name": key.provider_name,
+        "provider_instrument_id": key.provider_instrument_id,
+        "provider_trade_id": trade.provider_trade_id,
+        "symbol": trade.symbol,
+        "exchange": trade.exchange,
+        "instrument_type": key.instrument_type.value,
+        "traded_at_utc": trade.traded_at_utc,
+        "price": trade.price,
+        "quantity": trade.quantity,
+        "quote_quantity": trade.quote_quantity,
+        "side": trade.side.value,
+        "provider_sequence": trade.provider_sequence,
+        "source_observation_ids": trade.source_observation_ids,
+        "provenance": dict(trade.provenance),
+    }
+    return {
+        "trade_id": trade.trade_id,
+        **stable,
+        "record_sha256": sha256_payload(stable),
+        "validation_status": validation_status.value,
+        "validation_report_id": validation_report_id,
+        "source_observation_ids": list(trade.source_observation_ids),
+        "provenance_jsonb": dict(trade.provenance),
+    }
+
+
+def funding_rate_to_row(
+    funding_rate: FundingRate,
+    *,
+    validation_report_id: UUID,
+    validation_status: ValidationStatus = ValidationStatus.ACCEPTED,
+) -> dict[str, object]:
+    if not isinstance(funding_rate, FundingRate):
+        raise TypeError("funding_rate must be a FundingRate")
+    if validation_status not in (ValidationStatus.ACCEPTED, ValidationStatus.ACCEPTED_WITH_WARNINGS):
+        raise ValueError("funding rates require an accepted validation status")
+    key = funding_rate.instrument_key
+    if key is None:
+        raise ValueError("funding rates require an InstrumentKey")
+    stable = {
+        "provider_name": key.provider_name,
+        "provider_instrument_id": key.provider_instrument_id,
+        "instrument_type": key.instrument_type.value,
+        "settlement_asset": key.settlement_asset,
+        "symbol": funding_rate.symbol,
+        "exchange": funding_rate.exchange,
+        "funding_interval": funding_rate.funding_interval,
+        "funding_time_utc": funding_rate.funding_time_utc,
+        "rate": funding_rate.rate,
+        "predicted_rate": funding_rate.predicted_rate,
+        "mark_price": funding_rate.mark_price,
+        "index_price": funding_rate.index_price,
+        "source_observation_ids": funding_rate.source_observation_ids,
+        "provenance": dict(funding_rate.provenance),
+    }
+    return {
+        "funding_rate_id": funding_rate.funding_rate_id,
+        **stable,
+        "record_sha256": sha256_payload(stable),
+        "validation_status": validation_status.value,
+        "validation_report_id": validation_report_id,
+        "source_observation_ids": list(funding_rate.source_observation_ids),
+        "provenance_jsonb": dict(funding_rate.provenance),
+    }
+
+
+def instrument_metadata_to_row(
+    instrument: InstrumentMetadata,
+    *,
+    validation_report_id: UUID,
+    validation_status: ValidationStatus = ValidationStatus.ACCEPTED,
+) -> dict[str, object]:
+    if not isinstance(instrument, InstrumentMetadata):
+        raise TypeError("instrument must be InstrumentMetadata")
+    if validation_status not in (ValidationStatus.ACCEPTED, ValidationStatus.ACCEPTED_WITH_WARNINGS):
+        raise ValueError("instrument metadata requires an accepted validation status")
+    key = instrument.instrument_key
+    if key is None or instrument.metadata_sha256 is None:
+        raise ValueError("instrument metadata requires identity and metadata hashes")
+    provenance = instrument.metadata.get("provenance", {})
+    return {
+        "instrument_id": instrument.instrument_id,
+        "provider_name": key.provider_name,
+        "provider_instrument_id": key.provider_instrument_id,
+        "symbol": instrument.symbol,
+        "canonical_display_symbol": key.canonical_symbol,
+        "exchange": instrument.exchange,
+        "base_asset": instrument.base_asset,
+        "quote_asset": instrument.quote_asset,
+        "settlement_asset": instrument.settlement_asset,
+        "instrument_type": instrument.instrument_type.value,
+        "contract_type": key.contract_type,
+        "margin_type": instrument.margin_type,
+        "status": instrument.status.value,
+        "price_precision": instrument.price_precision,
+        "quantity_precision": instrument.quantity_precision,
+        "tick_size": instrument.tick_size,
+        "quantity_step": instrument.quantity_step,
+        "minimum_quantity": instrument.minimum_quantity,
+        "minimum_notional": instrument.minimum_notional,
+        "contract_value": instrument.contract_value,
+        "contract_multiplier": instrument.contract_multiplier,
+        "margin_asset": instrument.margin_asset,
+        "listing_at_utc": instrument.listing_at_utc,
+        "expiry_at_utc": instrument.expiry_at_utc,
+        "funding_interval": instrument.funding_interval,
+        "metadata_sha256": instrument.metadata_sha256,
+        "metadata_jsonb": dict(instrument.metadata),
+        "validation_status": validation_status.value,
+        "validation_report_id": validation_report_id,
+        "source_observation_ids": list(instrument.source_observation_ids),
+        "provenance_jsonb": dict(provenance) if isinstance(provenance, Mapping) else {},
+        "first_seen_at_utc": instrument.first_seen_at_utc,
+        "last_seen_at_utc": instrument.last_seen_at_utc,
+    }
+
+
+def quarantine_decision_rows_for_records(
+    report: ValidationReport,
+    observations: Sequence[RawObservation],
+    records: Sequence[NormalizedTrade | FundingRate | InstrumentMetadata],
+    accepted_records: Sequence[NormalizedTrade | FundingRate | InstrumentMetadata],
+    *,
+    validation_report_id: UUID,
+) -> tuple[dict[str, object], ...]:
+    observation_by_id = {item.observation_id: item for item in observations}
+    accepted_ids = {
+        observation_id
+        for record in accepted_records
+        for observation_id in record.source_observation_ids
+    }
+    rejected_ids = tuple(
+        observation_id
+        for record in records
+        for observation_id in record.source_observation_ids
+        if observation_id not in accepted_ids
+    )
+    reasons = map_quarantine_reasons(report, dataset_observation_ids=rejected_ids)
+    record_by_observation = {
+        observation_id: record
+        for record in records
+        for observation_id in record.source_observation_ids
+    }
+    rows = []
+    for observation_id, reason in sorted(reasons.items(), key=lambda item: str(item[0])):
+        observation = observation_by_id.get(observation_id)
+        record = record_by_observation.get(observation_id)
+        symbol = getattr(record, "symbol", None)
+        exchange = getattr(record, "exchange", None)
+        timeframe = getattr(record, "funding_interval", None)
+        rows.append({
+            "quarantine_id": uuid5(
+                NAMESPACE_URL,
+                f"quarantine-decision:{validation_report_id}:{observation_id}:{reason.value}",
+            ),
+            "validation_report_id": validation_report_id,
+            "validation_run_id": report.validation_run_id,
+            "observation_id": observation_id,
+            "quarantine_reason": reason.value,
+            "symbol": symbol,
+            "exchange": exchange,
+            "timeframe": timeframe,
+            "source_sha256": observation.source_sha256 if observation is not None else None,
+            "details_jsonb": {
+                "source_observation_id": observation_id,
+                "data_type": observation.data_type.value if observation is not None else None,
+            },
+            "created_at_utc": report.created_at_utc,
+        })
+    return tuple(rows)
 __all__ = [
+    "funding_rate_to_row",
+    "instrument_metadata_to_row",
     "normalized_bar_to_row",
+    "normalized_trade_to_row",
+    "quarantine_decision_rows_for_records",
     "quarantine_decision_rows",
     "raw_observation_to_row",
     "validation_report_to_row",

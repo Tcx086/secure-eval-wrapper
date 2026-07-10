@@ -1,6 +1,11 @@
 """Public validation contracts and offline-only OHLCV checks."""
 
-from secure_eval_wrapper.data_validation.gating import accepted_ohlcv_bars
+from secure_eval_wrapper.data_validation.gating import (
+    accepted_funding_rates,
+    accepted_instruments,
+    accepted_ohlcv_bars,
+    accepted_trades,
+)
 from secure_eval_wrapper.data_validation.interfaces import (
     CrossSourceReconciler,
     DataValidator,
@@ -52,6 +57,12 @@ from secure_eval_wrapper.data_validation.reconciliation import (
     reconcile_ohlcv_sources,
 )
 from secure_eval_wrapper.data_validation.reporting import build_validation_report
+from secure_eval_wrapper.data_validation.trades import validate_trades
+from secure_eval_wrapper.data_validation.funding import validate_funding_rates
+from secure_eval_wrapper.data_validation.instruments import (
+    compare_instrument_metadata,
+    validate_instruments,
+)
 
 __all__ = [
     "CROSS_SOURCE_CLOSE_TIME_MISMATCH",
@@ -85,7 +96,10 @@ __all__ = [
     "ValidationResult",
     "ValidationSeverity",
     "ValidationStatus",
+    "accepted_funding_rates",
+    "accepted_instruments",
     "accepted_ohlcv_bars",
+    "accepted_trades",
     "build_validation_report",
     "default_ohlcv_checks",
     "default_ohlcv_reconciliation_checks",
@@ -93,5 +107,28 @@ __all__ = [
     "persist_offline_ohlcv_validation_flow",
     "persist_reconciliation_result",
     "reconcile_ohlcv_sources",
+    "compare_instrument_metadata",
+    "validate_funding_rates",
+    "validate_instruments",
     "validate_ohlcv_bars",
+    "validate_trades",
+]
+
+
+from secure_eval_wrapper.data_validation.market_persistence import (
+    FundingPersistenceSummary,
+    InstrumentPersistenceSummary,
+    TradePersistenceSummary,
+    persist_funding_validation_flow,
+    persist_instrument_validation_flow,
+    persist_trade_validation_flow,
+)
+
+__all__ += [
+    "FundingPersistenceSummary",
+    "InstrumentPersistenceSummary",
+    "TradePersistenceSummary",
+    "persist_funding_validation_flow",
+    "persist_instrument_validation_flow",
+    "persist_trade_validation_flow",
 ]

@@ -123,6 +123,9 @@ REQUIRED_COLUMNS: dict[tuple[str, str], tuple[str, ...]] = {
         "payload_jsonb",
         "source_sha256",
         "collection_run_id",
+        "data_type",
+        "provider_instrument_id",
+        "instrument_type",
     ),
     ("market_data", "validated_bars"): (
         "bar_id",
@@ -142,34 +145,66 @@ REQUIRED_COLUMNS: dict[tuple[str, str], tuple[str, ...]] = {
     ("market_data", "validated_trades"): (
         "trade_id",
         "provider_trade_id",
+        "provider_name",
+        "provider_instrument_id",
+        "instrument_type",
         "symbol",
         "exchange",
         "traded_at_utc",
         "price",
         "quantity",
+        "quote_quantity",
         "side",
+        "provider_sequence",
+        "record_sha256",
         "validation_status",
         "validation_report_id",
         "source_observation_ids",
     ),
     ("market_data", "funding_rates"): (
         "funding_rate_id",
+        "provider_name",
+        "provider_instrument_id",
+        "instrument_type",
+        "settlement_asset",
         "symbol",
         "exchange",
         "funding_time_utc",
         "rate",
+        "record_sha256",
         "validation_status",
         "validation_report_id",
         "source_observation_ids",
     ),
     ("market_data", "instruments"): (
         "instrument_id",
+        "provider_name",
+        "provider_instrument_id",
         "symbol",
+        "canonical_display_symbol",
         "exchange",
         "base_asset",
         "quote_asset",
+        "settlement_asset",
         "instrument_type",
+        "contract_type",
+        "margin_type",
         "status",
+        "tick_size",
+        "quantity_step",
+        "minimum_quantity",
+        "minimum_notional",
+        "contract_value",
+        "contract_multiplier",
+        "margin_asset",
+        "listing_at_utc",
+        "expiry_at_utc",
+        "funding_interval",
+        "metadata_sha256",
+        "validation_status",
+        "validation_report_id",
+        "source_observation_ids",
+        "provenance_jsonb",
     ),
     ("data_quality", "data_quality_checks"): (
         "check_id",
@@ -370,6 +405,10 @@ REQUIRED_INDEXES = (
     ("market_data", "validated_bars", "idx_validated_bars_symbol_time"),
     ("market_data", "validated_trades", "idx_validated_trades_symbol_time"),
     ("market_data", "funding_rates", "idx_funding_rates_symbol_time"),
+    ("market_data", "validated_trades", "idx_validated_trades_provider_instrument_time"),
+    ("market_data", "funding_rates", "idx_funding_rates_provider_instrument_time"),
+    ("market_data", "instruments", "idx_instruments_provider_identity"),
+    ("market_data", "instruments", "idx_instruments_canonical_type"),
     ("data_quality", "data_quality_checks", "idx_data_quality_checks_validation_run"),
     ("data_quality", "validation_reports", "idx_validation_reports_validation_run"),
     ("data_quality", "quarantine_decisions", "idx_quarantine_decisions_validation_report"),
@@ -402,9 +441,22 @@ REQUIRED_INDEXES = (
 
 REQUIRED_UNIQUE_CONSTRAINTS = (
     ("audit", "schema_migrations", ("filename",)),
-    ("market_data", "instruments", ("symbol", "exchange")),
+    (
+        "market_data",
+        "instruments",
+        ("provider_name", "provider_instrument_id", "instrument_type", "metadata_sha256"),
+    ),
     ("market_data", "validated_bars", ("symbol", "exchange", "timeframe", "bar_open_time_utc")),
-    ("market_data", "funding_rates", ("symbol", "exchange", "funding_time_utc")),
+    (
+        "market_data",
+        "validated_trades",
+        ("provider_name", "provider_instrument_id", "provider_trade_id"),
+    ),
+    (
+        "market_data",
+        "funding_rates",
+        ("provider_name", "provider_instrument_id", "instrument_type", "funding_time_utc"),
+    ),
     ("data_quality", "validation_reports", ("validation_run_id", "dataset_ref")),
     (
         "data_quality",
@@ -431,6 +483,48 @@ REQUIRED_UNIQUE_CONSTRAINTS = (
     ("backtesting", "stress_results", ("backtest_run_id", "scenario_name", "metric_name")),
 )
 
+REQUIRED_FOREIGN_KEYS = (
+    (
+        "market_data",
+        "validated_bars",
+        ("validation_report_id",),
+        "data_quality",
+        "validation_reports",
+        ("validation_report_id",),
+    ),
+    (
+        "market_data",
+        "validated_trades",
+        ("validation_report_id",),
+        "data_quality",
+        "validation_reports",
+        ("validation_report_id",),
+    ),
+    (
+        "market_data",
+        "funding_rates",
+        ("validation_report_id",),
+        "data_quality",
+        "validation_reports",
+        ("validation_report_id",),
+    ),
+    (
+        "market_data",
+        "instruments",
+        ("validation_report_id",),
+        "data_quality",
+        "validation_reports",
+        ("validation_report_id",),
+    ),
+    (
+        "data_quality",
+        "quarantine_decisions",
+        ("validation_report_id",),
+        "data_quality",
+        "validation_reports",
+        ("validation_report_id",),
+    ),
+)
 UNSAFE_SQL_PATTERNS = (
     r"\bDROP\s+DATABASE\b",
     r"\bDROP\s+SCHEMA\b",
@@ -744,6 +838,80 @@ def fetch_unique_constraints(client: CatalogClient) -> set[tuple[str, str, tuple
     }
 
 
+def fetch_foreign_keys(client: CatalogClient) -> set[
+    tuple[str, str, tuple[str, ...], str, str, tuple[str, ...]]
+]:
+    rows = client.query(
+        f"""
+        SELECT
+            source_ns.nspname,
+            source_table.relname,
+            string_agg(source_column.attname, ',' ORDER BY source_keys.ordinality),
+            target_ns.nspname,
+            target_table.relname,
+            string_agg(target_column.attname, ',' ORDER BY source_keys.ordinality)
+        FROM pg_constraint AS constraint_info
+        JOIN pg_class AS source_table
+            ON source_table.oid = constraint_info.conrelid
+        JOIN pg_namespace AS source_ns
+            ON source_ns.oid = source_table.relnamespace
+        JOIN pg_class AS target_table
+            ON target_table.oid = constraint_info.confrelid
+        JOIN pg_namespace AS target_ns
+            ON target_ns.oid = target_table.relnamespace
+        JOIN unnest(constraint_info.conkey) WITH ORDINALITY
+            AS source_keys(attnum, ordinality) ON TRUE
+        JOIN unnest(constraint_info.confkey) WITH ORDINALITY
+            AS target_keys(attnum, ordinality)
+            ON target_keys.ordinality = source_keys.ordinality
+        JOIN pg_attribute AS source_column
+            ON source_column.attrelid = source_table.oid
+           AND source_column.attnum = source_keys.attnum
+        JOIN pg_attribute AS target_column
+            ON target_column.attrelid = target_table.oid
+           AND target_column.attnum = target_keys.attnum
+        WHERE constraint_info.contype = 'f'
+          AND source_ns.nspname IN ({sql_string_list(REQUIRED_TABLES)})
+        GROUP BY
+            source_ns.nspname,
+            source_table.relname,
+            target_ns.nspname,
+            target_table.relname,
+            constraint_info.conname
+        """
+    )
+    return {
+        (
+            str(row[0]),
+            str(row[1]),
+            tuple(str(row[2]).split(",")),
+            str(row[3]),
+            str(row[4]),
+            tuple(str(row[5]).split(",")),
+        )
+        for row in rows
+    }
+
+
+def verify_foreign_keys(client: CatalogClient) -> None:
+    existing = fetch_foreign_keys(client)
+    missing = sorted(set(REQUIRED_FOREIGN_KEYS) - existing)
+    if missing:
+        formatted = ", ".join(
+            f"{source_schema}.{source_table}({', '.join(source_columns)}) -> "
+            f"{target_schema}.{target_table}({', '.join(target_columns)})"
+            for (
+                source_schema,
+                source_table,
+                source_columns,
+                target_schema,
+                target_table,
+                target_columns,
+            ) in missing
+        )
+        fail("required foreign keys are missing from PostgreSQL: " + formatted)
+    print(f"OK: found {len(REQUIRED_FOREIGN_KEYS)} required PostgreSQL foreign keys")
+
 def verify_required_schemas(client: CatalogClient) -> None:
     existing = fetch_existing_schemas(client)
     missing = sorted(set(REQUIRED_SCHEMAS) - existing)
@@ -890,6 +1058,7 @@ def main() -> None:
         verify_required_columns(client)
         verify_required_indexes(client)
         verify_unique_constraints(client)
+        verify_foreign_keys(client)
         verify_migration_records(client, migrations)
     finally:
         client.close()
