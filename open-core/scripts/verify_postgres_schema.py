@@ -1,4 +1,4 @@
-"""Verify the local PostgreSQL schema foundation.
+﻿"""Verify the local PostgreSQL schema foundation.
 
 The script reads connection settings from environment variables, optionally loading a local `.env`
 file first. It performs metadata-only catalog checks and never inserts sample data.
@@ -68,12 +68,17 @@ REQUIRED_TABLES: dict[str, tuple[str, ...]] = {
         "fills",
         "positions",
         "account_snapshots",
+        "risk_decisions",
+        "position_snapshots",
+        "funding_payments",
+        "cash_ledger_entries",
     ),
     "backtesting": (
         "backtest_runs",
         "backtest_metrics",
         "equity_curves",
         "stress_results",
+        "backtest_events",
     ),
     "monitoring": (
         "monitoring_events",
@@ -580,6 +585,13 @@ REQUIRED_INDEXES = (
     ("execution", "orders", "idx_orders_broker_order_ref"),
     ("execution", "fills", "idx_fills_order_id"),
     ("execution", "fills", "idx_fills_broker_fill_ref"),
+    ("execution", "order_intents", "uq_phase5_order_intents_signal_series_time"),
+    ("execution", "orders", "uq_phase5_orders_intent"),
+    ("execution", "fills", "uq_phase5_fills_order"),
+    ("execution", "positions", "uq_phase5_positions_series"),
+    ("execution", "risk_decisions", "uq_phase5_risk_logical"),
+    ("execution", "funding_payments", "uq_phase5_funding_payment_logical"),
+    ("backtesting", "backtest_events", "idx_phase5_backtest_events_order"),
     ("backtesting", "backtest_runs", "idx_backtest_runs_run_id"),
     ("backtesting", "equity_curves", "idx_equity_curves_run_time"),
     ("monitoring", "monitoring_events", "idx_monitoring_events_run_time"),
@@ -629,7 +641,6 @@ REQUIRED_UNIQUE_CONSTRAINTS = (
     ("alpha", "alpha_values", ("alpha_run_id", "series_identity_sha256", "timestamp_utc", "horizon")),
     ("signals", "signals", ("signal_run_id", "series_identity_sha256", "timestamp_utc", "horizon")),
     ("signals", "signal_components", ("signal_id", "alpha_value_id")),
-    ("execution", "positions", ("run_id", "account_ref", "symbol")),
     ("execution", "account_snapshots", ("run_id", "account_ref", "snapshot_at_utc")),
     ("backtesting", "backtest_metrics", ("backtest_run_id", "metric_name")),
     ("backtesting", "equity_curves", ("backtest_run_id", "timestamp_utc")),

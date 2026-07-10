@@ -1,4 +1,4 @@
-"""Offline reconciliation mapping, repository, transaction, and migration tests."""
+﻿"""Offline reconciliation mapping, repository, transaction, and migration tests."""
 
 from __future__ import annotations
 
@@ -256,7 +256,7 @@ class ReconciliationPersistenceTests(unittest.TestCase):
             REPO_ROOT / "open-core" / "db" / "migrations"
         )
         verifier.inspect_migrations(migrations)
-        self.assertEqual(migrations[-1].filename, "0008_phase3_phase4_audit_repairs.sql")
+        self.assertEqual(migrations[-1].filename, "0009_phase5_simulated_execution_backtesting.sql")
         self.assertIn("reconciliation_results", verifier.REQUIRED_TABLES["data_quality"])
         self.assertIn(
             "reconciliation_check_results",
