@@ -305,3 +305,11 @@ The design intentionally keeps extension points narrow:
 - Add dashboards from monitoring events and artifact tables.
 
 Runtime code should be implemented only after the Phase 0 documents are accepted.
+
+## Phase 3-4 implemented alpha-to-signal boundary
+
+The public research path is now `accepted Phase 2 records -> AlphaEngine -> AlphaValue -> SignalPipeline -> StandardizedSignal`. `AlphaDataSet` carries validation-report lineage; `PointInTimeSeries` enforces UTC, deterministic sorting, final bars, unique timestamps, single-symbol/timeframe histories, trailing-only windows, and grounded perpetual funding identity. Public alphas are pure calculations and produce continuous values only.
+
+`SignalPipeline` ranks strictly within timestamp + alpha/version + horizon, applies explicit absolute/percentile/top-bottom policies, combines signed normalized contributions with deterministic weights and coverage rules, preserves conflicts, and emits bounded heuristic confidence that is explicitly not a profit probability. Signals are research records only. They contain no quantity, leverage, broker, account, order, position, PnL, or portfolio state.
+
+Optional persistence uses injected PostgreSQL repositories and one outer transaction per alpha or signal run. The default CLI is fixture-only, socket-free, and persistence-free. Phase 5 execution and backtesting remain unimplemented.

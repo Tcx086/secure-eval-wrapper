@@ -140,8 +140,8 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add unambiguous provider instrument identities that separate Spot, perpetual swaps, and dated futures.
 - [x] Verify and document current official public endpoint, request, response, pagination, limit, and authentication contracts.
 - [x] Implement Binance and OKX public Spot trade collection through injectable transports.
-- [x] Implement Binance USDⓈ-M and OKX SWAP public funding history.
-- [x] Implement Binance Spot/USDⓈ-M and OKX SPOT/SWAP public instrument metadata.
+- [x] Implement Binance USDâ“ˆ-M and OKX SWAP public funding history.
+- [x] Implement Binance Spot/USDâ“ˆ-M and OKX SPOT/SWAP public instrument metadata.
 - [x] Add deterministic normalization, validation reports, accepted/rejected gates, and quarantine for all three data types.
 - [x] Add PostgreSQL trade/funding persistence, immutable instrument metadata versions, conflict hashes, reads, indexes, constraints, and foreign-key verification.
 - [x] Add provider-neutral typed trade, funding, and instrument pipelines with fail-fast, partial, warning, and one-transaction persistence semantics.
@@ -156,30 +156,41 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Separate concrete `binance`, `binance_usdm`, and `okx` component capabilities from exchange-level summaries.
 - [x] Ground funding intervals in verified public metadata, preserve typed interval sources, and skip gap checks explicitly when unavailable.
 
+### Phase 3: public alpha library
+
+- [x] Define alpha metadata, evaluation request, run, value, failure, and public implementation contracts.
+- [x] Add a deterministic versioned public registry with duplicate and implementation-hash conflict protection.
+- [x] Add shared validation-gated point-in-time inputs, trailing-only windows, warmup enforcement, and leakage controls.
+- [x] Implement momentum, moving-average crossover, prior-channel breakout, and trailing mean-reversion examples.
+- [x] Implement six transparent low-dimensional formulaic-style OHLCV examples without claiming the complete 101 library.
+- [x] Implement grounded-interval perpetual funding-rate contrarian demonstration alpha.
+- [x] Add provider-neutral AlphaEngine output validation, deterministic IDs/hashes, typed failures, and explicit partial status.
+- [x] Add PostgreSQL-only versioned alpha registry, run/value persistence, idempotency, half-open reads, and one outer transaction.
+- [x] Add the classified synthetic fixture and fully offline alpha-to-signal CLI.
+- [x] Add alpha documentation, exact calculation tests, parameter tests, persistence tests, and import/socket boundary tests.
+- [x] Add future-append, future-mutation, breakout-current-bar, rolling-window, and funding leakage regression tests.
+- [x] Complete the Phase 3 exit review without adding execution, backtesting, paper, or live trading.
+
+### Phase 4: signal generation
+
+- [x] Define standardized signal and signal-run contracts with research-only lineage and hashes.
+- [x] Implement deterministic timestamp-scoped ascending/descending dense/ordinal ranking and percentiles.
+- [x] Implement validated absolute, percentile, and top/bottom N threshold policies with first-class flat results.
+- [x] Implement equal, static, and normalized-score weighting with contributor and coverage policies.
+- [x] Implement deterministic conflict resolution that preserves every signed contribution in provenance.
+- [x] Implement transparent bounded confidence from score magnitude, agreement, coverage, and threshold distance.
+- [x] Add single-alpha and multi-alpha SignalPipeline modes with typed failures and partial/failed status.
+- [x] Add PostgreSQL-only signal run/signal persistence, conflict hashes, half-open reads, and one outer transaction.
+- [x] Extend ordered migrations and catalog verification for alpha/signal tables, columns, indexes, constraints, foreign keys, checks, and hashes.
+- [x] Add ranking, threshold, combination, confidence, pipeline, persistence, CLI, and security-boundary tests.
+- [x] Document the exact signal formulas and that confidence is not a probability of profit.
+- [x] Complete the Phase 4 exit review and advance current work to Phase 5 while leaving Phase 5 todo.
+
 ## Todo
 
 ### Future provider enhancements
 
 - [ ] Consider additional public OHLCV/trade/funding/instrument adapters after Phase 2; Bybit and Coinbase are not currently implemented.
-
-### Phase 3: public alpha library
-- [ ] Create public alpha registry.
-- [ ] Implement momentum demo alpha.
-- [ ] Implement moving-average crossover demo alpha.
-- [ ] Implement breakout demo alpha.
-- [ ] Implement mean reversion demo alpha.
-- [ ] Implement 101 Formulaic Alphas style examples.
-- [ ] Implement funding-rate demo alpha.
-- [ ] Add alpha documentation and tests.
-
-### Phase 4: signal generation
-- [ ] Define standardized signal schema.
-- [ ] Implement signal ranking.
-- [ ] Implement thresholding.
-- [ ] Implement signal combination.
-- [ ] Implement conflict resolution.
-- [ ] Implement confidence scoring.
-- [ ] Persist signal runs and signals.
 
 ### Phase 5: simulated execution + backtesting
 - [ ] Define broker interface.

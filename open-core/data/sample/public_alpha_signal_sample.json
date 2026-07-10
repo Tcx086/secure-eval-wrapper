@@ -1,0 +1,43 @@
+{
+  "classification": "synthetic_public_safe",
+  "description": "Offline-only synthetic OHLCV and grounded-interval funding observations for the public alpha-to-signal demo.",
+  "contains_private_strategy_data": false,
+  "contains_real_trade_logs": false,
+  "contains_real_account_data": false,
+  "downloaded_provider_output": false,
+  "timeframe": "1h",
+  "ohlcv": [
+    {"symbol":"BTC-USDT","timestamp_utc":"2026-01-01T00:00:00Z","open":"100","high":"102","low":"99","close":"101","volume":"100","is_final":true},
+    {"symbol":"BTC-USDT","timestamp_utc":"2026-01-01T01:00:00Z","open":"101","high":"103","low":"100","close":"102","volume":"110","is_final":true},
+    {"symbol":"BTC-USDT","timestamp_utc":"2026-01-01T02:00:00Z","open":"102","high":"105","low":"101","close":"104","volume":"125","is_final":true},
+    {"symbol":"BTC-USDT","timestamp_utc":"2026-01-01T03:00:00Z","open":"104","high":"107","low":"103","close":"106","volume":"130","is_final":true},
+    {"symbol":"BTC-USDT","timestamp_utc":"2026-01-01T04:00:00Z","open":"106","high":"109","low":"105","close":"108","volume":"145","is_final":true},
+    {"symbol":"BTC-USDT","timestamp_utc":"2026-01-01T05:00:00Z","open":"108","high":"110","low":"107","close":"109","volume":"120","is_final":true},
+    {"symbol":"BTC-USDT","timestamp_utc":"2026-01-01T06:00:00Z","open":"109","high":"110","low":"108","close":"109","volume":"100","is_final":true},
+    {"symbol":"BTC-USDT","timestamp_utc":"2026-01-01T07:00:00Z","open":"109","high":"110","low":"108","close":"109.5","volume":"95","is_final":true},
+    {"symbol":"BTC-USDT","timestamp_utc":"2026-01-01T08:00:00Z","open":"109.5","high":"111","low":"109","close":"110","volume":"105","is_final":true},
+    {"symbol":"BTC-USDT","timestamp_utc":"2026-01-01T09:00:00Z","open":"110","high":"121","low":"109","close":"120","volume":"260","is_final":true},
+    {"symbol":"BTC-USDT","timestamp_utc":"2026-01-01T10:00:00Z","open":"120","high":"122","low":"117","close":"118","volume":"220","is_final":true},
+    {"symbol":"BTC-USDT","timestamp_utc":"2026-01-01T11:00:00Z","open":"118","high":"119","low":"103","close":"105","volume":"300","is_final":true},
+    {"symbol":"ETH-USDT","timestamp_utc":"2026-01-01T00:00:00Z","open":"50","high":"51","low":"49","close":"50","volume":"200","is_final":true},
+    {"symbol":"ETH-USDT","timestamp_utc":"2026-01-01T01:00:00Z","open":"50","high":"51","low":"48","close":"49","volume":"210","is_final":true},
+    {"symbol":"ETH-USDT","timestamp_utc":"2026-01-01T02:00:00Z","open":"49","high":"50","low":"47","close":"48","volume":"230","is_final":true},
+    {"symbol":"ETH-USDT","timestamp_utc":"2026-01-01T03:00:00Z","open":"48","high":"49","low":"46","close":"47","volume":"240","is_final":true},
+    {"symbol":"ETH-USDT","timestamp_utc":"2026-01-01T04:00:00Z","open":"47","high":"48","low":"45","close":"46","volume":"250","is_final":true},
+    {"symbol":"ETH-USDT","timestamp_utc":"2026-01-01T05:00:00Z","open":"46","high":"47","low":"45","close":"46","volume":"180","is_final":true},
+    {"symbol":"ETH-USDT","timestamp_utc":"2026-01-01T06:00:00Z","open":"46","high":"47","low":"45","close":"46.5","volume":"175","is_final":true},
+    {"symbol":"ETH-USDT","timestamp_utc":"2026-01-01T07:00:00Z","open":"46.5","high":"47","low":"45.5","close":"46","volume":"170","is_final":true},
+    {"symbol":"ETH-USDT","timestamp_utc":"2026-01-01T08:00:00Z","open":"46","high":"47","low":"45","close":"46","volume":"190","is_final":true},
+    {"symbol":"ETH-USDT","timestamp_utc":"2026-01-01T09:00:00Z","open":"46","high":"47","low":"38","close":"39","volume":"420","is_final":true},
+    {"symbol":"ETH-USDT","timestamp_utc":"2026-01-01T10:00:00Z","open":"39","high":"43","low":"38","close":"42","volume":"340","is_final":true},
+    {"symbol":"ETH-USDT","timestamp_utc":"2026-01-01T11:00:00Z","open":"42","high":"53","low":"41","close":"52","volume":"390","is_final":true}
+  ],
+  "funding_rates": [
+    {"symbol":"BTC-USDT-SWAP","base_asset":"BTC","provider_instrument_id":"BTC-USDT-SWAP","timestamp_utc":"2026-01-01T00:00:00Z","rate":"0.0001","funding_interval":"8h","funding_interval_source":"provider_reported"},
+    {"symbol":"BTC-USDT-SWAP","base_asset":"BTC","provider_instrument_id":"BTC-USDT-SWAP","timestamp_utc":"2026-01-01T08:00:00Z","rate":"-0.0002","funding_interval":"8h","funding_interval_source":"provider_reported"},
+    {"symbol":"BTC-USDT-SWAP","base_asset":"BTC","provider_instrument_id":"BTC-USDT-SWAP","timestamp_utc":"2026-01-01T16:00:00Z","rate":"0","funding_interval":"8h","funding_interval_source":"provider_reported"},
+    {"symbol":"ETH-USDT-SWAP","base_asset":"ETH","provider_instrument_id":"ETH-USDT-SWAP","timestamp_utc":"2026-01-01T00:00:00Z","rate":"-0.00015","funding_interval":"8h","funding_interval_source":"provider_reported"},
+    {"symbol":"ETH-USDT-SWAP","base_asset":"ETH","provider_instrument_id":"ETH-USDT-SWAP","timestamp_utc":"2026-01-01T08:00:00Z","rate":"0.00025","funding_interval":"8h","funding_interval_source":"provider_reported"},
+    {"symbol":"ETH-USDT-SWAP","base_asset":"ETH","provider_instrument_id":"ETH-USDT-SWAP","timestamp_utc":"2026-01-01T16:00:00Z","rate":"0","funding_interval":"8h","funding_interval_source":"provider_reported"}
+  ]
+}

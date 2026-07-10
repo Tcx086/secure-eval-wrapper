@@ -4,8 +4,8 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-10T03:30:00Z",
-  "current_phase": "phase_3_public_alpha_library",
+  "updated_at_utc": "2026-07-10T04:00:00Z",
+  "current_phase": "phase_5_simulated_execution_backtesting",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
     "future_functional_prs_must_update_json_status": true,
@@ -181,33 +181,42 @@
     {
       "id": "phase_3_public_alpha_library",
       "title": "Phase 3: public alpha library",
-      "status": "todo",
-      "completed": [],
-      "todo": [
-        "Create public alpha registry",
-        "Implement momentum demo alpha",
-        "Implement moving-average crossover demo alpha",
-        "Implement breakout demo alpha",
-        "Implement mean reversion demo alpha",
-        "Implement 101 Formulaic Alphas style examples",
-        "Implement funding-rate demo alpha",
-        "Add alpha documentation and tests"
-      ]
+      "status": "completed",
+      "completed": [
+        "Define alpha metadata, evaluation request, run, value, failure, and public implementation contracts",
+        "Add a deterministic versioned public registry with duplicate and implementation-hash conflict protection",
+        "Add shared validation-gated point-in-time inputs, trailing-only windows, warmup enforcement, and leakage controls",
+        "Implement momentum, moving-average crossover, prior-channel breakout, and trailing mean-reversion examples",
+        "Implement six transparent low-dimensional formulaic-style OHLCV examples without claiming the complete 101 library",
+        "Implement grounded-interval perpetual funding-rate contrarian demonstration alpha",
+        "Add provider-neutral AlphaEngine output validation, deterministic IDs/hashes, typed failures, and explicit partial status",
+        "Add PostgreSQL-only versioned alpha registry, run/value persistence, idempotency, half-open reads, and one outer transaction",
+        "Add the classified synthetic fixture and fully offline alpha-to-signal CLI",
+        "Add alpha documentation, exact calculation tests, parameter tests, persistence tests, and import/socket boundary tests",
+        "Add future-append, future-mutation, breakout-current-bar, rolling-window, and funding leakage regression tests",
+        "Complete the Phase 3 exit review without adding execution, backtesting, paper, or live trading"
+      ],
+      "todo": []
     },
     {
       "id": "phase_4_signal_generation",
       "title": "Phase 4: signal generation",
-      "status": "todo",
-      "completed": [],
-      "todo": [
-        "Define standardized signal schema",
-        "Implement signal ranking",
-        "Implement thresholding",
-        "Implement signal combination",
-        "Implement conflict resolution",
-        "Implement confidence scoring",
-        "Persist signal runs and signals"
-      ]
+      "status": "completed",
+      "completed": [
+        "Define standardized signal and signal-run contracts with research-only lineage and hashes",
+        "Implement deterministic timestamp-scoped ascending/descending dense/ordinal ranking and percentiles",
+        "Implement validated absolute, percentile, and top/bottom N threshold policies with first-class flat results",
+        "Implement equal, static, and normalized-score weighting with contributor and coverage policies",
+        "Implement deterministic conflict resolution that preserves every signed contribution in provenance",
+        "Implement transparent bounded confidence from score magnitude, agreement, coverage, and threshold distance",
+        "Add single-alpha and multi-alpha SignalPipeline modes with typed failures and partial/failed status",
+        "Add PostgreSQL-only signal run/signal persistence, conflict hashes, half-open reads, and one outer transaction",
+        "Extend ordered migrations and catalog verification for alpha/signal tables, columns, indexes, constraints, foreign keys, checks, and hashes",
+        "Add ranking, threshold, combination, confidence, pipeline, persistence, CLI, and security-boundary tests",
+        "Document the exact signal formulas and that confidence is not a probability of profit",
+        "Complete the Phase 4 exit review and advance current work to Phase 5 while leaving Phase 5 todo"
+      ],
+      "todo": []
     },
     {
       "id": "phase_5_simulated_execution_backtesting",

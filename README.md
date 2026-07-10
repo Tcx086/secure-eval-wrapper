@@ -244,6 +244,16 @@ Persistent workflows use:
 
 This design is intended to make a run explainable without publishing private trading logic.
 
+## Public alpha-to-signal quick start
+
+Phases 3 and 4 are complete: the framework now includes a transparent, lookahead-safe public alpha registry and standardized research-signal pipeline over accepted Phase 2 records. Run the fully offline synthetic fixture from the repository root:
+
+```powershell
+python open-core\scripts\run_public_alpha_signal_pipeline.py
+```
+
+The run evaluates eleven public examples, then produces single-alpha and combined long/short/flat research signals. It opens no sockets and does not persist by default. See [Public Alpha Library](docs/PUBLIC_ALPHA_LIBRARY.md) and [Signal Generation](docs/SIGNAL_GENERATION.md).
+
 ## Repository layout
 
 ```text
@@ -259,6 +269,8 @@ secure-eval-wrapper/
 |   |   |-- data_collection/          public provider adapters and contracts
 |   |   |-- data_validation/          validation, quarantine, reconciliation
 |   |   |-- data_pipeline/            provider-neutral orchestration
+|   |   |-- alpha/                    public point-in-time alpha research
+|   |   |-- signals/                  standardized research signals
 |   |   `-- storage/                  PostgreSQL repositories and mappings
 |   `-- tests/                        offline and persistence-boundary tests
 |-- security/                         baseline controls and threat model
@@ -273,6 +285,8 @@ Some earlier evaluation-wrapper components remain in the repository for compatib
 - [Crypto Trading System Architecture](docs/ARCHITECTURE_CRYPTO_TRADING_SYSTEM.md)
 - [Data Collection and Validation](docs/DATA_COLLECTION_AND_VALIDATION.md)
 - [PostgreSQL Storage Design](docs/POSTGRESQL_STORAGE_DESIGN.md)
+- [Public Alpha Library](docs/PUBLIC_ALPHA_LIBRARY.md)
+- [Signal Generation](docs/SIGNAL_GENERATION.md)
 - [Execution and FIX-Style Monitoring](docs/EXECUTION_AND_FIX_MONITORING.md)
 - [Local Data Governance](docs/LOCAL_DATA_GOVERNANCE.md)
 - [Folder Structure](docs/FOLDER_STRUCTURE.md)
@@ -302,22 +316,9 @@ The intended principle is simple: **make the infrastructure inspectable without 
 
 ## Roadmap
 
-The next milestone is the bundled implementation of:
+Phases 3 and 4 are complete and auditable: public alphas produce continuous point-in-time `AlphaValue` records, and standardized signals apply deterministic ranking, thresholding, combination, conflict, and confidence rules with PostgreSQL lineage.
 
-1. **Phase 3 — Public Alpha Library**
-   - deterministic public alpha registry;
-   - strict point-in-time windows;
-   - momentum, moving-average, breakout, mean-reversion, formulaic-style, and funding examples;
-   - alpha runs, values, hashes, PostgreSQL persistence, and anti-lookahead tests.
-
-2. **Phase 4 — Standardized Signal Generation**
-   - standardized signal contracts;
-   - cross-sectional ranking and thresholds;
-   - multi-alpha combination and explicit conflict resolution;
-   - deterministic confidence indicators;
-   - signal runs, signals, components, and PostgreSQL persistence.
-
-Only after these layers are audited should the repository proceed to simulated execution and event-driven backtesting.
+The next milestone is **Phase 5 - Simulated Execution and Backtesting**. It remains todo. Future work must introduce the shared broker contract, order intents, `SimulatedBroker`, fills, fees, slippage, risk guards, positions, and event-driven backtesting without enabling paper or live trading.
 
 ## Disclaimer
 

@@ -62,7 +62,7 @@ status, and hash validity only.
 
 ## Complete public market-data layer (Phase 2)
 
-The public data framework now includes Binance Spot and OKX Spot OHLCV and trades, Binance USDⓈ-M
+The public data framework now includes Binance Spot and OKX Spot OHLCV and trades, Binance USDâ“ˆ-M
 and OKX SWAP funding, and Binance/OKX Spot and derivative instrument metadata. All paths use
 injectable transports, deterministic UTC normalization, validation reports, accepted/rejected
 gates, quarantine, and PostgreSQL-only persistence. No credentials, account endpoints, order
@@ -80,3 +80,15 @@ Final Phase 2 hardening separates `binance` Spot and `binance_usdm` component ca
 trade/funding event hashes stable across collection runs, compares instrument metadata against an
 explicit prior-snapshot reader, and grounds funding gap checks in provider-reported/current public
 metadata. Missing interval evidence is reported as skipped; it is never silently treated as 8h.
+
+## Public alpha and standardized signals (Phase 3-4)
+
+The public core now includes eleven transparent Decimal-based alphas, a shared trailing-only point-in-time input layer, deterministic registry and AlphaEngine, ranking, three threshold policies, explicit multi-alpha combination/conflict rules, bounded heuristic confidence, and PostgreSQL-only optional persistence. These are research outputs only; no order, sizing, position, PnL, backtest, paper, or live-trading runtime was added.
+
+Run the socket-free, persistence-free fixture demo:
+
+```powershell
+python scripts\run_public_alpha_signal_pipeline.py
+```
+
+Persistence requires both `--persist` and `ENABLE_POSTGRES_PERSISTENCE=true`.

@@ -77,3 +77,9 @@ docker compose --env-file .env -f infra\docker-compose.postgres.yml up -d
 ```
 
 The service binds PostgreSQL only to `127.0.0.1`.
+
+## Phase 3-4 migration and repositories
+
+- `0007_alpha_signal_library.sql`: versions the public alpha registry, adds alpha runs/values, and hardens standardized signal runs/signals with deterministic hashes, lineage, constraints, and indexes.
+
+The Phase 3-4 repositories use injected PostgreSQL DB-API connections, parameterized SQL, conflict-hash protection, database-selected IDs, half-open reads, and caller-owned outer transactions. No SQLite fallback exists.

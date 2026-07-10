@@ -25,3 +25,7 @@ contracts from sharing ambiguous identities while preserving historical metadata
 Migration 0006 maps legacy `perpetual`/`future` values to the canonical derivative names and adds
 upgrade-safe checks that require complete provider identity and logical hashes on new trade,
 funding, and instrument records.
+
+## Phase 3-4 research schema
+
+Migration 0007 completes the public research-storage boundary. `alpha.alpha_registry` is versioned; `alpha.alpha_runs` and `alpha.alpha_values` retain accepted-data lineage, explicit warmup/validity, continuous scores, and hashes. `signals.signal_runs` and `signals.signals` retain exact ranking/threshold/combination configuration, alpha lineage, normalized scores, rank/percentile, confidence, conflicts, coverage, and hashes. Signal rows remain execution-free research outputs.

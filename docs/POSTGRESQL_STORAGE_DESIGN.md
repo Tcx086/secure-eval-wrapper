@@ -296,3 +296,11 @@ instrument type names, restores the canonical type check, and adds `NOT VALID` i
 PostgreSQL enforces those checks for new/updated rows while allowing an existing legacy installation
 to upgrade without an immediate historical backfill. Catalog verification covers names and expected
 validation state for all four hardening checks.
+
+## Phase 3-4 alpha and signal storage
+
+Migration `0007_alpha_signal_library.sql` extends `alpha.alpha_registry`, adds `alpha.alpha_runs` and `alpha.alpha_values`, and hardens `signals.signal_runs` and `signals.signals`. The schema preserves versions, exact configurations, UTC half-open windows, source observation/alpha-value lineage, data/config/code/implementation/content hashes, warmup validity, ranking, confidence, coverage, conflicts, counts, and deterministic logical uniqueness.
+
+`PostgresAlphaRepository` and `PostgresSignalRepository` accept an injected DB-API PostgreSQL connection, use `%s` parameters, connect nowhere during import, return database-selected IDs, and reject same-identity/different-content retries. Alpha-value and signal reads are deterministic and end-exclusive. `PostgresAlphaSignalRepository` shares one connection when a caller needs both domains. There is no SQLite or file-database fallback.
+
+Persistence remains disabled in the offline alpha-to-signal CLI unless both `--persist` and `ENABLE_POSTGRES_PERSISTENCE=true` are present.
