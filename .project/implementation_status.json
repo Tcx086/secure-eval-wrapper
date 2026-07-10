@@ -4,8 +4,8 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-10T19:41:51Z",
-  "current_phase": "phase_6_monitoring_simulated_fix_api",
+  "updated_at_utc": "2026-07-10T20:54:05Z",
+  "current_phase": "phase_7_paper_trading",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
     "future_functional_prs_must_update_json_status": true,
@@ -280,23 +280,26 @@
     {
       "id": "phase_6_monitoring_simulated_fix_api",
       "title": "Phase 6: monitoring + simulated FIX API",
-      "status": "in_progress",
-      "completed": [],
-      "todo": [
-        "Implement monitoring event schema",
-        "Implement data health monitoring",
-        "Implement signal health monitoring",
-        "Implement execution health monitoring",
-        "Implement risk health monitoring",
-        "Implement system health monitoring",
-        "Implement simulated FIX heartbeat",
-        "Implement simulated session state",
-        "Implement simulated order acknowledgement",
-        "Implement simulated execution report",
-        "Implement simulated cancel/reject flow",
-        "Implement latency measurement",
-        "Implement dropped connection simulation"
-      ]
+      "status": "completed",
+      "completed": [
+        "Repair Phase 5 complete-run final-position valuation from latest run-owned snapshots",
+        "Add migration 0013 valuation backfill and normalized monitoring/simulated FIX schema",
+        "Implement immutable deterministic monitoring contracts and public-safe provenance",
+        "Implement data, signal, execution, risk, system, and simulated FIX health evaluation",
+        "Implement explicit non-numeric health aggregation with causal child lineage",
+        "Implement deterministic incident episode lifecycle and occurrences",
+        "Implement exact validated ASCII-SOH FIX 4.4-compatible codec subset",
+        "Implement deterministic session, sequence recovery, heartbeat timeout, reconnect, and logout",
+        "Connect simulated FIX order/cancel flows only to SimulatedBroker and explicit synthetic market events",
+        "Implement fixed simulated latency and deterministic recorded fault schedules",
+        "Implement PostgreSQL repositories, conflicts, half-open reads, and atomic bundles",
+        "Add offline socket-free monitoring and simulated FIX console demos",
+        "Add Phase 6 tests, documentation, schema verification, CI, and boundary coverage",
+        "Pass local suite, package, console, compile, JSON, YAML, migration-hash, and boundary validation",
+        "Pass GitHub Actions run 29122849335 including PostgreSQL 16 clean install, seeded upgrade, persistence, and rollback validation",
+        "Confirm Phase 7 remains todo with no paper/live/external FIX runtime"
+      ],
+      "todo": []
     },
     {
       "id": "phase_7_paper_trading",

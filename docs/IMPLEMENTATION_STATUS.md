@@ -236,29 +236,30 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add expired-A/filled-B, long-A/flat-B, and long-A/reversed-B real PostgreSQL regressions.
 - [x] Pass clean install, seeded `0011` to `0012` upgrade, full-suite, packaging, boundary, and final CI validation.
 
+### Phase 6: monitoring + simulated FIX API
+
+- [x] Repair Phase 5 complete-run final-position valuation from the latest run-owned immutable snapshot.
+- [x] Add migration `0013` with valuation backfill and normalized monitoring/FIX persistence without modifying migrations `0001` through `0012`.
+- [x] Implement immutable monitoring contracts, deterministic IDs/hashes, explicit UTC inputs, and public-safe provenance separation.
+- [x] Implement data, signal, execution, risk, system, and simulated FIX session health evaluation.
+- [x] Aggregate health with explicit critical-unhealthy, unhealthy, degraded, unknown, healthy precedence and causal child lineage.
+- [x] Implement deterministic continuous incident open, update, acknowledge-domain, occurrence, recovery, and new-episode semantics.
+- [x] Implement exact ASCII-SOH FIX 4.4-compatible encoding/decoding with BodyLength, CheckSum, required-tag, duplicate-tag, value, and enum validation.
+- [x] Implement deterministic simulated session state, sequence gaps/recovery, PossDup replay handling, heartbeat/TestRequest timeout, reconnect, and logout.
+- [x] Connect NewOrderSingle and cancel/reject flows only to the existing `SimulatedBroker`, with fills gated by explicit synthetic market events.
+- [x] Implement fixed deterministic simulated latency and preconfigured recorded connection-fault schedules.
+- [x] Add injected-connection PostgreSQL repositories, idempotency/conflict protection, half-open ordered reads, and atomic monitoring/FIX transactions.
+- [x] Add fixture-default socket-free `secure-eval-monitor` and `secure-eval-fix-sim` console demos with double-gated PostgreSQL persistence.
+- [x] Add monitoring, FIX codec/session/gateway, projection valuation, PostgreSQL, rollback, documentation, schema-verifier, and boundary coverage.
+- [x] Pass 364-test local suite, dedicated Phase 5 audits, 60-test Phase 6 suite, 31-test FIX suite, editable install, console, compile, JSON, YAML, migration-hash, and boundary validation.
+- [x] Pass GitHub Actions run `29122849335` on `ea81231c6c6a2fd1be6305022c187ba989a66ecd`, including PostgreSQL 16 clean `0001` to `0013`, seeded `0012` to `0013`, catalog, Phase 5/6 persistence, and rollback gates.
+- [x] Confirm Phase 7 remains entirely todo and no paper/live broker, external FIX connection, authenticated exchange access, leverage, margin, collateral, liquidation, or machine learning was added.
+
 ## Todo
 
 ### Future provider enhancements
 
 - [ ] Consider additional public OHLCV/trade/funding/instrument adapters after Phase 2; Bybit and Coinbase are not currently implemented.
-
-### Phase 6: monitoring + simulated FIX API
-
-Status: `in_progress`
-
-- [ ] Implement monitoring event schema.
-- [ ] Implement data health monitoring.
-- [ ] Implement signal health monitoring.
-- [ ] Implement execution health monitoring.
-- [ ] Implement risk health monitoring.
-- [ ] Implement system health monitoring.
-- [ ] Implement simulated FIX heartbeat.
-- [ ] Implement simulated session state.
-- [ ] Implement simulated order acknowledgement.
-- [ ] Implement simulated execution report.
-- [ ] Implement simulated cancel/reject flow.
-- [ ] Implement latency measurement.
-- [ ] Implement dropped connection simulation.
 
 ### Phase 7: paper trading
 - [ ] Design paper broker adapter.
