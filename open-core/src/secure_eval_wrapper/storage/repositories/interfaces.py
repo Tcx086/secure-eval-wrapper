@@ -163,7 +163,7 @@ class ReconciliationRepository(ABC):
 
 
 class AlphaRepository(ABC):
-    """Persistence contract for public alpha registry metadata."""
+    """Persistence contract for public alpha metadata, runs, and values."""
 
     @abstractmethod
     def register_alpha(self, alpha: StoragePayload) -> UUID:
@@ -177,6 +177,23 @@ class AlphaRepository(ABC):
     def list_alphas(self, *, status: str | None = None) -> Sequence[StorageRecord]:
         """List alpha metadata, optionally filtered by status."""
 
+    @abstractmethod
+    def record_alpha_run(self, alpha_run: StoragePayload) -> UUID:
+        """Record one auditable alpha evaluation run."""
+
+    @abstractmethod
+    def record_alpha_value(self, alpha_value: StoragePayload) -> UUID:
+        """Record one point-in-time alpha value."""
+
+    @abstractmethod
+    def list_alpha_values(
+        self,
+        *,
+        alpha_run_id: UUID,
+        start_utc: datetime,
+        end_utc: datetime,
+    ) -> Sequence[StorageRecord]:
+        """List values in the half-open interval [start_utc, end_utc)."""
 
 class SignalRepository(ABC):
     """Persistence contract for signal runs and standardized signals."""
