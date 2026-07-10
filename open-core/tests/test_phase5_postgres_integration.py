@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import unittest
 from contextlib import contextmanager
@@ -148,8 +149,13 @@ class RealPostgresPhase5IntegrationTests(unittest.TestCase):
                 with self.assertRaises(Phase5ConflictError):
                     getattr(repository, method)(value, **kwargs)
                 self.connection.rollback()
+                expected_hash = value.record_sha256
+                if method == "record_order":
+                    expected_hash = hashlib.sha256(f"phase5-order-lineage-v1|{identity}".encode("utf-8")).hexdigest()
+                elif method == "upsert_position":
+                    expected_hash = hashlib.sha256(f"phase5-position-lineage-v1|{identity}".encode("utf-8")).hexdigest()
                 with self.connection.cursor() as cursor:
-                    cursor.execute(f"UPDATE {table} SET record_sha256=%s WHERE {id_column}=%s", (value.record_sha256, identity))
+                    cursor.execute(f"UPDATE {table} SET record_sha256=%s WHERE {id_column}=%s", (expected_hash, identity))
                 self.connection.commit()
 
     def test_real_snapshot_and_ledger_logical_conflicts_and_legitimate_rows(self):
