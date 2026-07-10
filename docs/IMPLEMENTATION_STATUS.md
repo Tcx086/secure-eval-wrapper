@@ -1,4 +1,4 @@
-﻿# Implementation Status
+# Implementation Status
 
 This file is the human-readable source of implementation progress. The machine-readable status file
 is `.project/implementation_status.json`.
@@ -199,7 +199,7 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add one atomic bundled alpha-to-signal persistence boundary with rollback coverage at every child failure point.
 - [x] Complete clean-install, 0007-to-0008 upgrade, schema, migration-hash, full-suite, offline, and security-boundary validation.
 - [x] Re-accept Phase 3 and Phase 4 only after every mandatory audit repair and validation passes.
-### Phase 5 implementation checkpoint (exit validation pending)
+### Phase 5: simulated execution + backtesting
 - [x] Add installable package metadata, console entry points, cross-platform validation, and least-privilege CI.
 - [x] Define immutable deterministic execution, sizing, risk, order, fill, position, cash, funding, account, and event contracts.
 - [x] Implement market, limit, stop, stop-limit, GTC/IOC, fee, slippage, cancellation, rejection, and expiry semantics in `SimulatedBroker`.
@@ -211,14 +211,12 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add dedicated Phase 5 order, risk, accounting, funding, metrics, persistence, anti-lookahead, and future-invariance tests.
 - [x] Pass local PostgreSQL 16 clean install, seeded `0008` to `0009` upgrade, catalog/hash checks, real writes/reads, conflicts, and rollback injection.
 - [x] Document exact Phase 5 semantics, persistence, validation, and limitations.
+- [x] Pass independent GitHub Actions validation on the checkpoint branch and `main` implementation SHA.
 ## Todo
 
 ### Future provider enhancements
 
 - [ ] Consider additional public OHLCV/trade/funding/instrument adapters after Phase 2; Bybit and Coinbase are not currently implemented.
-
-### Phase 5: simulated execution + backtesting
-- [ ] Pass the final independent GitHub Actions checkpoint and synchronize the validated final SHA to `origin/main`.
 
 ### Phase 6: monitoring + simulated FIX API
 - [ ] Implement monitoring event schema.

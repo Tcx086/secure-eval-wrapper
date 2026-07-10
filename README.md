@@ -1,12 +1,12 @@
-﻿# Secure Eval Wrapper
+# Secure Eval Wrapper
 
 [![CI](https://github.com/Tcx086/secure-eval-wrapper/actions/workflows/ci.yml/badge.svg)](https://github.com/Tcx086/secure-eval-wrapper/actions/workflows/ci.yml)
 
 A public, auditable, and reproducible framework for building crypto trading systems without exposing private alpha, credentials, account data, or sensitive trade records.
 
-The project is developed in explicit, auditable phases. Architecture, PostgreSQL foundations, public market data, public alpha, and standardized signals are complete. Deterministic simulated execution and event-driven backtesting are implemented and undergoing the Phase 5 exit validation.
+The project is developed in explicit, auditable phases. Architecture, PostgreSQL foundations, public market data, public alpha, and standardized signals are complete. Deterministic simulated execution and event-driven backtesting are complete after local PostgreSQL 16 and independent GitHub Actions validation.
 
-> **Current status:** Phase 5 implementation is complete locally, including PostgreSQL 16 validation; final independent GitHub Actions exit validation is in progress. Phase 6 has not started.
+> **Current status:** Phase 5 is completed and independently validated. Phase 6 is the current planned phase but has not started.
 
 ## Why this project exists
 
@@ -67,7 +67,7 @@ Signals are not fills. Phase 5 backtests create order intents, pass them through
 | 2 | Public market-data collection, validation, reconciliation, persistence | Completed |
 | 3 | Public Alpha Library | Completed; audit repair accepted |
 | 4 | Standardized Signal Generation | Completed; audit repair accepted |
-| 5 | Simulated Execution and Event-Driven Backtesting | In progress; implementation and local PostgreSQL validation complete |
+| 5 | Simulated Execution and Event-Driven Backtesting | Completed; PostgreSQL and CI validated |
 | 6 | Monitoring and Simulated FIX-Style Events | Planned |
 | 7 | Paper Trading | Future |
 | 8 | Guarded Live Execution | Future; disabled by default |
