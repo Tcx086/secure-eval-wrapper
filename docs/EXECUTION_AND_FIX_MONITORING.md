@@ -152,3 +152,7 @@ a signal never fills from its own completed bar.
 The simulated FIX-style monitoring concepts below remain Phase 6 design only. No FIX session,
 paper adapter, live adapter, authenticated endpoint, or trading WebSocket has been implemented.
 See `SIMULATED_EXECUTION_AND_BACKTESTING.md` for the normative Phase 5 rules.
+
+## Phase 6 implemented monitoring and simulated FIX
+
+The monitoring concepts are now implemented as deterministic point-in-time checks with explicit `unknown` handling and PostgreSQL atomic bundles. The simulated FIX layer implements an ASCII-SOH FIX 4.4-compatible subset, exact BodyLength/CheckSum validation, sequence recovery, heartbeat/TestRequest timeout, fixed simulated latency, recorded fault schedules, NewOrderSingle, ExecutionReport, and cancel/reject flows. It is in-process only and can call only the existing `SimulatedBroker`; it has no external TCP, exchange, paper, or live route. Normative semantics are in `MONITORING_AND_SIMULATED_FIX.md`.

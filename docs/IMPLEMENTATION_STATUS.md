@@ -244,6 +244,8 @@ Completed work must be listed under `Completed`. Everything not done must remain
 
 ### Phase 6: monitoring + simulated FIX API
 
+Status: `in_progress`
+
 - [ ] Implement monitoring event schema.
 - [ ] Implement data health monitoring.
 - [ ] Implement signal health monitoring.

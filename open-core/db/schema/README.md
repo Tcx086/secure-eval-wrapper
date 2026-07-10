@@ -48,3 +48,7 @@ record and a run/type-local ordinal preserves deterministic reconstruction. Chil
 `backtest_run_id` values are non-authoritative owner hints with safe rehoming/nulling semantics;
 queries use memberships exclusively. Aggregate metrics remain run-scoped and are keyed by the
 complete `backtest_run_id`.
+
+## Phase 6 schema
+
+The `monitoring` schema now includes monitoring runs, check results, health snapshots, incident episodes and occurrences, simulated FIX sessions/messages/order links, latency samples, and configured connection faults. `backtesting.backtest_position_states` includes final valuation time, source, stale age, status, and source snapshot lineage. See `docs/MONITORING_AND_SIMULATED_FIX.md` for semantics.

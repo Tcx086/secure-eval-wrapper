@@ -256,7 +256,7 @@ class ReconciliationPersistenceTests(unittest.TestCase):
             REPO_ROOT / "open-core" / "db" / "migrations"
         )
         verifier.inspect_migrations(migrations)
-        self.assertEqual(migrations[-1].filename, "0012_phase5_run_scoped_projection_repairs.sql")
+        self.assertEqual(migrations[-1].filename, "0013_phase6_monitoring_simulated_fix.sql")
         self.assertIn("reconciliation_results", verifier.REQUIRED_TABLES["data_quality"])
         self.assertIn(
             "reconciliation_check_results",

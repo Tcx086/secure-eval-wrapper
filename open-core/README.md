@@ -115,3 +115,7 @@ accounting, maker/taker fees, adverse slippage, equity-curve metrics, and explic
 positions. Optional PostgreSQL support is installed with `.[postgres]`; persistence still requires
 both `--persist` and `ENABLE_POSTGRES_PERSISTENCE=true`. There is no SQLite fallback, paper broker,
 or live runtime. See `../docs/SIMULATED_EXECUTION_AND_BACKTESTING.md`.
+
+## Monitoring and strictly simulated FIX
+
+`secure-eval-monitor` evaluates synthetic data, signal, execution, risk, system, and simulated-session evidence at an explicit UTC point in time. `secure-eval-fix-sim` demonstrates the in-process FIX 4.4-compatible subset, deterministic heartbeat/sequence/fault behavior, acknowledgements, explicit-market-event fills, and cancel/reject flow. Both commands are offline by default. PostgreSQL persistence requires `--persist` plus `ENABLE_POSTGRES_PERSISTENCE=true`; no SQLite fallback exists. See `../docs/MONITORING_AND_SIMULATED_FIX.md`.

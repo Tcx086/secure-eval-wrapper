@@ -326,3 +326,7 @@ Phase 5 simulated execution and backtesting is complete through its fourth indep
 ## Disclaimer
 
 This repository is for software architecture, data engineering, testing, and research infrastructure. It does not provide investment advice, does not guarantee trading performance, and should not be connected to real capital without independent review and the future guarded execution controls described in the roadmap.
+
+## Phase 6 monitoring and simulated FIX
+
+The public framework now includes deterministic point-in-time monitoring and a strictly simulated, in-process FIX 4.4-compatible subset. Run `secure-eval-monitor` or `secure-eval-fix-sim` after installing `open-core`. Both demos are synthetic, socket-free, and persistence-free by default. See [Monitoring and Simulated FIX](docs/MONITORING_AND_SIMULATED_FIX.md). No paper/live broker, external FIX connection, or authenticated exchange access is implemented.

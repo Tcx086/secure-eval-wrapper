@@ -319,3 +319,7 @@ half-open reads. `persist_backtest_bundle` owns one outer transaction for the co
 parent/child graph; injected failures at every child location leave zero run rows. Clean PostgreSQL
 16 installation and a seeded `0008` to `0009` upgrade are independently validated. PostgreSQL
 remains the only authority and persistence is disabled by default in the offline demo.
+
+## Phase 6 monitoring and simulated FIX storage
+
+Migration `0013_phase6_monitoring_simulated_fix.sql` adds normalized monitoring runs, check results, health snapshots, incident episodes/occurrences, simulated FIX sessions/messages/order links, fixed latency samples, and deterministic connection faults. It strengthens the original monitoring event skeleton and backfills Phase 5 final-position projections from the latest snapshot belonging to the same complete run and position lineage. PostgreSQL remains the only authority. Monitoring and FIX repositories accept injected DB-API connections, use parameterized SQL, reject deterministic identity/content conflicts, provide half-open ordered reads, and persist complete monitoring or session-transition bundles atomically.

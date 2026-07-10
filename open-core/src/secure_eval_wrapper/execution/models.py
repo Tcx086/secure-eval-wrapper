@@ -149,6 +149,12 @@ class MarkSource(str, Enum):
     BAR_CLOSE = "bar_close"
 
 
+class PositionValuationStatus(str, Enum):
+    MARKED = "marked"
+    FLAT = "flat"
+    UNMARKED = "unmarked"
+
+
 class PositionSnapshotKind(str, Enum):
     FILL = "fill"
     BAR_OPEN_MARK = "bar_open_mark"

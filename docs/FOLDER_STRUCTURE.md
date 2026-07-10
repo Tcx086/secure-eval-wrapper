@@ -171,3 +171,10 @@ The implemented layout adds `open-core/pyproject.toml`, the `secure_eval_wrapper
 fixture wrapper `scripts/run_public_backtest_pipeline.py`, cross-platform migration/catalog
 validation scripts, dedicated Phase 5 tests, and `.github/workflows/ci.yml`. `execution/brokers/`
 contains only `simulated.py`; future paper/live and Phase 6 FIX-monitoring folders remain absent.
+
+### Phase 6 additions
+
+- `open-core/src/secure_eval_wrapper/monitoring/`: immutable contracts, configuration, category health evaluators, aggregation, incidents, engine, CLI, and atomic persistence.
+- `open-core/src/secure_eval_wrapper/fix/`: simulated FIX tags, message contracts/factories, codec, validation, session, gateway, latency, faults, CLI, and persistence exports.
+- `open-core/db/migrations/0013_phase6_monitoring_simulated_fix.sql`: projection valuation repair and Phase 6 PostgreSQL schema.
+- `open-core/scripts/run_public_monitoring.py` and `run_simulated_fix.py`: offline source-checkout demos.

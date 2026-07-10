@@ -57,6 +57,16 @@ def persist_backtest_bundle(repository, result) -> BacktestBundleSummary:
     _validate_bundle_lineage(result)
     backtest_run_id = result.run.backtest_run_id
     membership_count = 0
+    final_snapshots = {}
+    for snapshot in result.position_snapshots:
+        current = final_snapshots.get(snapshot.position_id)
+        ordering = (snapshot.snapshot_at_utc, snapshot.logical_sequence, str(snapshot.position_snapshot_id))
+        if current is None or ordering > (
+            current.snapshot_at_utc,
+            current.logical_sequence,
+            str(current.position_snapshot_id),
+        ):
+            final_snapshots[snapshot.position_id] = snapshot
     try:
         with repository.transaction():
             repository.record_backtest_run(result.run)
@@ -73,7 +83,7 @@ def persist_backtest_bundle(repository, result) -> BacktestBundleSummary:
                 repository.record_fill(value, backtest_run_id=backtest_run_id, membership_ordinal=ordinal)
                 membership_count += 1
             for ordinal, value in enumerate(result.positions):
-                repository.upsert_position(value, backtest_run_id=backtest_run_id, membership_ordinal=ordinal)
+                repository.upsert_position(value, backtest_run_id=backtest_run_id, membership_ordinal=ordinal, final_snapshot=final_snapshots.get(value.position_id))
             for ordinal, value in enumerate(result.position_snapshots):
                 repository.record_position_snapshot(value, backtest_run_id=backtest_run_id, membership_ordinal=ordinal)
                 membership_count += 1

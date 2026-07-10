@@ -47,7 +47,7 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e "./open-core[test]"
-      - run: python -c "import secure_eval_wrapper; import secure_eval_wrapper.execution; import secure_eval_wrapper.backtesting"
+      - run: python -c "import secure_eval_wrapper; import secure_eval_wrapper.execution; import secure_eval_wrapper.backtesting; import secure_eval_wrapper.monitoring; import secure_eval_wrapper.fix"
       - name: Dedicated Phase 5 second-audit regression suite
         run: python -m unittest discover -s open-core/tests -p "test_phase5_second_audit.py" -v
       - name: Dedicated Phase 5 third-audit offline regression suite
@@ -56,8 +56,18 @@ jobs:
         run: python -m unittest discover -s open-core/tests -p "test_phase5_fourth_audit.py" -v
       - name: Anti-lookahead and future-invariance suite
         run: python -m unittest discover -s open-core/tests -p "test_phase5_invariance.py" -v
+      - name: Complete offline suite
+        run: python -m unittest discover -s open-core/tests -v
+      - name: Dedicated Phase 6 monitoring and valuation suites
+        run: python -m unittest discover -s open-core/tests -p "test_phase6_monitoring.py" -v && python -m unittest discover -s open-core/tests -p "test_phase6_projection_valuation.py" -v
+      - name: Dedicated simulated FIX codec, session, order-flow, latency, and fault suite
+        run: python -m unittest discover -s open-core/tests -p "test_phase6_fix*.py" -v
+      - name: Compile package and scripts
+        run: python -m compileall -q open-core/src open-core/scripts
       - run: secure-eval-backtest
       - run: secure-eval-validate
+      - run: secure-eval-monitor
+      - run: secure-eval-fix-sim
 
   postgres-integration:
     name: PostgreSQL 16 integration
@@ -90,9 +100,9 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -e "./open-core[postgres,test]"
-      - name: Clean migration install 0001 through 0012
+      - name: Clean migration install 0001 through 0013
         run: python open-core/scripts/apply_postgres_migrations.py
-      - name: Migration hashes and Phase 5 fourth-audit catalog
+      - name: Migration hashes and Phase 5/6 catalog
         run: |
           python open-core/scripts/verify_postgres_schema.py --migration-only
           python open-core/scripts/verify_phase5_postgres_schema.py
@@ -108,11 +118,16 @@ jobs:
         env:
           RUN_POSTGRES_INTEGRATION: "true"
         run: python -m unittest discover -s open-core/tests -p "test_phase5_fourth_audit.py" -v
-      - name: Seeded 0011 to 0012 upgrade with existing Phase 5 rows
+      - name: Phase 6 monitoring, simulated FIX persistence, conflicts, half-open reads, and rollback
+        env:
+          RUN_POSTGRES_INTEGRATION: "true"
+        run: python -m unittest discover -s open-core/tests -p "test_phase6_postgres_integration.py" -v
+      - name: Seeded 0012 to 0013 upgrade with existing Phase 5 rows
         run: |
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --create-database --through 0009 --seed-phase5
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0010 --through 0011
-          python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0012
+          python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0012 --through 0012
+          python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0013
           POSTGRES_DB=secure_eval_upgrade python open-core/scripts/verify_postgres_schema.py
           POSTGRES_DB=secure_eval_upgrade python open-core/scripts/verify_phase5_postgres_schema.py
 

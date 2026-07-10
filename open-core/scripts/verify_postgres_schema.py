@@ -87,6 +87,16 @@ REQUIRED_TABLES: dict[str, tuple[str, ...]] = {
         "monitoring_events",
         "fix_session_events",
         "risk_events",
+        "monitoring_runs",
+        "health_check_results",
+        "health_snapshots",
+        "incidents",
+        "incident_occurrences",
+        "latency_samples",
+        "fix_sessions",
+        "fix_messages",
+        "fix_order_links",
+        "connection_faults",
     ),
 }
 
@@ -579,7 +589,9 @@ REQUIRED_COLUMNS: dict[tuple[str, str], tuple[str, ...]] = {
     ("backtesting", "backtest_position_states"): (
         "backtest_run_id", "position_id", "account_ref", "series_identity_sha256",
         "deterministic_ordinal", "accounting_mode", "quantity", "average_entry_price",
-        "realized_pnl", "source_fill_ids", "updated_at_utc", "final_record_sha256",
+        "realized_pnl", "unrealized_pnl", "source_fill_ids", "updated_at_utc", "mark_price",
+        "valuation_at_utc", "mark_source", "stale_mark_age_seconds", "valuation_status",
+        "source_position_snapshot_id", "final_record_sha256",
     ),
     ("monitoring", "monitoring_events"): (
         "monitoring_event_id",
@@ -596,6 +608,11 @@ REQUIRED_COLUMNS: dict[tuple[str, str], tuple[str, ...]] = {
         "event_type",
         "sequence_number",
         "simulated",
+        "fix_session_id",
+        "prior_state",
+        "new_state",
+        "reason_code",
+        "record_sha256",
     ),
     ("monitoring", "risk_events"): (
         "risk_event_id",
@@ -603,7 +620,16 @@ REQUIRED_COLUMNS: dict[tuple[str, str], tuple[str, ...]] = {
         "event_time_utc",
         "risk_type",
         "severity",
-    ),
+    ),    ("monitoring", "monitoring_runs"): ("monitoring_run_id", "as_of_utc", "monitored_identity", "configuration_sha256", "stable_input_sha256", "overall_status", "record_sha256"),
+    ("monitoring", "health_check_results"): ("health_check_result_id", "monitoring_run_id", "evaluation_at_utc", "category", "component", "check_name", "health_status", "severity", "reason_code", "record_sha256"),
+    ("monitoring", "health_snapshots"): ("health_snapshot_id", "monitoring_run_id", "evaluation_at_utc", "component", "health_status", "causing_check_ids", "record_sha256"),
+    ("monitoring", "incidents"): ("incident_id", "category", "component", "reason_code", "monitored_identity", "state", "occurrence_count", "record_sha256"),
+    ("monitoring", "incident_occurrences"): ("incident_occurrence_id", "incident_id", "monitoring_run_id", "health_check_result_id", "occurred_at_utc", "record_sha256"),
+    ("monitoring", "fix_sessions"): ("fix_session_id", "session_key", "state", "next_inbound_seq_num", "next_outbound_seq_num", "simulated", "record_sha256"),
+    ("monitoring", "fix_messages"): ("fix_message_id", "fix_session_id", "direction", "msg_type", "msg_seq_num", "body_length", "checksum", "business_identity_sha256", "raw_message_sha256", "record_sha256"),
+    ("monitoring", "fix_order_links"): ("fix_order_link_id", "fix_session_id", "cl_ord_id", "order_intent_id", "order_id", "fill_id", "record_sha256"),
+    ("monitoring", "latency_samples"): ("latency_sample_id", "fix_session_id", "stage", "duration_microseconds", "breached", "record_sha256"),
+    ("monitoring", "connection_faults"): ("connection_fault_id", "fix_session_id", "fault_type", "scheduled_at_utc", "activated_at_utc", "record_sha256"),
 }
 
 REQUIRED_INDEXES = (
@@ -684,6 +710,14 @@ REQUIRED_INDEXES = (
     ("monitoring", "monitoring_events", "idx_monitoring_events_run_time"),
     ("monitoring", "fix_session_events", "idx_fix_session_events_session_time"),
     ("monitoring", "risk_events", "idx_risk_events_run_time"),
+    ("backtesting", "backtest_position_states", "idx_phase6_position_states_valuation"),
+    ("monitoring", "health_check_results", "idx_phase6_checks_component_time"),
+    ("monitoring", "health_snapshots", "idx_phase6_snapshots_component_time"),
+    ("monitoring", "fix_messages", "idx_phase6_fix_messages_session_direction_seq"),
+    ("monitoring", "fix_order_links", "idx_phase6_fix_order_lifecycle"),
+    ("monitoring", "connection_faults", "idx_phase6_faults_session_time"),
+    ("monitoring", "monitoring_events", "idx_phase6_monitoring_events_run_component_time"),
+    ("monitoring", "fix_session_events", "idx_phase6_fix_session_events_session_time"),
     ("audit", "artifacts", "idx_artifacts_run_id"),
     ("audit", "artifacts", "idx_artifacts_classification"),
 )
@@ -736,6 +770,11 @@ REQUIRED_UNIQUE_CONSTRAINTS = (
     ("backtesting", "backtest_order_states", ("backtest_run_id", "deterministic_ordinal")),
     ("backtesting", "backtest_position_states", ("backtest_run_id", "account_ref", "series_identity_sha256")),
     ("backtesting", "backtest_position_states", ("backtest_run_id", "deterministic_ordinal")),
+    ("monitoring", "monitoring_runs", ("monitored_identity", "as_of_utc", "configuration_sha256", "stable_input_sha256")),
+    ("monitoring", "health_check_results", ("monitoring_run_id", "category", "component", "check_name")),
+    ("monitoring", "health_snapshots", ("monitoring_run_id", "component")),
+    ("monitoring", "fix_sessions", ("session_key",)),
+    ("monitoring", "fix_messages", ("fix_session_id", "direction", "msg_seq_num")),
 )
 
 REQUIRED_FOREIGN_KEYS = (
@@ -857,6 +896,14 @@ REQUIRED_FOREIGN_KEYS = (
     ("backtesting", "backtest_order_states", ("order_id",), "execution", "orders", ("order_id",)),
     ("backtesting", "backtest_position_states", ("backtest_run_id",), "backtesting", "backtest_runs", ("backtest_run_id",)),
     ("backtesting", "backtest_position_states", ("position_id",), "execution", "positions", ("position_id",)),
+    ("monitoring", "health_check_results", ("monitoring_run_id",), "monitoring", "monitoring_runs", ("monitoring_run_id",)),
+    ("monitoring", "health_snapshots", ("monitoring_run_id",), "monitoring", "monitoring_runs", ("monitoring_run_id",)),
+    ("monitoring", "incident_occurrences", ("incident_id",), "monitoring", "incidents", ("incident_id",)),
+    ("monitoring", "incident_occurrences", ("monitoring_run_id",), "monitoring", "monitoring_runs", ("monitoring_run_id",)),
+    ("monitoring", "fix_messages", ("fix_session_id",), "monitoring", "fix_sessions", ("fix_session_id",)),
+    ("monitoring", "fix_order_links", ("fix_session_id",), "monitoring", "fix_sessions", ("fix_session_id",)),
+    ("monitoring", "latency_samples", ("fix_session_id",), "monitoring", "fix_sessions", ("fix_session_id",)),
+    ("monitoring", "connection_faults", ("fix_session_id",), "monitoring", "fix_sessions", ("fix_session_id",)),
     (
         "execution", "cash_ledger_entries", ("fill_id", "currency"),
         "execution", "fills", ("fill_id", "fee_asset"),
@@ -893,6 +940,12 @@ REQUIRED_CHECK_CONSTRAINTS = (
     ("backtesting", "backtest_position_states", "phase5_position_states_quantity_check", True),
     ("backtesting", "backtest_position_states", "phase5_position_states_spot_check", True),
     ("backtesting", "backtest_position_states", "phase5_position_states_hash_check", True),
+    ("backtesting", "backtest_position_states", "phase6_position_valuation_status_check", True),
+    ("backtesting", "backtest_position_states", "phase6_position_valuation_consistency_check", True),
+    ("backtesting", "backtest_position_states", "phase6_position_stale_age_check", True),
+    ("monitoring", "fix_session_events", "phase6_fix_session_event_state_check", True),
+    ("monitoring", "fix_session_events", "phase6_fix_session_event_new_state_check", True),
+    ("monitoring", "fix_session_events", "phase6_fix_session_event_hash_check", True),
     ("alpha", "alpha_registry", "chk_alpha_registry_minimum_warmup", True),
     ("alpha", "alpha_registry", "chk_alpha_registry_implementation_sha256", True),
     ("alpha", "alpha_registry", "chk_alpha_registry_content_sha256", True),
@@ -997,6 +1050,10 @@ ALLOWED_DATA_MIGRATIONS = {
         r"\bUPDATE\s+execution\.orders\s+SET\b.*?;",
         r"\bUPDATE\s+execution\.positions\s+SET\b.*?;",
         r"\bDELETE\s+FROM\s+backtesting\.backtest_run_memberships\s+WHERE\b.*?;",
+    ),    "0013_phase6_monitoring_simulated_fix.sql": (
+        r"\bUPDATE\s+backtesting\.backtest_position_states\s+AS\s+state\s+SET\b.*?;",
+        r"\bUPDATE\s+backtesting\.backtest_position_states\s+SET\b.*?;",
+        r"\bUPDATE\s+backtesting\.backtest_position_states\s+SET\b.*?;",
     ),
 }
 

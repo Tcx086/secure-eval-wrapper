@@ -280,7 +280,7 @@
     {
       "id": "phase_6_monitoring_simulated_fix_api",
       "title": "Phase 6: monitoring + simulated FIX API",
-      "status": "todo",
+      "status": "in_progress",
       "completed": [],
       "todo": [
         "Implement monitoring event schema",

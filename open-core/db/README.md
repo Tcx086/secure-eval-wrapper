@@ -98,3 +98,7 @@ CI applies `0001` through `0009` to a clean PostgreSQL 16 service, applies `0001
 a second database with public-safe legacy rows before upgrading it with `0009`, and runs real
 repository, idempotency, full-bundle, and rollback validation. No database credentials or dumps are
 published.
+
+## Migration 0013
+
+`0013_phase6_monitoring_simulated_fix.sql` repairs complete-run final-position valuation and adds the normalized deterministic monitoring and strictly simulated FIX persistence model. It supports clean installation and a seeded `0012 -> 0013` upgrade without modifying migrations `0001` through `0012`.

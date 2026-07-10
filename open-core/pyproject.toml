@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "secure-eval-wrapper"
-version = "0.5.0"
-description = "Public-safe deterministic crypto execution and backtesting framework"
+version = "0.6.0"
+description = "Public-safe deterministic crypto trading research, monitoring, and simulated FIX framework"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
@@ -17,6 +17,8 @@ test = []
 [project.scripts]
 secure-eval-backtest = "secure_eval_wrapper.backtesting.cli:main"
 secure-eval-validate = "secure_eval_wrapper.validation:main"
+secure-eval-monitor = "secure_eval_wrapper.monitoring.cli:main"
+secure-eval-fix-sim = "secure_eval_wrapper.fix.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

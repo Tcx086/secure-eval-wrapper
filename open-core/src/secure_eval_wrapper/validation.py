@@ -31,8 +31,10 @@ def validate_status() -> None:
     phases = {row["id"]: row for row in status["phases"]}
     if status["current_phase"] not in phases:
         raise RuntimeError("current_phase does not identify a declared phase")
-    if phases["phase_6_monitoring_simulated_fix_api"]["status"] != "todo":
-        raise RuntimeError("Phase 6 must remain todo during the Phase 5 repair")
+    if phases["phase_6_monitoring_simulated_fix_api"]["status"] not in {"in_progress", "completed"}:
+        raise RuntimeError("Phase 6 must be in progress or completed during the Phase 6 milestone")
+    if phases["phase_7_paper_trading"]["status"] != "todo" or phases["phase_7_paper_trading"]["completed"]:
+        raise RuntimeError("Phase 7 and paper-trading runtime must remain entirely todo")
     print("OK: implementation status JSON structure and fixed boundaries")
 
 
@@ -148,6 +150,8 @@ def main(argv=None) -> int:
     _run(python, str(OPEN_CORE / "scripts" / "run_public_market_data_pipeline.py"))
     _run(python, str(OPEN_CORE / "scripts" / "run_public_alpha_signal_pipeline.py"))
     _run(python, str(OPEN_CORE / "scripts" / "run_public_backtest_pipeline.py"))
+    _run(python, str(OPEN_CORE / "scripts" / "run_public_monitoring.py"))
+    _run(python, str(OPEN_CORE / "scripts" / "run_simulated_fix.py"))
     _run(python, str(OPEN_CORE / "scripts" / "verify_postgres_schema.py"), "--migration-only")
     validate_status()
     boundary_scan()

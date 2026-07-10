@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timezone
+from decimal import Decimal
 
-from secure_eval_wrapper.execution.models import PositionState
+from secure_eval_wrapper.data_collection.hashing import sha256_payload
+from secure_eval_wrapper.execution.models import PositionSnapshot, PositionState, PositionValuationStatus
 
 
 def _identity(identity) -> dict[str, object]:
@@ -150,25 +152,63 @@ def position_lineage_row(value: PositionState):
     return row
 
 
-def position_state_row(value: PositionState, *, backtest_run_id, deterministic_ordinal: int):
-    return {
+def position_state_row(
+    value: PositionState,
+    *,
+    backtest_run_id,
+    deterministic_ordinal: int,
+    final_snapshot: PositionSnapshot | None = None,
+):
+    if final_snapshot is not None and final_snapshot.position_id != value.position_id:
+        raise ValueError("final position snapshot does not match position lineage")
+    quantity = value.quantity if final_snapshot is None else final_snapshot.quantity
+    average_entry_price = value.average_entry_price if final_snapshot is None else final_snapshot.average_entry_price
+    realized_pnl = value.realized_pnl if final_snapshot is None else final_snapshot.realized_pnl
+    mark_price = None if final_snapshot is None else final_snapshot.mark_price
+    unrealized_pnl = Decimal("0") if final_snapshot is None else final_snapshot.unrealized_pnl
+    valuation_at_utc = value.updated_at_utc if final_snapshot is None else final_snapshot.snapshot_at_utc
+    mark_source = None if final_snapshot is None or final_snapshot.mark_source is None else final_snapshot.mark_source.value
+    stale_mark_age_seconds = None if final_snapshot is None else final_snapshot.stale_mark_age_seconds
+    source_position_snapshot_id = None if final_snapshot is None else final_snapshot.position_snapshot_id
+    valuation_status = (
+        PositionValuationStatus.FLAT
+        if quantity == 0
+        else PositionValuationStatus.MARKED
+        if mark_price is not None
+        else PositionValuationStatus.UNMARKED
+    )
+    if valuation_status is PositionValuationStatus.UNMARKED:
+        unrealized_pnl = Decimal("0")
+        mark_source = None
+        stale_mark_age_seconds = None
+    state_payload = {
         "backtest_run_id": backtest_run_id,
         "position_id": value.position_id,
         "account_ref": value.account_ref,
         "series_identity_sha256": value.series_identity.series_identity_sha256,
         "deterministic_ordinal": deterministic_ordinal,
-        "accounting_mode": value.accounting_mode.value,
-        "quantity": value.quantity,
-        "average_entry_price": value.average_entry_price,
-        "realized_pnl": value.realized_pnl,
-        "unrealized_pnl": 0,
-        "source_fill_ids": list(value.source_fill_ids),
+        "accounting_mode": value.accounting_mode,
+        "quantity": quantity,
+        "average_entry_price": average_entry_price,
+        "realized_pnl": realized_pnl,
+        "unrealized_pnl": unrealized_pnl,
+        "source_fill_ids": value.source_fill_ids,
         "updated_at_utc": value.updated_at_utc,
-        "mark_price": None,
+        "mark_price": mark_price,
+        "valuation_at_utc": valuation_at_utc,
+        "mark_source": mark_source,
+        "stale_mark_age_seconds": stale_mark_age_seconds,
+        "valuation_status": valuation_status,
+        "source_position_snapshot_id": source_position_snapshot_id,
         "config_sha256": value.config_sha256,
-        "final_record_sha256": value.record_sha256,
     }
-
+    return {
+        **state_payload,
+        "accounting_mode": value.accounting_mode.value,
+        "source_fill_ids": list(value.source_fill_ids),
+        "valuation_status": valuation_status.value,
+        "final_record_sha256": sha256_payload(state_payload),
+    }
 
 def position_snapshot_row(value):
     return {

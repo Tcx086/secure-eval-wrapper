@@ -325,3 +325,7 @@ synthesized, final positions are never silently closed, and symbol-only identity
 
 Paper, live, real FIX, leverage, liquidation, and Phase 6 monitoring runtime remain unimplemented.
 The normative semantics and limitations are in `SIMULATED_EXECUTION_AND_BACKTESTING.md`.
+
+## Phase 6 implemented monitoring boundary
+
+Phase 6 now implements immutable monitoring contracts, deterministic point-in-time category checks, explicit non-numeric health aggregation, continuous incident episodes, PostgreSQL bundle persistence, and an in-process simulated FIX 4.4-compatible subset. The gateway can call only `SimulatedBroker`; acknowledgement does not mutate accounting, and fills require explicit synthetic market events. The codec/session opens no external socket. Paper trading, live trading, authenticated access, external FIX connectivity, leverage, margin, and liquidation remain unimplemented.

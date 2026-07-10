@@ -321,7 +321,7 @@ class IdentityHashAccountAndMetricTests(unittest.TestCase):
         self.assertEqual(len(path_findings), 6)
         status = json.loads((ROOT / ".project" / "implementation_status.json").read_text(encoding="utf-8"))
         phases = {row["id"]: row for row in status["phases"]}
-        self.assertEqual(phases["phase_6_monitoring_simulated_fix_api"]["status"], "todo")
+        self.assertIn(phases["phase_6_monitoring_simulated_fix_api"]["status"], {"in_progress", "completed"})
 
 
 if __name__ == "__main__":

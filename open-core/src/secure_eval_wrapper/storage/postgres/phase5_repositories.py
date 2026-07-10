@@ -299,12 +299,13 @@ class PostgresPhase5Repository(_PostgresRepositoryBase):
             logical_where="order_id = %s", logical_params=(row["order_id"],), label="fill",
         )
 
-    def upsert_position(self, value, *, backtest_run_id: UUID, membership_ordinal: int):
+    def upsert_position(self, value, *, backtest_run_id: UUID, membership_ordinal: int, final_snapshot=None):
         lineage = position_lineage_row(value) | {"backtest_run_id": backtest_run_id}
         state = position_state_row(
             value,
             backtest_run_id=backtest_run_id,
             deterministic_ordinal=membership_ordinal,
+            final_snapshot=final_snapshot,
         )
         with self._write_scope():
             position_id = self._record(
@@ -421,7 +422,7 @@ class PostgresPhase5Repository(_PostgresRepositoryBase):
             "state.accounting_mode AS accounting_mode, state.quantity AS quantity, "
             "state.average_entry_price AS average_entry_price, state.realized_pnl AS realized_pnl, "
             "state.unrealized_pnl AS unrealized_pnl, state.source_fill_ids AS source_fill_ids, "
-            "state.updated_at_utc AS updated_at_utc, state.mark_price AS mark_price, "
+            "state.updated_at_utc AS updated_at_utc, state.mark_price AS mark_price, state.valuation_at_utc AS valuation_at_utc, state.mark_source AS mark_source, state.stale_mark_age_seconds AS stale_mark_age_seconds, state.valuation_status AS valuation_status, state.source_position_snapshot_id AS source_position_snapshot_id, "
             "state.config_sha256 AS config_sha256, state.final_record_sha256 AS record_sha256, "
             "state.backtest_run_id AS projection_backtest_run_id, "
             "state.deterministic_ordinal AS projection_ordinal "

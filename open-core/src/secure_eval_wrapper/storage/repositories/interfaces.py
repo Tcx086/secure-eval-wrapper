@@ -297,6 +297,45 @@ class MonitoringRepository(ABC):
     @abstractmethod
     def list_monitoring_events(self, *, run_id: UUID) -> Sequence[StorageRecord]:
         """List monitoring events for a run."""
+    @abstractmethod
+    def record_monitoring_run(self, monitoring_run: StoragePayload) -> UUID:
+        """Record one deterministic point-in-time monitoring run."""
+
+    @abstractmethod
+    def record_health_check_result(self, check_result: StoragePayload) -> UUID:
+        """Record one typed child health-check result."""
+
+    @abstractmethod
+    def record_health_snapshot(self, health_snapshot: StoragePayload) -> UUID:
+        """Record component or overall non-numeric aggregate health."""
+
+    @abstractmethod
+    def record_incident(self, incident: StoragePayload) -> UUID:
+        """Open, update, acknowledge, or resolve one continuous incident episode."""
+
+    @abstractmethod
+    def record_incident_occurrence(self, occurrence: StoragePayload) -> UUID:
+        """Record one idempotent incident occurrence."""
+
+    @abstractmethod
+    def record_fix_session(self, session: StoragePayload, updated_at_utc) -> UUID:
+        """Persist strictly simulated FIX session state and sequences."""
+
+    @abstractmethod
+    def record_fix_message(self, fix_session_id: UUID, direction: str, message: StoragePayload, processing_time_utc, raw_bytes) -> UUID:
+        """Persist one validated public-safe simulated FIX message."""
+
+    @abstractmethod
+    def record_fix_order_link(self, link: StoragePayload) -> UUID:
+        """Persist ClOrdID to Phase 5 simulated execution lineage."""
+
+    @abstractmethod
+    def record_latency_sample(self, sample: StoragePayload, monitoring_run_id: UUID | None = None) -> UUID:
+        """Persist deterministic simulated processing latency."""
+
+    @abstractmethod
+    def record_connection_fault(self, fault: StoragePayload) -> UUID:
+        """Persist one preconfigured simulated connection fault."""
 
 
 class AuditRepository(ABC):
