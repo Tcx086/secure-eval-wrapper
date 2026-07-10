@@ -1,188 +1,324 @@
 # Secure Eval Wrapper
 
-## What this is
-Secure Eval Wrapper is being rebuilt into a public crypto-focused trading system framework.
-The target system demonstrates complete trading infrastructure design while keeping private
-strategies, secrets, real account data, and sensitive trade logs outside the public repository.
+A public, auditable, and reproducible framework for building crypto trading systems without exposing private alpha, credentials, account data, or sensitive trade records.
 
-The current runnable demo is still available under `open-core/`. The new architecture direction
-is documented first, before runtime implementation.
+The project is being developed in explicit phases. The completed foundation currently covers architecture, PostgreSQL migrations, and a hardened public market-data layer. Public alpha, standardized signals, simulated execution, and event-driven backtesting are planned next.
 
-## Architecture Direction
-- [Crypto Trading System Architecture](docs/ARCHITECTURE_CRYPTO_TRADING_SYSTEM.md)
-- [Folder Structure](docs/FOLDER_STRUCTURE.md)
-- [PostgreSQL Storage Design](docs/POSTGRESQL_STORAGE_DESIGN.md)
-- [Data Collection and Validation](docs/DATA_COLLECTION_AND_VALIDATION.md)
-- [Execution and FIX-Style Monitoring](docs/EXECUTION_AND_FIX_MONITORING.md)
-- [Local Data Governance](docs/LOCAL_DATA_GOVERNANCE.md)
-- [Implementation Status](docs/IMPLEMENTATION_STATUS.md)
+> **Current status:** Phase 2 is complete. Phase 3, the Public Alpha Library, is the next implementation phase.
 
-## Current Public Demo
-Production-style evaluation system for deterministic validation and secure artifact delivery.
+## Why this project exists
 
-Built for systems where logic cannot be open-sourced.
+Most trading repositories focus on strategy returns while leaving data quality, reproducibility, execution semantics, and operational safety underspecified. This project takes the opposite approach.
 
----
+The main objectives are:
 
-## System Overview
+- preserve a strict boundary between public infrastructure and private research;
+- make data lineage, IDs, hashes, validation decisions, and database writes auditable;
+- prevent lookahead, data contamination, silent fallback, and inconsistent backtests;
+- use one shared execution contract for future backtest, paper, and guarded live modes;
+- keep live trading disabled by default;
+- avoid unverifiable claims, fabricated data, and fake execution results.
+
+This repository is infrastructure-first. It is not presented as a profitable strategy, a signal service, or a ready-to-run trading bot.
+
+## System direction
 
 ```text
-                +--------------+
-                | Strategy API |
-                +------+-------+
-                       |
-                       v
-               +---------------+
-               | Eval Engine   |
-               +------+--------+
-                      |
-                      v
-        +-------------------------------+
-        | Stress / Risk Suite           |
-        | - Monte Carlo                 |
-        | - Intrabar Probe              |
-        +--------------+----------------+
-                       |
-                       v
-            +----------------------+
-            | Audit Layer          |
-            | (hash, cfg, seed)    |
-            +----------+-----------+
-                       |
-                       v
-           +-------------------------+
-           | Artifacts               |
-           | - report                |
-           | - metrics               |
-           | - manifest              |
-           +-------------------------+
+Public market endpoints
+        |
+        v
+Raw observations + source provenance
+        |
+        v
+Normalization + UTC enforcement
+        |
+        v
+Validation + accepted/rejected gate
+        |                 |
+        |                 +--> Quarantine + audit evidence
+        v
+Validated PostgreSQL datasets
+        |
+        +--> Cross-source reconciliation
+        |
+        v
+Public alpha library                 [Phase 3]
+        |
+        v
+Standardized signal generation       [Phase 4]
+        |
+        v
+Simulated execution + backtesting    [Phase 5]
+        |
+        v
+Monitoring, reporting, paper/live    [Later phases]
 ```
 
----
+Signals are not fills. Future backtests must create order intents, pass them through a simulated broker, receive fills, update positions, and only then calculate portfolio metrics.
 
-## Key Features
-- Deterministic pipeline execution (`seed + input snapshot + config snapshot + code hash`)
-- Built-in stress testing (Monte Carlo and intrabar perturbation)
-- Audit layer with checksum/hash verification
-- Standardized artifact generation (`report`, `metrics`, `manifest`)
-- Public infrastructure with private-logic isolation
-- One-command orchestration for repeatable system runs
+## Implementation status
 
----
+| Phase | Scope | Status |
+|---|---|---|
+| 0 | Architecture, project controls, public/private boundary | Completed |
+| 1 | PostgreSQL infrastructure, migrations, repository interfaces | Completed |
+| 2 | Public market-data collection, validation, reconciliation, persistence | Completed |
+| 3 | Public Alpha Library | Next |
+| 4 | Standardized Signal Generation | Planned |
+| 5 | Simulated Execution and Event-Driven Backtesting | Planned |
+| 6 | Monitoring and Simulated FIX-Style Events | Planned |
+| 7 | Paper Trading | Future |
+| 8 | Guarded Live Execution | Future; disabled by default |
+| 9 | Reporting and Public Delivery | Planned |
 
-## How it works
-1. Strategy adapter receives normalized inputs.
-2. Eval engine computes decision outputs.
-3. Stress/risk suite runs Monte Carlo and perturbation checks.
-4. Audit layer records hashes and configuration snapshot.
-5. Artifact packager writes delivery-ready outputs.
+The authoritative progress records are:
 
-Execution chain:
-`open-core/main.py` -> `src/eval_cli.py` -> `src/eval/*` -> `delivery/*`
+- [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md)
+- [`.project/implementation_status.json`](.project/implementation_status.json)
 
----
+Completed and planned work must remain synchronized between these two files.
 
-## Quick Start
-Run full pipeline from `open-core`:
+## Phase 2: implemented public data layer
+
+The current runtime framework supports the following public market data:
+
+| Provider component | OHLCV | Trades | Funding rates | Instruments |
+|---|---:|---:|---:|---:|
+| Binance Spot (`binance`) | Implemented | Implemented | Not applicable | Implemented |
+| Binance USD-M (`binance_usdm`) | Not implemented | Not implemented | Implemented | Implemented |
+| OKX V5 Public (`okx`) | Implemented | Implemented | Implemented | Implemented |
+| Bybit | Planned | Planned | Planned | Planned |
+| Coinbase | Planned | Planned | Unknown | Planned |
+
+Implemented controls include:
+
+- exact UTC handling and half-open windows `[start, end)`;
+- deterministic IDs and canonical SHA-256 hashes;
+- raw-observation provenance before normalization;
+- `Decimal`-based normalized records;
+- accepted/rejected validation gates;
+- deterministic quarantine decisions;
+- Binance and OKX OHLCV reconciliation;
+- typed pipelines for OHLCV, trades, funding rates, and instruments;
+- PostgreSQL-only authoritative persistence;
+- transaction boundaries with rollback on child-write failure;
+- idempotent retries with content-conflict detection;
+- immutable instrument metadata versions and drift detection;
+- explicit Spot, perpetual-swap, and dated-future identities;
+- grounded funding-interval evidence;
+- explicit `SKIPPED` outcomes when interval evidence is unavailable;
+- fixture-default command-line execution with network and persistence disabled by default.
+
+The implementation does **not** silently assume an eight-hour funding interval when the provider does not supply sufficient evidence.
+
+## Safety defaults
+
+The project is deliberately restrictive.
+
+- PostgreSQL is the only authoritative storage target.
+- SQLite is not an authoritative database or fallback.
+- Public-network collection is disabled unless explicitly enabled.
+- PostgreSQL persistence is independently disabled unless explicitly enabled.
+- Live trading is disabled and not implemented in the current phase.
+- No exchange credentials are required for the completed public-data workflow.
+- No private strategy code, private feature engineering, real account snapshots, or real trade logs belong in this repository.
+- Generated artifacts must be classified and redacted before public delivery.
+
+See [`AGENTS.md`](AGENTS.md) for repository-wide engineering rules.
+
+## Quick start
+
+### Requirements
+
+- Python 3.10 or newer;
+- Docker with Docker Compose for optional local PostgreSQL;
+- PowerShell for the included PostgreSQL helper;
+- `psycopg` or `psycopg2` only when Python-based PostgreSQL persistence is enabled.
+
+### Clone the repository
+
+```bash
+git clone https://github.com/Tcx086/secure-eval-wrapper.git
+cd secure-eval-wrapper
+```
+
+### Run the complete offline fixture pipeline
+
+This is the safest default. It uses classified synthetic public-safe fixtures, opens no exchange connection, and performs no database writes.
+
+```bash
+python open-core/scripts/run_public_market_data_pipeline.py
+```
+
+The summary reports provider status, normalized and accepted counts, validation outcomes, persistence state, and hash validity. It does not print full provider payloads or connection secrets.
+
+### Optional bounded public-network smoke mode
+
+Network access requires an explicit environment flag.
+
+PowerShell:
 
 ```powershell
-cd open-core
-powershell -ExecutionPolicy Bypass -File scripts/start.ps1 -Mode all
+$env:ENABLE_PUBLIC_NETWORK_SMOKE = "true"
+python open-core\scripts\run_public_market_data_pipeline.py --mode public-network
 ```
 
-Or run specific mode:
+Bash:
+
+```bash
+ENABLE_PUBLIC_NETWORK_SMOKE=true \
+python open-core/scripts/run_public_market_data_pipeline.py --mode public-network
+```
+
+Public-network mode does not automatically enable persistence.
+
+## Local PostgreSQL
+
+Create a local environment file and replace the example password:
+
+PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/start.ps1 -Mode quant
-powershell -ExecutionPolicy Bypass -File scripts/start.ps1 -Mode generic
+Copy-Item .env.example .env
 ```
 
----
+Bash:
 
-## Output Artifacts
-Quant pipeline (`delivery/demo-run`):
-- `repro_manifest.json`
-- `evaluation_report.md`
-- `evaluation_metrics.json`
-- `signal_output.json`
-- `model_card_public.md`
+```bash
+cp .env.example .env
+```
 
-Generic pipeline (`delivery/generic-demo`):
-- `generic_manifest.json`
-- `generic_report.md`
-- `generic_metrics.json`
+Start PostgreSQL, apply migrations, and verify the catalog:
 
-System run log (`delivery/system-run`):
-- `system_run_summary.json`
+```powershell
+.\open-core\scripts\postgres_local.ps1 start
+.\open-core\scripts\postgres_local.ps1 apply
+.\open-core\scripts\postgres_local.ps1 verify
+```
 
----
+The database binds to `127.0.0.1`, and local PostgreSQL state is stored under ignored runtime paths.
 
-## Design Principles
-- Deterministic pipeline behavior
-- Audit-first delivery
-- Explicit public/private boundary
-- Standardized outputs for promotion decisions
+To persist the fixture pipeline, both the environment gate and CLI flag are required:
 
----
+```powershell
+$env:ENABLE_POSTGRES_PERSISTENCE = "true"
+python open-core\scripts\run_public_market_data_pipeline.py --persist
+```
 
-## Notes on Confidentiality
+There is no SQLite or file-database fallback.
 
-### Confidentiality Design
-This system is designed to support:
-- Public infrastructure
-- Private strategy logic
+## Tests and static compilation
 
-Only aggregated metrics are exposed.
-Trade-level logs and feature attribution are intentionally excluded to reduce reverse-engineering risk.
+PowerShell:
 
-Show the system. Protect the edge.
+```powershell
+$env:PYTHONPATH = "open-core\src"
+python -m unittest discover -s open-core\tests -p "test_*.py"
+python -m compileall open-core\src open-core\scripts open-core\tests
+```
 
----
+Bash:
 
-## Example Output
-Public sample highlights:
-- Deterministic manifest with hash chain
-- Quant stress evidence (Monte Carlo + intrabar)
-- Generic non-quant evaluator artifacts
+```bash
+PYTHONPATH=open-core/src python -m unittest discover -s open-core/tests -p "test_*.py"
+python -m compileall open-core/src open-core/scripts open-core/tests
+```
 
----
+The test suite is designed to run offline and includes deterministic hashing, normalization, validation, reconciliation, persistence, transaction, migration, socket-isolation, and security-boundary coverage.
 
-## Appendix
-### A) Public Sample Metrics (Sanitized)
-#### v5 Standalone (Math/Stat Edge, v3+v4)
-| Metric | Value |
-|---|---:|
-| Public Metric Cost Basis | `16 bps` |
-| Annualized Return | `19.15%` |
-| Max Drawdown | `10.98%` |
-| Sharpe | `0.9376` |
-| Win Rate | `34.75%` |
-| Monte Carlo CAGR P50 | `12.18%` |
-| Stress Test Worst-Case Return | `-23.36%` |
+## Reproducibility and audit model
 
-#### v6 Standalone (News-Driven Edge)
-| Metric | Value |
-|---|---:|
-| Cost Assumption | `22 bps` |
-| Annualized Return | `40.55%` |
-| Max Drawdown | `-26.78%` |
-| Sharpe | `1.3789` |
-| Survivability Conclusion @22 bps | `Yes` |
+The framework separates logical identity from collection-time provenance.
 
-### B) Repository Map
-- `open-core/`: runtime pipeline and evaluation engine
-- `api-spec/`: API contract stub
-- `security/`: baseline controls and threat model
-- `delivery/`: generated artifacts and run outputs
-- `private/`: local-only integration notes
-- `docs/`: flow, reliability, extensibility, scale notes
+Stable event hashes are based on provider identity and economic event content. Volatile fields such as collection run IDs, request timestamps, ingestion timestamps, endpoints, and request parameters remain available as provenance but do not alter the logical identity of the same market event.
 
-## Public data quick start
+Persistent workflows use:
 
-Phase 2 public market data is complete for Binance and OKX, including stable event hashes,
-metadata-drift snapshot integration, concrete provider-component identities, and grounded funding
-interval validation. Run the complete offline, socket-free fixture pipeline from the repository root:
+- stable UUIDs and hashes;
+- source and dataset provenance;
+- validation-report identities;
+- migration file hashes;
+- PostgreSQL foreign keys and uniqueness constraints;
+- database-selected IDs propagated to child records;
+- explicit conflict errors when the same logical identity arrives with different content.
 
-    python open-core\scripts\run_public_market_data_pipeline.py
+This design is intended to make a run explainable without publishing private trading logic.
 
-See docs/DATA_COLLECTION_AND_VALIDATION.md for verified endpoint contracts and exit criteria.
+## Repository layout
+
+```text
+secure-eval-wrapper/
+|-- AGENTS.md                         repository-wide engineering controls
+|-- docs/                             architecture and implementation records
+|-- infra/                            local PostgreSQL infrastructure
+|-- open-core/
+|   |-- data/sample/                  classified public-safe fixtures
+|   |-- db/migrations/                ordered PostgreSQL migrations
+|   |-- scripts/                      fixture, migration, and verification CLIs
+|   |-- src/secure_eval_wrapper/
+|   |   |-- data_collection/          public provider adapters and contracts
+|   |   |-- data_validation/          validation, quarantine, reconciliation
+|   |   |-- data_pipeline/            provider-neutral orchestration
+|   |   `-- storage/                  PostgreSQL repositories and mappings
+|   `-- tests/                        offline and persistence-boundary tests
+|-- security/                         baseline controls and threat model
+|-- delivery/                         public-safe or redacted artifacts
+`-- var/                              ignored local runtime state
+```
+
+Some earlier evaluation-wrapper components remain in the repository for compatibility and historical context. The current rebuild is governed by the phased architecture and status files above; old demo metrics must not be treated as current system validation.
+
+## Documentation
+
+- [Crypto Trading System Architecture](docs/ARCHITECTURE_CRYPTO_TRADING_SYSTEM.md)
+- [Data Collection and Validation](docs/DATA_COLLECTION_AND_VALIDATION.md)
+- [PostgreSQL Storage Design](docs/POSTGRESQL_STORAGE_DESIGN.md)
+- [Execution and FIX-Style Monitoring](docs/EXECUTION_AND_FIX_MONITORING.md)
+- [Local Data Governance](docs/LOCAL_DATA_GOVERNANCE.md)
+- [Folder Structure](docs/FOLDER_STRUCTURE.md)
+- [Implementation Status](docs/IMPLEMENTATION_STATUS.md)
+
+## Public/private boundary
+
+Public repository content may include:
+
+- framework contracts and orchestration;
+- public endpoint adapters;
+- transparent educational alpha examples;
+- synthetic or public-safe fixture data;
+- simulated execution and monitoring examples;
+- aggregate metrics and redacted manifests.
+
+The following must remain private and outside Git:
+
+- proprietary alpha and private feature engineering;
+- exchange credentials and signing material;
+- real account or balance snapshots;
+- real trade logs and raw private exports;
+- local database contents;
+- partner-specific confidential material.
+
+The intended principle is simple: **make the infrastructure inspectable without publishing the edge.**
+
+## Roadmap
+
+The next milestone is the bundled implementation of:
+
+1. **Phase 3 — Public Alpha Library**
+   - deterministic public alpha registry;
+   - strict point-in-time windows;
+   - momentum, moving-average, breakout, mean-reversion, formulaic-style, and funding examples;
+   - alpha runs, values, hashes, PostgreSQL persistence, and anti-lookahead tests.
+
+2. **Phase 4 — Standardized Signal Generation**
+   - standardized signal contracts;
+   - cross-sectional ranking and thresholds;
+   - multi-alpha combination and explicit conflict resolution;
+   - deterministic confidence indicators;
+   - signal runs, signals, components, and PostgreSQL persistence.
+
+Only after these layers are audited should the repository proceed to simulated execution and event-driven backtesting.
+
+## Disclaimer
+
+This repository is for software architecture, data engineering, testing, and research infrastructure. It does not provide investment advice, does not guarantee trading performance, and should not be connected to real capital without independent review and the future guarded execution controls described in the roadmap.
