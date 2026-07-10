@@ -19,8 +19,10 @@ from secure_eval_wrapper.storage.postgres.phase5_rows import (
     funding_payment_row,
     metric_row,
     order_intent_row,
-    order_row,
-    position_row,
+    order_lineage_row,
+    order_state_row,
+    position_lineage_row,
+    position_state_row,
     position_snapshot_row,
     risk_decision_row,
 )
@@ -44,9 +46,7 @@ _MEMBERSHIP_SPECS = {
     for spec in (
         _MembershipSpec("order_intent", "order_intents", "execution.order_intents", "order_intent_id", "order_intent_id"),
         _MembershipSpec("risk_decision", "risk_decisions", "execution.risk_decisions", "risk_decision_id", "risk_decision_id"),
-        _MembershipSpec("order", "orders", "execution.orders", "order_id", "order_id"),
         _MembershipSpec("fill", "fills", "execution.fills", "fill_id", "fill_id"),
-        _MembershipSpec("position", "positions", "execution.positions", "position_id", "position_id"),
         _MembershipSpec("position_snapshot", "position_snapshots", "execution.position_snapshots", "position_snapshot_id", "position_snapshot_id"),
         _MembershipSpec("funding_payment", "funding_payments", "execution.funding_payments", "funding_payment_id", "funding_payment_id"),
         _MembershipSpec("cash_ledger_entry", "cash_ledger_entries", "execution.cash_ledger_entries", "cash_ledger_entry_id", "cash_ledger_entry_id"),
@@ -118,6 +118,43 @@ class PostgresPhase5Repository(_PostgresRepositoryBase):
             if str(stored[1]) != str(row["record_sha256"]):
                 raise Phase5ConflictError(f"stored {label} record hash differs")
             return stored[0] if isinstance(stored[0], UUID) else UUID(str(stored[0]))
+        finally:
+            close = getattr(cursor, "close", None)
+            if close is not None:
+                close()
+
+    def _record_projection(
+        self,
+        *,
+        table: str,
+        row: dict[str, object],
+        key_where: str,
+        key_params: tuple[object, ...],
+        label: str,
+    ) -> None:
+        columns = tuple(row)
+        params = tuple(_json_param(row[name]) if name.endswith("_jsonb") else row[name] for name in columns)
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(
+                f"INSERT INTO {table} ({', '.join(columns)}) "
+                f"VALUES ({', '.join(['%s'] * len(columns))}) "
+                "ON CONFLICT DO NOTHING RETURNING final_record_sha256, deterministic_ordinal",
+                params,
+            )
+            stored = cursor.fetchone()
+            if stored is None:
+                cursor.execute(
+                    f"SELECT final_record_sha256, deterministic_ordinal FROM {table} WHERE {key_where}",
+                    key_params,
+                )
+                stored = cursor.fetchone()
+            if stored is None:
+                raise Phase5ConflictError(f"{label} identity conflicted with an inaccessible row")
+            if str(stored[0]) != str(row["final_record_sha256"]):
+                raise Phase5ConflictError(f"stored {label} final record hash differs")
+            if int(stored[1]) != int(row["deterministic_ordinal"]):
+                raise Phase5ConflictError(f"stored {label} deterministic order differs")
         finally:
             close = getattr(cursor, "close", None)
             if close is not None:
@@ -235,12 +272,24 @@ class PostgresPhase5Repository(_PostgresRepositoryBase):
         )
 
     def record_order(self, value, *, backtest_run_id: UUID, membership_ordinal: int):
-        row = order_row(value)
-        return self._record_with_membership(
-            backtest_run_id=backtest_run_id, membership_ordinal=membership_ordinal,
-            record_type="order", table="execution.orders", id_column="order_id", row=row,
-            logical_where="order_intent_id = %s", logical_params=(row["order_intent_id"],), label="order",
+        lineage = order_lineage_row(value) | {"backtest_run_id": backtest_run_id}
+        state = order_state_row(
+            value,
+            backtest_run_id=backtest_run_id,
+            deterministic_ordinal=membership_ordinal,
         )
+        with self._write_scope():
+            order_id = self._record(
+                table="execution.orders", id_column="order_id", row=lineage,
+                logical_where="order_intent_id = %s",
+                logical_params=(lineage["order_intent_id"],), label="order lineage",
+            )
+            self._record_projection(
+                table="backtesting.backtest_order_states", row=state,
+                key_where="backtest_run_id = %s AND order_id = %s",
+                key_params=(backtest_run_id, order_id), label="final order projection",
+            )
+        return order_id
 
     def record_fill(self, value, *, backtest_run_id: UUID, membership_ordinal: int):
         row = fill_row(value)
@@ -251,13 +300,25 @@ class PostgresPhase5Repository(_PostgresRepositoryBase):
         )
 
     def upsert_position(self, value, *, backtest_run_id: UUID, membership_ordinal: int):
-        row = position_row(value)
-        return self._record_with_membership(
-            backtest_run_id=backtest_run_id, membership_ordinal=membership_ordinal,
-            record_type="position", table="execution.positions", id_column="position_id", row=row,
-            logical_where="run_id = %s AND account_ref = %s AND series_identity_sha256 = %s",
-            logical_params=(row["run_id"], row["account_ref"], row["series_identity_sha256"]), label="position",
+        lineage = position_lineage_row(value) | {"backtest_run_id": backtest_run_id}
+        state = position_state_row(
+            value,
+            backtest_run_id=backtest_run_id,
+            deterministic_ordinal=membership_ordinal,
         )
+        with self._write_scope():
+            position_id = self._record(
+                table="execution.positions", id_column="position_id", row=lineage,
+                logical_where="run_id = %s AND account_ref = %s AND series_identity_sha256 = %s",
+                logical_params=(lineage["run_id"], lineage["account_ref"], lineage["series_identity_sha256"]),
+                label="position lineage",
+            )
+            self._record_projection(
+                table="backtesting.backtest_position_states", row=state,
+                key_where="backtest_run_id = %s AND position_id = %s",
+                key_params=(backtest_run_id, position_id), label="final position projection",
+            )
+        return position_id
 
     def record_position_snapshot(self, value, *, backtest_run_id: UUID, membership_ordinal: int):
         row = position_snapshot_row(value)
@@ -337,6 +398,40 @@ class PostgresPhase5Repository(_PostgresRepositoryBase):
             (backtest_run_id, record_type),
         )
 
+    def _list_order_states(self, *, backtest_run_id: UUID):
+        return self._fetchall(
+            "SELECT lineage.*, state.backtest_run_id AS backtest_run_id, "
+            "state.order_status AS order_status, state.triggered_at_utc AS triggered_at_utc, "
+            "state.activation_reason AS activation_reason, state.reject_reason AS reject_reason, "
+            "state.state_provenance_jsonb AS provenance_jsonb, "
+            "state.final_record_sha256 AS record_sha256, "
+            "state.backtest_run_id AS projection_backtest_run_id, "
+            "state.deterministic_ordinal AS projection_ordinal "
+            "FROM execution.orders AS lineage "
+            "JOIN backtesting.backtest_order_states AS state USING (order_id) "
+            "WHERE state.backtest_run_id = %s "
+            "ORDER BY state.deterministic_ordinal, lineage.order_id",
+            (backtest_run_id,),
+        )
+
+    def _list_position_states(self, *, backtest_run_id: UUID):
+        return self._fetchall(
+            "SELECT lineage.*, state.backtest_run_id AS backtest_run_id, "
+            "state.account_ref AS account_ref, state.series_identity_sha256 AS series_identity_sha256, "
+            "state.accounting_mode AS accounting_mode, state.quantity AS quantity, "
+            "state.average_entry_price AS average_entry_price, state.realized_pnl AS realized_pnl, "
+            "state.unrealized_pnl AS unrealized_pnl, state.source_fill_ids AS source_fill_ids, "
+            "state.updated_at_utc AS updated_at_utc, state.mark_price AS mark_price, "
+            "state.config_sha256 AS config_sha256, state.final_record_sha256 AS record_sha256, "
+            "state.backtest_run_id AS projection_backtest_run_id, "
+            "state.deterministic_ordinal AS projection_ordinal "
+            "FROM execution.positions AS lineage "
+            "JOIN backtesting.backtest_position_states AS state USING (position_id) "
+            "WHERE state.backtest_run_id = %s "
+            "ORDER BY state.deterministic_ordinal, lineage.position_id",
+            (backtest_run_id,),
+        )
+
     def get_backtest_run(self, *, backtest_run_id: UUID):
         return self._fetchone(
             "SELECT * FROM backtesting.backtest_runs WHERE backtest_run_id = %s",
@@ -353,6 +448,8 @@ class PostgresPhase5Repository(_PostgresRepositoryBase):
                 backtest_run_id=backtest_run_id,
                 record_type=spec.record_type,
             )
+        bundle["orders"] = self._list_order_states(backtest_run_id=backtest_run_id)
+        bundle["positions"] = self._list_position_states(backtest_run_id=backtest_run_id)
         bundle["metrics"] = self.list_backtest_metrics(backtest_run_id=backtest_run_id)
         return bundle
 
@@ -420,18 +517,47 @@ class PostgresPhase5Repository(_PostgresRepositoryBase):
                     "WHERE child.backtest_run_id = %s",
                     (backtest_run_id, backtest_run_id),
                 )
+            for table, projection, id_column in (
+                ("execution.orders", "backtesting.backtest_order_states", "order_id"),
+                ("execution.positions", "backtesting.backtest_position_states", "position_id"),
+            ):
+                self._execute(
+                    f"UPDATE {table} AS child SET backtest_run_id = ("
+                    f"SELECT state.backtest_run_id FROM {projection} AS state "
+                    f"WHERE state.{id_column} = child.{id_column} "
+                    "AND state.backtest_run_id <> %s "
+                    "ORDER BY state.backtest_run_id LIMIT 1) "
+                    "WHERE child.backtest_run_id = %s",
+                    (backtest_run_id, backtest_run_id),
+                )
             deleted_runs = self._execute(
                 "DELETE FROM backtesting.backtest_runs WHERE backtest_run_id = %s",
                 (backtest_run_id,),
             )
             for record_type in _GARBAGE_COLLECTION_ORDER:
-                spec = _MEMBERSHIP_SPECS[record_type]
-                deleted_records[record_type] = self._execute(
-                    f"DELETE FROM {spec.table} AS child WHERE NOT EXISTS ("
-                    "SELECT 1 FROM backtesting.backtest_run_memberships AS membership "
-                    f"WHERE membership.{spec.membership_column} = child.{spec.id_column})",
-                    (),
-                )
+                if record_type == "order":
+                    deleted_records[record_type] = self._execute(
+                        "DELETE FROM execution.orders AS child WHERE "
+                        "NOT EXISTS (SELECT 1 FROM backtesting.backtest_order_states state WHERE state.order_id=child.order_id) "
+                        "AND NOT EXISTS (SELECT 1 FROM execution.fills fill WHERE fill.order_id=child.order_id) "
+                        "AND NOT EXISTS (SELECT 1 FROM execution.risk_decisions risk WHERE risk.order_id=child.order_id)",
+                        (),
+                    )
+                elif record_type == "position":
+                    deleted_records[record_type] = self._execute(
+                        "DELETE FROM execution.positions AS child WHERE "
+                        "NOT EXISTS (SELECT 1 FROM backtesting.backtest_position_states state WHERE state.position_id=child.position_id) "
+                        "AND NOT EXISTS (SELECT 1 FROM execution.position_snapshots snapshot WHERE snapshot.position_id=child.position_id)",
+                        (),
+                    )
+                else:
+                    spec = _MEMBERSHIP_SPECS[record_type]
+                    deleted_records[record_type] = self._execute(
+                        f"DELETE FROM {spec.table} AS child WHERE NOT EXISTS ("
+                        "SELECT 1 FROM backtesting.backtest_run_memberships AS membership "
+                        f"WHERE membership.{spec.membership_column} = child.{spec.id_column})",
+                        (),
+                    )
         return {"backtest_runs": deleted_runs, **deleted_records}
 
 

@@ -15,9 +15,18 @@ TABLE_COLUMNS = {
     "backtesting.backtest_events": {"backtest_event_id", "deterministic_sequence", "event_priority", "event_sha256", "record_sha256"},
     "backtesting.backtest_run_memberships": {
         "backtest_run_id", "record_type", "record_id", "deterministic_ordinal",
-        "order_intent_id", "risk_decision_id", "order_id", "fill_id", "position_id",
+        "order_intent_id", "risk_decision_id", "fill_id",
         "position_snapshot_id", "funding_payment_id", "cash_ledger_entry_id",
         "account_snapshot_id", "backtest_event_id", "equity_curve_id",
+    },
+    "backtesting.backtest_order_states": {
+        "backtest_run_id", "order_id", "deterministic_ordinal", "order_status",
+        "triggered_at_utc", "activation_reason", "reject_reason", "final_record_sha256",
+    },
+    "backtesting.backtest_position_states": {
+        "backtest_run_id", "position_id", "account_ref", "series_identity_sha256",
+        "deterministic_ordinal", "accounting_mode", "quantity", "average_entry_price",
+        "realized_pnl", "source_fill_ids", "updated_at_utc", "final_record_sha256",
     },
 }
 
@@ -30,11 +39,13 @@ INDEXES = {
     "uq_phase5_backtest_run_base_currency", "uq_phase5_backtest_run_account_ref",
     "uq_phase5_fill_fee_currency", "idx_phase5_run_memberships_record",
     "idx_phase5_run_memberships_order_intent", "idx_phase5_run_memberships_risk_decision",
-    "idx_phase5_run_memberships_order", "idx_phase5_run_memberships_fill",
-    "idx_phase5_run_memberships_position", "idx_phase5_run_memberships_position_snapshot",
+    "idx_phase5_run_memberships_fill",
+    "idx_phase5_run_memberships_position_snapshot",
     "idx_phase5_run_memberships_funding_payment", "idx_phase5_run_memberships_cash_ledger",
     "idx_phase5_run_memberships_account_snapshot", "idx_phase5_run_memberships_backtest_event",
     "idx_phase5_run_memberships_equity_curve",
+    "idx_phase5_order_states_order", "idx_phase5_order_states_status",
+    "idx_phase5_position_states_position", "idx_phase5_position_states_series",
 }
 
 CONSTRAINTS = {
@@ -58,11 +69,19 @@ CONSTRAINTS = {
     "phase5_run_memberships_type_check", "phase5_run_memberships_ordinal_check",
     "phase5_run_memberships_one_record_check", "phase5_run_memberships_typed_record_check",
     "phase5_run_memberships_order_intent_id_fk", "phase5_run_memberships_risk_decision_id_fk",
-    "phase5_run_memberships_order_id_fk", "phase5_run_memberships_fill_id_fk",
-    "phase5_run_memberships_position_id_fk", "phase5_run_memberships_position_snapshot_id_fk",
+    "phase5_run_memberships_fill_id_fk",
+    "phase5_run_memberships_position_snapshot_id_fk",
     "phase5_run_memberships_funding_payment_id_fk", "phase5_run_memberships_cash_ledger_entry_id_fk",
     "phase5_run_memberships_account_snapshot_id_fk", "phase5_run_memberships_backtest_event_id_fk",
     "phase5_run_memberships_equity_curve_id_fk",
+    "phase5_order_states_run_fk", "phase5_order_states_order_fk",
+    "phase5_order_states_ordinal_check", "phase5_order_states_status_check",
+    "phase5_order_states_hash_check",
+    "phase5_position_states_run_fk", "phase5_position_states_position_fk",
+    "phase5_position_states_series_hash_check", "phase5_position_states_ordinal_check",
+    "phase5_position_states_accounting_check", "phase5_position_states_config_hash_check",
+    "phase5_position_states_hash_check", "phase5_position_states_quantity_check",
+    "phase5_position_states_spot_check",
 }
 
 
@@ -121,6 +140,11 @@ def main():
                 "fills_without_orders": "SELECT count(*) FROM execution.fills child LEFT JOIN execution.orders parent ON parent.order_id=child.order_id WHERE parent.order_id IS NULL",
                 "snapshots_without_positions": "SELECT count(*) FROM execution.position_snapshots child LEFT JOIN execution.positions parent ON parent.position_id=child.position_id WHERE parent.position_id IS NULL",
                 "memberships_without_runs": "SELECT count(*) FROM backtesting.backtest_run_memberships child LEFT JOIN backtesting.backtest_runs parent ON parent.backtest_run_id=child.backtest_run_id WHERE parent.backtest_run_id IS NULL",
+                "order_states_without_runs": "SELECT count(*) FROM backtesting.backtest_order_states child LEFT JOIN backtesting.backtest_runs parent USING (backtest_run_id) WHERE parent.backtest_run_id IS NULL",
+                "order_states_without_lineage": "SELECT count(*) FROM backtesting.backtest_order_states child LEFT JOIN execution.orders parent USING (order_id) WHERE parent.order_id IS NULL",
+                "position_states_without_runs": "SELECT count(*) FROM backtesting.backtest_position_states child LEFT JOIN backtesting.backtest_runs parent USING (backtest_run_id) WHERE parent.backtest_run_id IS NULL",
+                "position_states_without_lineage": "SELECT count(*) FROM backtesting.backtest_position_states child LEFT JOIN execution.positions parent USING (position_id) WHERE parent.position_id IS NULL",
+                "projection_types_in_membership": "SELECT count(*) FROM backtesting.backtest_run_memberships WHERE record_type IN ('order', 'position')",
                 "prefill_without_orders": "SELECT count(*) FROM execution.risk_decisions WHERE stage='pre_fill' AND order_id IS NULL",
                 "owned_events_without_membership": "SELECT count(*) FROM backtesting.backtest_events child WHERE child.backtest_run_id IS NOT NULL AND child.record_sha256 IS NOT NULL AND NOT EXISTS (SELECT 1 FROM backtesting.backtest_run_memberships membership WHERE membership.backtest_event_id=child.backtest_event_id)",
                 "owned_equity_without_membership": "SELECT count(*) FROM backtesting.equity_curves child WHERE child.backtest_run_id IS NOT NULL AND child.record_sha256 IS NOT NULL AND NOT EXISTS (SELECT 1 FROM backtesting.backtest_run_memberships membership WHERE membership.equity_curve_id=child.equity_curve_id)",
@@ -136,6 +160,7 @@ def main():
                 "ledger_base_mismatch": "SELECT count(*) FROM execution.cash_ledger_entries entry JOIN backtesting.backtest_runs run ON run.backtest_run_id=entry.backtest_run_id WHERE entry.currency IS DISTINCT FROM run.base_currency",
                 "ledger_fill_currency_mismatch": "SELECT count(*) FROM execution.cash_ledger_entries entry JOIN execution.fills fill ON fill.fill_id=entry.fill_id WHERE entry.currency IS DISTINCT FROM fill.fee_asset",
                 "position_account_mismatch": "SELECT count(*) FROM execution.positions position JOIN backtesting.backtest_runs run ON run.backtest_run_id=position.backtest_run_id WHERE position.account_ref IS DISTINCT FROM run.account_ref",
+                "position_projection_account_mismatch": "SELECT count(*) FROM backtesting.backtest_position_states state JOIN backtesting.backtest_runs run USING (backtest_run_id) WHERE state.account_ref IS DISTINCT FROM run.account_ref",
                 "account_snapshot_mismatch": "SELECT count(*) FROM execution.account_snapshots snapshot JOIN backtesting.backtest_runs run ON run.backtest_run_id=snapshot.backtest_run_id WHERE snapshot.account_ref IS DISTINCT FROM run.account_ref",
             }
             for name, sql in consistency_queries.items():

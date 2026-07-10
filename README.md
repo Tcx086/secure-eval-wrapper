@@ -321,7 +321,7 @@ The intended principle is simple: **make the infrastructure inspectable without 
 
 Phases 3 and 4 are complete and auditable: public alphas produce continuous point-in-time `AlphaValue` records, and standardized signals apply deterministic ranking, thresholding, combination, conflict, and confidence rules with PostgreSQL lineage.
 
-The next milestone is **Phase 5 - Simulated Execution and Backtesting**. It remains todo. Future work must introduce the shared broker contract, order intents, `SimulatedBroker`, fills, fees, slippage, risk guards, positions, and event-driven backtesting without enabling paper or live trading.
+Phase 5 simulated execution and backtesting is implemented and is undergoing its fourth independent audit repair. Phase 6 monitoring and the simulated FIX API remain entirely todo; paper and live trading are not enabled.
 
 ## Disclaimer
 

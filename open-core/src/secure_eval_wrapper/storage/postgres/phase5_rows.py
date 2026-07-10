@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+from datetime import datetime, timezone
+
 from secure_eval_wrapper.execution.models import PositionState
 
 
@@ -16,6 +19,10 @@ def _identity(identity) -> dict[str, object]:
         "settlement_asset": identity.settlement_asset,
         "series_identity_sha256": identity.series_identity_sha256,
     }
+
+
+def _lineage_sha256(label: str, record_id) -> str:
+    return hashlib.sha256(f"{label}|{record_id}".encode("utf-8")).hexdigest()
 
 
 def order_intent_row(value):
@@ -70,6 +77,33 @@ def order_row(value):
     }
 
 
+def order_lineage_row(value):
+    row = order_row(value)
+    row.update(
+        order_status="submitted",
+        reject_reason=None,
+        triggered_at_utc=None,
+        activation_reason=None,
+        provenance_jsonb={},
+        record_sha256=_lineage_sha256("phase5-order-lineage-v1", value.order_id),
+    )
+    return row
+
+
+def order_state_row(value, *, backtest_run_id, deterministic_ordinal: int):
+    return {
+        "backtest_run_id": backtest_run_id,
+        "order_id": value.order_id,
+        "deterministic_ordinal": deterministic_ordinal,
+        "order_status": value.status.value,
+        "triggered_at_utc": value.triggered_at_utc,
+        "activation_reason": value.activation_reason,
+        "reject_reason": None if value.reject_reason is None else value.reject_reason.value,
+        "state_provenance_jsonb": dict(value.provenance),
+        "final_record_sha256": value.record_sha256,
+    }
+
+
 def fill_row(value):
     return {
         "fill_id": value.fill_id, "order_id": value.order_id,
@@ -98,6 +132,41 @@ def position_row(value: PositionState):
         **_identity(value.series_identity), "accounting_mode": value.accounting_mode.value,
         "mark_price": None, "config_sha256": value.config_sha256,
         "record_sha256": value.record_sha256,
+    }
+
+
+def position_lineage_row(value: PositionState):
+    row = position_row(value)
+    row.update(
+        quantity=0,
+        average_entry_price=None,
+        realized_pnl=0,
+        unrealized_pnl=0,
+        source_fill_ids=[],
+        updated_at_utc=datetime(1970, 1, 1, tzinfo=timezone.utc),
+        mark_price=None,
+        record_sha256=_lineage_sha256("phase5-position-lineage-v1", value.position_id),
+    )
+    return row
+
+
+def position_state_row(value: PositionState, *, backtest_run_id, deterministic_ordinal: int):
+    return {
+        "backtest_run_id": backtest_run_id,
+        "position_id": value.position_id,
+        "account_ref": value.account_ref,
+        "series_identity_sha256": value.series_identity.series_identity_sha256,
+        "deterministic_ordinal": deterministic_ordinal,
+        "accounting_mode": value.accounting_mode.value,
+        "quantity": value.quantity,
+        "average_entry_price": value.average_entry_price,
+        "realized_pnl": value.realized_pnl,
+        "unrealized_pnl": 0,
+        "source_fill_ids": list(value.source_fill_ids),
+        "updated_at_utc": value.updated_at_utc,
+        "mark_price": None,
+        "config_sha256": value.config_sha256,
+        "final_record_sha256": value.record_sha256,
     }
 
 

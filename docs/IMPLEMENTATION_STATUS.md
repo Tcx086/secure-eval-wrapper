@@ -200,43 +200,20 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Complete clean-install, 0007-to-0008 upgrade, schema, migration-hash, full-suite, offline, and security-boundary validation.
 - [x] Re-accept Phase 3 and Phase 4 only after every mandatory audit repair and validation passes.
 
-### Phase 5: simulated execution + backtesting (third independent audit accepted)
-
-- [x] Add installable package metadata, console entry points, cross-platform validation, and least-privilege CI.
-- [x] Define immutable deterministic execution, sizing, risk, order, fill, position, cash, funding, account, and event contracts.
-- [x] Implement market, limit, stop, stop-limit, GTC/IOC, fee, slippage, cancellation, rejection, and expiry semantics in `SimulatedBroker`.
-- [x] Implement exact Spot and linear-perpetual fill-driven accounting, reversals, replay protection, and ledger reconciliation.
-- [x] Implement realized grounded-interval funding with same-timestamp priority and no Spot/predicted funding.
-- [x] Implement the multi-series event-driven engine, missing-candle handling, stale marks, final open positions, and fill-derived metrics.
-- [x] Add migration `0009` and injected-connection PostgreSQL repositories with one complete-bundle transaction.
-- [x] Add the fixture-default socket-free offline backtest CLI and optional double-gated PostgreSQL persistence.
-- [x] Add dedicated Phase 5 order, risk, accounting, funding, metrics, persistence, anti-lookahead, and future-invariance tests.
-- [x] Pass local PostgreSQL 16 clean install, seeded `0008` to `0009` upgrade, catalog/hash checks, real writes/reads, conflicts, and rollback injection.
-- [x] Document exact Phase 5 semantics, persistence, validation, and limitations.
-- [x] Pass independent GitHub Actions validation on the checkpoint branch and `main` implementation SHA.
-- [x] Mark portfolios at the actual bar open before pre-fill risk and fill evaluation, with explicit mark provenance.
-- [x] Enforce one base, fee, Spot quote, perpetual settlement, fill, and fee-ledger currency without FX conversion.
-- [x] Route prohibited Spot short targets through an auditable blocked risk decision without aborting the backtest.
-- [x] Correct Spot unrealized PnL while preserving cash-plus-marked-inventory equity semantics.
-- [x] Add immutable logical identities and different-hash conflict protection for position snapshots and cash-ledger entries.
-- [x] Enforce canonical lowercase hexadecimal SHA-256 values in contracts and PostgreSQL.
-- [x] Derive and enforce deterministic backtest run IDs from stable economic and implementation inputs.
-- [x] Propagate the configured simulation account identity consistently through contracts, hashes, and persistence.
-- [x] Add simulated-order lineage to pre-fill risk decisions.
-- [x] Define fee- and funding-aware net economic round-trip metric semantics.
-- [x] Strengthen the public/private CI boundary scan.
-- [x] Add migration `0010`, dedicated regression coverage, PostgreSQL upgrade validation, and final CI validation.
-- [x] Add migration `0011` with normalized complete-run membership for shared immutable economic records.
-- [x] Make aggregate metric identity and persistence explicitly scoped to the complete deterministic `backtest_run_id`.
-- [x] Add complete-run reads, deterministic ordering, deletion/reference safety, and membership cleanup.
-- [x] Add overlapping short/extended-run coexistence, isolation, reconstruction, idempotency, conflict, and rollback regressions.
-- [x] Pass clean install, seeded `0010` to `0011` upgrade, real PostgreSQL integration, full-suite, packaging, console, compile, boundary, and final CI validation.
-
 ## Todo
 
 ### Future provider enhancements
 
 - [ ] Consider additional public OHLCV/trade/funding/instrument adapters after Phase 2; Bybit and Coinbase are not currently implemented.
+
+### Phase 5: simulated execution + backtesting (fourth independent audit repair in progress)
+
+- [x] Complete the original Phase 5 implementation and first three independent audit repair rounds.
+- [ ] Classify immutable economic/event records separately from complete-run-scoped final projections.
+- [ ] Add migration `0012` with run-scoped final order and position projections without modifying migrations `0001` through `0011`.
+- [ ] Repair complete-bundle persistence, reconstruction, deletion, conflict, idempotency, and rollback semantics.
+- [ ] Add expired-A/filled-B, long-A/flat-B, and long-A/reversed-B real PostgreSQL regressions.
+- [ ] Pass clean install, seeded `0011` to `0012` upgrade, full-suite, packaging, boundary, and final CI validation.
 
 ### Phase 6: monitoring + simulated FIX API
 

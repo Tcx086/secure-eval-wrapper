@@ -66,7 +66,6 @@ def persist_backtest_bundle(repository, result) -> BacktestBundleSummary:
             # Orders precede pre-fill decisions because those decisions carry an order FK.
             for ordinal, value in enumerate(result.orders):
                 repository.record_order(value, backtest_run_id=backtest_run_id, membership_ordinal=ordinal)
-                membership_count += 1
             for ordinal, value in enumerate(result.risk_decisions):
                 repository.record_risk_decision(value, backtest_run_id=backtest_run_id, membership_ordinal=ordinal)
                 membership_count += 1
@@ -75,7 +74,6 @@ def persist_backtest_bundle(repository, result) -> BacktestBundleSummary:
                 membership_count += 1
             for ordinal, value in enumerate(result.positions):
                 repository.upsert_position(value, backtest_run_id=backtest_run_id, membership_ordinal=ordinal)
-                membership_count += 1
             for ordinal, value in enumerate(result.position_snapshots):
                 repository.record_position_snapshot(value, backtest_run_id=backtest_run_id, membership_ordinal=ordinal)
                 membership_count += 1

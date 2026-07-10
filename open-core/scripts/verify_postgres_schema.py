@@ -80,6 +80,8 @@ REQUIRED_TABLES: dict[str, tuple[str, ...]] = {
         "stress_results",
         "backtest_events",
         "backtest_run_memberships",
+        "backtest_order_states",
+        "backtest_position_states",
     ),
     "monitoring": (
         "monitoring_events",
@@ -562,15 +564,22 @@ REQUIRED_COLUMNS: dict[tuple[str, str], tuple[str, ...]] = {
         "deterministic_ordinal",
         "order_intent_id",
         "risk_decision_id",
-        "order_id",
         "fill_id",
-        "position_id",
         "position_snapshot_id",
         "funding_payment_id",
         "cash_ledger_entry_id",
         "account_snapshot_id",
         "backtest_event_id",
         "equity_curve_id",
+    ),
+    ("backtesting", "backtest_order_states"): (
+        "backtest_run_id", "order_id", "deterministic_ordinal", "order_status",
+        "triggered_at_utc", "activation_reason", "reject_reason", "final_record_sha256",
+    ),
+    ("backtesting", "backtest_position_states"): (
+        "backtest_run_id", "position_id", "account_ref", "series_identity_sha256",
+        "deterministic_ordinal", "accounting_mode", "quantity", "average_entry_price",
+        "realized_pnl", "source_fill_ids", "updated_at_utc", "final_record_sha256",
     ),
     ("monitoring", "monitoring_events"): (
         "monitoring_event_id",
@@ -659,15 +668,17 @@ REQUIRED_INDEXES = (
     ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_record"),
     ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_order_intent"),
     ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_risk_decision"),
-    ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_order"),
     ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_fill"),
-    ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_position"),
     ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_position_snapshot"),
     ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_funding_payment"),
     ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_cash_ledger"),
     ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_account_snapshot"),
     ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_backtest_event"),
     ("backtesting", "backtest_run_memberships", "idx_phase5_run_memberships_equity_curve"),
+    ("backtesting", "backtest_order_states", "idx_phase5_order_states_order"),
+    ("backtesting", "backtest_order_states", "idx_phase5_order_states_status"),
+    ("backtesting", "backtest_position_states", "idx_phase5_position_states_position"),
+    ("backtesting", "backtest_position_states", "idx_phase5_position_states_series"),
     ("backtesting", "backtest_runs", "idx_backtest_runs_run_id"),
     ("backtesting", "equity_curves", "idx_equity_curves_run_time"),
     ("monitoring", "monitoring_events", "idx_monitoring_events_run_time"),
@@ -722,6 +733,9 @@ REQUIRED_UNIQUE_CONSTRAINTS = (
     ("backtesting", "equity_curves", ("backtest_run_id", "timestamp_utc")),
     ("backtesting", "stress_results", ("backtest_run_id", "scenario_name", "metric_name")),
     ("backtesting", "backtest_run_memberships", ("backtest_run_id", "record_type", "deterministic_ordinal")),
+    ("backtesting", "backtest_order_states", ("backtest_run_id", "deterministic_ordinal")),
+    ("backtesting", "backtest_position_states", ("backtest_run_id", "account_ref", "series_identity_sha256")),
+    ("backtesting", "backtest_position_states", ("backtest_run_id", "deterministic_ordinal")),
 )
 
 REQUIRED_FOREIGN_KEYS = (
@@ -831,9 +845,7 @@ REQUIRED_FOREIGN_KEYS = (
     ("backtesting", "backtest_run_memberships", ("backtest_run_id",), "backtesting", "backtest_runs", ("backtest_run_id",)),
     ("backtesting", "backtest_run_memberships", ("order_intent_id",), "execution", "order_intents", ("order_intent_id",)),
     ("backtesting", "backtest_run_memberships", ("risk_decision_id",), "execution", "risk_decisions", ("risk_decision_id",)),
-    ("backtesting", "backtest_run_memberships", ("order_id",), "execution", "orders", ("order_id",)),
     ("backtesting", "backtest_run_memberships", ("fill_id",), "execution", "fills", ("fill_id",)),
-    ("backtesting", "backtest_run_memberships", ("position_id",), "execution", "positions", ("position_id",)),
     ("backtesting", "backtest_run_memberships", ("position_snapshot_id",), "execution", "position_snapshots", ("position_snapshot_id",)),
     ("backtesting", "backtest_run_memberships", ("funding_payment_id",), "execution", "funding_payments", ("funding_payment_id",)),
     ("backtesting", "backtest_run_memberships", ("cash_ledger_entry_id",), "execution", "cash_ledger_entries", ("cash_ledger_entry_id",)),
@@ -841,6 +853,10 @@ REQUIRED_FOREIGN_KEYS = (
     ("backtesting", "backtest_run_memberships", ("backtest_event_id",), "backtesting", "backtest_events", ("backtest_event_id",)),
     ("backtesting", "backtest_run_memberships", ("equity_curve_id",), "backtesting", "equity_curves", ("equity_curve_id",)),
 
+    ("backtesting", "backtest_order_states", ("backtest_run_id",), "backtesting", "backtest_runs", ("backtest_run_id",)),
+    ("backtesting", "backtest_order_states", ("order_id",), "execution", "orders", ("order_id",)),
+    ("backtesting", "backtest_position_states", ("backtest_run_id",), "backtesting", "backtest_runs", ("backtest_run_id",)),
+    ("backtesting", "backtest_position_states", ("position_id",), "execution", "positions", ("position_id",)),
     (
         "execution", "cash_ledger_entries", ("fill_id", "currency"),
         "execution", "fills", ("fill_id", "fee_asset"),
@@ -870,6 +886,13 @@ REQUIRED_CHECK_CONSTRAINTS = (
     ("backtesting", "backtest_run_memberships", "phase5_run_memberships_ordinal_check", True),
     ("backtesting", "backtest_run_memberships", "phase5_run_memberships_one_record_check", True),
     ("backtesting", "backtest_run_memberships", "phase5_run_memberships_typed_record_check", True),
+    ("backtesting", "backtest_order_states", "phase5_order_states_ordinal_check", True),
+    ("backtesting", "backtest_order_states", "phase5_order_states_status_check", True),
+    ("backtesting", "backtest_order_states", "phase5_order_states_hash_check", True),
+    ("backtesting", "backtest_position_states", "phase5_position_states_ordinal_check", True),
+    ("backtesting", "backtest_position_states", "phase5_position_states_quantity_check", True),
+    ("backtesting", "backtest_position_states", "phase5_position_states_spot_check", True),
+    ("backtesting", "backtest_position_states", "phase5_position_states_hash_check", True),
     ("alpha", "alpha_registry", "chk_alpha_registry_minimum_warmup", True),
     ("alpha", "alpha_registry", "chk_alpha_registry_implementation_sha256", True),
     ("alpha", "alpha_registry", "chk_alpha_registry_content_sha256", True),
@@ -968,6 +991,13 @@ ALLOWED_DATA_MIGRATIONS = {
     "0011_phase5_run_membership_repairs.sql": (
         r"\bINSERT\s+INTO\s+backtesting\.backtest_run_memberships\s*\(.*?\)\s*SELECT\b.*?;",
     ) * 11,
+    "0012_phase5_run_scoped_projection_repairs.sql": (
+        r"\bINSERT\s+INTO\s+backtesting\.backtest_order_states\s*\(.*?\)\s*SELECT\b.*?;",
+        r"\bINSERT\s+INTO\s+backtesting\.backtest_position_states\s*\(.*?\)\s*SELECT\b.*?;",
+        r"\bUPDATE\s+execution\.orders\s+SET\b.*?;",
+        r"\bUPDATE\s+execution\.positions\s+SET\b.*?;",
+        r"\bDELETE\s+FROM\s+backtesting\.backtest_run_memberships\s+WHERE\b.*?;",
+    ),
 }
 
 
@@ -1098,7 +1128,7 @@ def inspect_migrations(migrations: list[MigrationFile]) -> None:
         stripped_sql = strip_sql_comments(sql)
         allowed_statements = ALLOWED_DATA_MIGRATIONS.get(migration.filename, ())
         data_statements = re.findall(
-            r"\b(?:UPDATE|INSERT\s+INTO)\b.*?;",
+            r"\b(?:UPDATE|INSERT\s+INTO|DELETE\s+FROM)\b.*?;",
             stripped_sql,
             flags=re.IGNORECASE | re.DOTALL,
         )
@@ -1111,7 +1141,7 @@ def inspect_migrations(migrations: list[MigrationFile]) -> None:
         ):
             fail(f"{migration.filename} contains an unapproved data migration statement")
         for pattern in UNSAFE_SQL_PATTERNS:
-            if pattern in {r"\bUPDATE\b", r"\bINSERT\s+INTO\b"} and allowed_statements:
+            if pattern in {r"\bUPDATE\b", r"\bINSERT\s+INTO\b", r"\bDELETE\s+FROM\b"} and allowed_statements:
                 continue
             if re.search(pattern, stripped_sql, flags=re.IGNORECASE):
                 fail(

@@ -88,6 +88,15 @@ not cancel one another.
 - GTC remains active until fill, cancellation, or run-end expiry. IOC evaluates the first eligible
   open and expires when not filled. Phase 5 never partially fills an order.
 
+### Market events versus requested-horizon termination
+
+A fill, market-trigger, exchange-style rejection, or explicit strategy cancellation is an economic or
+execution event. Expiration caused only because the requested backtest horizon ended is different: it
+is a termination fact about that complete run. The engine records `backtest_end` on the run's final
+order projection and emits an `order_expired` audit event included only in that run. A longer run may
+therefore retain the same immutable order lineage and later finish it as filled; the short-run expiry
+is never shared as a market fact.
+
 ## Fees and slippage
 
 The fee interface includes zero fees and fixed maker/taker basis points. The slippage interface
@@ -167,28 +176,34 @@ not fabricated.
 
 ## PostgreSQL and atomic persistence
 
-Migration `0009_phase5_simulated_execution_backtesting.sql` introduced the Phase 5 schema without
-rewriting earlier migrations. Migration `0010_phase5_second_audit_repairs.sql` preserves migrations
-`0001` through `0009`, upgrade-safely backfills the new logical identity, account, currency, hash,
-and risk-lineage columns, and adds the required unique, check, and foreign-key constraints.
-Migration `0011_phase5_run_membership_repairs.sql` preserves migrations `0001` through `0010` and
-separates immutable economic-record identity from complete-run membership.
+Migrations `0009` through `0011` introduced Phase 5 execution persistence, hardened its identities,
+and added complete-run membership. Migration
+`0012_phase5_run_scoped_projection_repairs.sql` preserves migrations `0001` through `0011` and
+corrects the domain split:
 
-`backtesting.backtest_run_memberships` is the authoritative many-to-many mapping. It links each
-complete deterministic `backtest_run_id` to the exact order, risk, fill, position, snapshot, ledger,
-funding, account, event, and equity records in that run, with a deterministic per-type ordinal. One
-immutable row may therefore belong to both a short run and a future-extended run. The legacy child
-`backtest_run_id` columns are only owner hints used for lifecycle management; reads never use them
-to infer membership. Owner deletion rehomes shared records, and unreferenced economic rows are
-collected only after their final membership is removed. Aggregate metrics are deliberately not
-shared: their identity, uniqueness, and foreign key use the complete `backtest_run_id`.
+- Immutable economic/event records use stable cross-horizon identities and many-to-many membership:
+  order intents, risk decisions, fills, cash-ledger entries, funding payments, position snapshots,
+  timestamped account snapshots, execution/backtest events, and historical equity points.
+- Complete-run projections are keyed by the complete deterministic `backtest_run_id`: final order
+  state, final position state, aggregate metrics, and any future end-of-run projection.
+
+`backtesting.backtest_run_memberships` is authoritative only for the immutable category. Stable order
+and position lineage rows support fill, risk, and snapshot foreign keys, while
+`backtesting.backtest_order_states` and `backtesting.backtest_position_states` hold the final hashes
+and horizon-dependent values. The same order may be expired in a short run and filled in an extended
+run. The same position lineage may finish long, flat, or short in different complete runs without
+an overwrite or content conflict.
+
+Legacy child `backtest_run_id` columns are lifecycle owner hints and are never used to reconstruct a
+run. Deleting a run cascades its projections and metrics, removes its immutable memberships, rehomes
+shared lineage when necessary, and garbage-collects economic rows only after their final reference is
+gone.
 
 Repositories accept an injected DB-API PostgreSQL connection, connect nowhere during import, use
-parameterized SQL, return database-selected IDs, order membership reads deterministically, and
-reject same-economic-identity/different-hash conflicts. Every writer receives the complete run ID
-explicitly. One outer transaction persists the run, immutable rows, memberships, and run-scoped
-metrics; any row or membership failure rolls the entire bundle back. PostgreSQL is the only
-authority, with no SQLite or file-database fallback.
+parameterized SQL, return database-selected IDs, order reads deterministically, and reject a
+different final hash for the same complete-run projection. One outer transaction persists the run,
+immutable rows, memberships, run-scoped projections, and metrics; any failure rolls the entire bundle
+back. PostgreSQL is the only authority, with no SQLite or file-database fallback.
 
 ## Offline demo and validation
 

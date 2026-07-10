@@ -4,8 +4,8 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-10T17:56:59Z",
-  "current_phase": "phase_6_monitoring_simulated_fix_api",
+  "updated_at_utc": "2026-07-10T19:18:15Z",
+  "current_phase": "phase_5_simulated_execution_backtesting",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
     "future_functional_prs_must_update_json_status": true,
@@ -235,7 +235,7 @@
     {
       "id": "phase_5_simulated_execution_backtesting",
       "title": "Phase 5: simulated execution + backtesting",
-      "status": "completed",
+      "status": "in_progress",
       "completed": [
         "Define the shared Broker interface and immutable deterministic execution contracts",
         "Implement target-position sizing with conservative quantity-step rounding and explicit no-action audits",
@@ -270,7 +270,13 @@
         "Add overlapping short/extended-run coexistence, isolation, reconstruction, idempotency, conflict, and rollback regressions",
         "Pass clean install, seeded 0010-to-0011 upgrade, real PostgreSQL integration, full-suite, packaging, console, compile, boundary, and final CI validation"
       ],
-      "todo": []
+      "todo": [
+        "Classify immutable economic/event records separately from complete-run-scoped final projections",
+        "Add migration 0012 with run-scoped final order and position projections without modifying migrations 0001 through 0011",
+        "Repair complete-bundle persistence, reconstruction, deletion, conflict, idempotency, and rollback semantics",
+        "Add expired-A/filled-B, long-A/flat-B, and long-A/reversed-B real PostgreSQL regressions",
+        "Pass clean install, seeded 0011-to-0012 upgrade, full-suite, packaging, boundary, and final CI validation"
+      ]
     },
     {
       "id": "phase_6_monitoring_simulated_fix_api",

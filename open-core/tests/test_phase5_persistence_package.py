@@ -225,7 +225,7 @@ class PackageCliCiBoundaryTests(unittest.TestCase):
         from secure_eval_wrapper.validation import boundary_scan
         boundary_scan()
 
-    def test_migrations_0001_through_0010_are_unchanged(self):
+    def test_migrations_0001_through_0011_are_unchanged(self):
         expected = {
             "0001_initial_schema.sql": "598486e6af2eed4559564593adc0b66deff9e21ea91dbda560980c208a2950c5",
             "0002_schema_migrations.sql": "36c91efa851e10fcc6039ebd8715af1c985237af6ff556e6943e10329458f76f",
@@ -237,6 +237,7 @@ class PackageCliCiBoundaryTests(unittest.TestCase):
             "0008_phase3_phase4_audit_repairs.sql": "a59dff645009c117a5146d2bd4102a9ed048126ca77b61566f8d31bf1fcba64b",
             "0009_phase5_simulated_execution_backtesting.sql": "9b49718ee48e45dda42916568f815723f94578eff814ffe0e0b236aa3523c0d5",
             "0010_phase5_second_audit_repairs.sql": "1387ccf65a7a7ac8c2c7b4d93de8443e47963740dcefbf30a0ae248ea5e978a0",
+            "0011_phase5_run_membership_repairs.sql": "0c0a0ed26ec7419e773e69e8c1ab07d4e220377059e0bf2358b519055e6540a8",
         }
         import hashlib
         for name, digest in expected.items():
