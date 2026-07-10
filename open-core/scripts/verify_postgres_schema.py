@@ -1,4 +1,4 @@
-﻿"""Verify the local PostgreSQL schema foundation.
+"""Verify the local PostgreSQL schema foundation.
 
 The script reads connection settings from environment variables, optionally loading a local `.env`
 file first. It performs metadata-only catalog checks and never inserts sample data.
@@ -923,11 +923,9 @@ def strip_sql_comments(sql: str) -> str:
 
 
 def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    """Hash canonical LF bytes so migration identity is checkout-platform invariant."""
+
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def discover_migrations(migrations_dir: Path) -> list[MigrationFile]:

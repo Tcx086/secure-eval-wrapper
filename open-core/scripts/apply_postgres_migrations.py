@@ -71,7 +71,7 @@ def apply(*, database=None, first=None, through=None, seed_legacy=False) -> None
             if through and migration_key > through:
                 continue
             content = path.read_bytes()
-            digest = hashlib.sha256(content).hexdigest()
+            digest = hashlib.sha256(content.replace(b"\r\n", b"\n")).hexdigest()
             with connection.cursor() as cursor:
                 cursor.execute("SELECT filename, sha256 FROM audit.schema_migrations WHERE migration_id = %s", (migration_id,))
                 existing = cursor.fetchone()

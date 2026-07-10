@@ -162,7 +162,24 @@ function Get-MigrationDescription {
 
 function Get-MigrationSha256 {
     param([System.IO.FileInfo]$Migration)
-    (Get-FileHash -LiteralPath $Migration.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    $source = [System.IO.File]::ReadAllBytes($Migration.FullName)
+    $canonical = New-Object System.Collections.Generic.List[byte]
+    for ($index = 0; $index -lt $source.Length; $index++) {
+        if ($source[$index] -eq 13 -and $index + 1 -lt $source.Length -and $source[$index + 1] -eq 10) {
+            $canonical.Add(10)
+            $index++
+        } else {
+            $canonical.Add($source[$index])
+        }
+    }
+    $algorithm = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $digest = $algorithm.ComputeHash($canonical.ToArray())
+    } finally {
+        $algorithm.Dispose()
+    }
+    ([System.BitConverter]::ToString($digest)).Replace('-', '').ToLowerInvariant()
 }
 
 function Initialize-MigrationMetadataTable {
