@@ -6,7 +6,7 @@ A public, auditable, and reproducible framework for building crypto trading syst
 
 The project is developed in explicit, auditable phases. Architecture, PostgreSQL foundations, public market data, public alpha, and standardized signals are complete. Deterministic simulated execution and event-driven backtesting are complete after local PostgreSQL 16 and independent GitHub Actions validation.
 
-> **Current status:** Phase 6 monitoring and strictly simulated FIX is implemented and undergoing first-independent-audit repair validation. Phase 7 remains todo; paper/live/external FIX connectivity is not implemented.
+> **Current status:** Phase 6 monitoring and strictly simulated FIX is completed after first-independent-audit repair and six-job CI validation. Phase 7 remains todo; paper/live/external FIX connectivity is not implemented.
 
 ## Why this project exists
 
@@ -71,7 +71,7 @@ Signals are not fills. Phase 5 backtests create order intents, pass them through
 | 3 | Public Alpha Library | Completed; audit repair accepted |
 | 4 | Standardized Signal Generation | Completed; audit repair accepted |
 | 5 | Simulated Execution and Event-Driven Backtesting | Completed; PostgreSQL and CI validated |
-| 6 | Monitoring and strictly simulated FIX 4.4-compatible profile | In progress; first-audit repairs validated locally |
+| 6 | Monitoring and strictly simulated FIX 4.4-compatible profile | Completed; first-independent-audit repairs accepted |
 | 7 | Paper Trading | Future |
 | 8 | Guarded Live Execution | Future; disabled by default |
 | 9 | Reporting and Public Delivery | Future |
@@ -335,7 +335,7 @@ The intended principle is simple: **make the infrastructure inspectable without 
 
 Phases 3 and 4 are complete and auditable: public alphas produce continuous point-in-time `AlphaValue` records, and standardized signals apply deterministic ranking, thresholding, combination, conflict, and confidence rules with PostgreSQL lineage.
 
-Phase 5 simulated execution and backtesting is complete through its fourth independent audit. Phase 6 monitoring and the strictly simulated FIX API are implemented and reopened only for first-independent-audit repairs. Phase 7 remains todo; paper and live trading are not enabled.
+Phase 5 simulated execution and backtesting is complete through its fourth independent audit. Phase 6 monitoring and the strictly simulated FIX API are completed after first-independent-audit repair and GitHub Actions validation. Phase 7 remains todo; paper and live trading are not enabled.
 
 ## Disclaimer
 

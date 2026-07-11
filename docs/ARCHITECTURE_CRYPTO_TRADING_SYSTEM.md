@@ -323,7 +323,7 @@ order submission, then the next bar open. This prevents same-bar lookahead while
 close-derived signal to use the next actual open at the same timestamp. Missing candles are never
 synthesized, final positions are never silently closed, and symbol-only identity is prohibited.
 
-Paper, live, real FIX, leverage, liquidation, and Phase 6 monitoring runtime remain unimplemented.
+Paper, live, real FIX, leverage, and liquidation remain unimplemented; the strictly simulated Phase 6 monitoring runtime is described below.
 The normative semantics and limitations are in `SIMULATED_EXECUTION_AND_BACKTESTING.md`.
 
 ## Phase 6 implemented monitoring boundary

@@ -149,8 +149,8 @@ run-end expiry. Positions and cash change only from fills and realized funding. 
 priority is completed-bar execution, close mark, funding, signal/submission, then next-bar open, so
 a signal never fills from its own completed bar.
 
-The simulated FIX-style monitoring concepts below remain Phase 6 design only. No FIX session,
-paper adapter, live adapter, authenticated endpoint, or trading WebSocket has been implemented.
+The Phase 6 monitoring and simulated FIX profile below is implemented in-process only. No paper
+adapter, live adapter, authenticated endpoint, external FIX connection, or trading WebSocket is implemented.
 See `SIMULATED_EXECUTION_AND_BACKTESTING.md` for the normative Phase 5 rules.
 
 ## Phase 6 implemented monitoring and simulated FIX

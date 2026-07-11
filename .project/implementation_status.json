@@ -4,7 +4,7 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-11T00:29:44Z",
+  "updated_at_utc": "2026-07-11T00:35:34Z",
   "current_phase": "phase_6_monitoring_simulated_fix_api",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
@@ -280,7 +280,7 @@
     {
       "id": "phase_6_monitoring_simulated_fix_api",
       "title": "Phase 6: monitoring + simulated FIX API",
-      "status": "in_progress",
+      "status": "completed",
       "completed": [
         "Repair Phase 5 complete-run final-position valuation from latest run-owned snapshots",
         "Add migration 0013 valuation backfill and normalized monitoring/simulated FIX schema",
@@ -308,11 +308,10 @@
         "Integrate all eight deterministic fault-schedule behaviors with session events and monitoring evidence",
         "Review and test the exact supported FIX 4.4-compatible profile against FIX Trading Community FIXimate",
         "Add migration 0014 without modifying migrations 0001 through 0013",
-        "Pass 386-test real-PostgreSQL-enabled full suite, Phase 5 and Phase 6 focused/PostgreSQL suites, clean and seeded upgrades, packaging, catalog, and boundary validation"
+        "Pass 386-test real-PostgreSQL-enabled full suite, Phase 5 and Phase 6 focused/PostgreSQL suites, clean and seeded upgrades, packaging, catalog, and boundary validation",
+        "Pass all six jobs in GitHub Actions repair run 29132859728 on 1d2de870f6653c3ae74d775856d55ef6a744dd92"
       ],
-      "todo": [
-        "Push the repair commit to main, pass all six required GitHub Actions jobs on the resulting main SHA, then mark Phase 6 completed without beginning Phase 7"
-      ]
+      "todo": []
     },
     {
       "id": "phase_7_paper_trading",
