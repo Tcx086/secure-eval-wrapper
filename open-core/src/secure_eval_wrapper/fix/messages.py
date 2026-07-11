@@ -24,10 +24,10 @@ def new_order_single(seq,sender,target,at,*,cl_ord_id,symbol,side,quantity,order
  if price is not None: fields[44]=_d(price)
  if stop_price is not None: fields[99]=_d(stop_price)
  return message(FixMessageType.NEW_ORDER_SINGLE,seq,sender,target,at,fields)
-def order_cancel_request(seq,sender,target,at,*,cl_ord_id,orig_cl_ord_id,symbol,side): return message(FixMessageType.ORDER_CANCEL_REQUEST,seq,sender,target,at,{11:cl_ord_id,41:orig_cl_ord_id,55:symbol,54:FixSide(side).value,60:_time(at)})
+def order_cancel_request(seq,sender,target,at,*,cl_ord_id,orig_cl_ord_id,symbol,side,quantity=Decimal("1")): return message(FixMessageType.ORDER_CANCEL_REQUEST,seq,sender,target,at,{11:cl_ord_id,41:orig_cl_ord_id,55:symbol,54:FixSide(side).value,60:_time(at),38:_d(quantity)})
 def execution_report(seq,sender,target,at,*,order_id,exec_id,cl_ord_id,symbol,side,ord_status,exec_type,leaves_qty,cum_qty,avg_px,text=None):
  fields={37:order_id,17:exec_id,11:cl_ord_id,55:symbol,54:FixSide(side).value,39:FixOrdStatus(ord_status).value,150:FixExecType(exec_type).value,151:_d(leaves_qty),14:_d(cum_qty),6:_d(avg_px)}
  if text is not None: fields[58]=text
  return message(FixMessageType.EXECUTION_REPORT,seq,sender,target,at,fields)
-def order_cancel_reject(seq,sender,target,at,*,order_id,cl_ord_id,orig_cl_ord_id,ord_status,text): return message(FixMessageType.ORDER_CANCEL_REJECT,seq,sender,target,at,{37:order_id,11:cl_ord_id,41:orig_cl_ord_id,39:FixOrdStatus(ord_status).value,58:text})
-def business_message_reject(seq,sender,target,at,*,ref_seq_num,text,reason="3"): return message(FixMessageType.BUSINESS_MESSAGE_REJECT,seq,sender,target,at,{45:str(ref_seq_num),58:text,380:reason})
+def order_cancel_reject(seq,sender,target,at,*,order_id,cl_ord_id,orig_cl_ord_id,ord_status,text,response_to="1",reason="1"): return message(FixMessageType.ORDER_CANCEL_REJECT,seq,sender,target,at,{37:order_id,11:cl_ord_id,41:orig_cl_ord_id,39:FixOrdStatus(ord_status).value,434:response_to,102:reason,58:text})
+def business_message_reject(seq,sender,target,at,*,ref_seq_num,text,ref_msg_type=FixMessageType.NEW_ORDER_SINGLE,reason="3"): return message(FixMessageType.BUSINESS_MESSAGE_REJECT,seq,sender,target,at,{45:str(ref_seq_num),372:FixMessageType(ref_msg_type).value,58:text,380:reason})

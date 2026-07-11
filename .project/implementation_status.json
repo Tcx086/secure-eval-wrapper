@@ -4,8 +4,8 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-10T20:54:05Z",
-  "current_phase": "phase_7_paper_trading",
+  "updated_at_utc": "2026-07-11T00:29:44Z",
+  "current_phase": "phase_6_monitoring_simulated_fix_api",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
     "future_functional_prs_must_update_json_status": true,
@@ -280,7 +280,7 @@
     {
       "id": "phase_6_monitoring_simulated_fix_api",
       "title": "Phase 6: monitoring + simulated FIX API",
-      "status": "completed",
+      "status": "in_progress",
       "completed": [
         "Repair Phase 5 complete-run final-position valuation from latest run-owned snapshots",
         "Add migration 0013 valuation backfill and normalized monitoring/simulated FIX schema",
@@ -297,9 +297,22 @@
         "Add Phase 6 tests, documentation, schema verification, CI, and boundary coverage",
         "Pass local suite, package, console, compile, JSON, YAML, migration-hash, and boundary validation",
         "Pass GitHub Actions run 29122849335 including PostgreSQL 16 clean install, seeded upgrade, persistence, and rollback validation",
-        "Confirm Phase 7 remains todo with no paper/live/external FIX runtime"
+        "Confirm Phase 7 remains todo with no paper/live/external FIX runtime",
+        "Implement real double-gated PostgreSQL persistence for both Phase 6 CLIs and source wrappers",
+        "Make the simulated FIX gateway position/accounting aware with fill-only mutation and replay protection",
+        "Correct heartbeat, TestRequest grace, and disconnect-timeout semantics with independent boundaries",
+        "Repair PossDup replay identity and introduce typed receive dispositions",
+        "Persist typed rejected raw FIX observations without advancing session/economic state",
+        "Protect the FIX session projection with chained immutable authoritative events and optimistic version/hash checks",
+        "Preserve active and acknowledged incidents when evidence is unknown",
+        "Integrate all eight deterministic fault-schedule behaviors with session events and monitoring evidence",
+        "Review and test the exact supported FIX 4.4-compatible profile against FIX Trading Community FIXimate",
+        "Add migration 0014 without modifying migrations 0001 through 0013",
+        "Pass 386-test real-PostgreSQL-enabled full suite, Phase 5 and Phase 6 focused/PostgreSQL suites, clean and seeded upgrades, packaging, catalog, and boundary validation"
       ],
-      "todo": []
+      "todo": [
+        "Push the repair commit to main, pass all six required GitHub Actions jobs on the resulting main SHA, then mark Phase 6 completed without beginning Phase 7"
+      ]
     },
     {
       "id": "phase_7_paper_trading",

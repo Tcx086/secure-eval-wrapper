@@ -314,6 +314,7 @@ class MonitoringIncident:
     occurrence_count: int
     configuration_sha256: str
     stable_input_sha256: str
+    check_name: str = ""
     resolved_at_utc: datetime | None = None
     incident_id: UUID | None = None
 
@@ -321,6 +322,8 @@ class MonitoringIncident:
         object.__setattr__(self, "category", MonitoringCategory(self.category)); object.__setattr__(self, "component", _text(self.component, "component"))
         object.__setattr__(self, "state", IncidentState(self.state)); object.__setattr__(self, "severity", Severity(self.severity))
         _text(self.reason_code, "reason_code"); _text(self.monitored_identity, "monitored_identity")
+        if not self.check_name: object.__setattr__(self, "check_name", self.reason_code)
+        else: _text(self.check_name, "check_name")
         require_utc_datetime(self.episode_started_at_utc, field_name="incident episode_started_at_utc"); require_utc_datetime(self.latest_at_utc, field_name="incident latest_at_utc")
         if self.latest_at_utc < self.episode_started_at_utc or self.occurrence_count <= 0:
             raise ValueError("incident episode timestamps/count are invalid")
@@ -336,7 +339,7 @@ class MonitoringIncident:
 
     @property
     def record_sha256(self) -> str:
-        return sha256_payload({name: getattr(self, name) for name in ("incident_id","category","component","reason_code","monitored_identity","state","severity","episode_started_at_utc","latest_at_utc","resolved_at_utc","occurrence_count","configuration_sha256","stable_input_sha256")})
+        return sha256_payload({name: getattr(self, name) for name in ("incident_id","category","component","reason_code","check_name","monitored_identity","state","severity","episode_started_at_utc","latest_at_utc","resolved_at_utc","occurrence_count","configuration_sha256","stable_input_sha256")})
 
 
 @dataclass(frozen=True)

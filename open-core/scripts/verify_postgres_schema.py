@@ -623,10 +623,10 @@ REQUIRED_COLUMNS: dict[tuple[str, str], tuple[str, ...]] = {
     ),    ("monitoring", "monitoring_runs"): ("monitoring_run_id", "as_of_utc", "monitored_identity", "configuration_sha256", "stable_input_sha256", "overall_status", "record_sha256"),
     ("monitoring", "health_check_results"): ("health_check_result_id", "monitoring_run_id", "evaluation_at_utc", "category", "component", "check_name", "health_status", "severity", "reason_code", "record_sha256"),
     ("monitoring", "health_snapshots"): ("health_snapshot_id", "monitoring_run_id", "evaluation_at_utc", "component", "health_status", "causing_check_ids", "record_sha256"),
-    ("monitoring", "incidents"): ("incident_id", "category", "component", "reason_code", "monitored_identity", "state", "occurrence_count", "record_sha256"),
+    ("monitoring", "incidents"): ("incident_id", "category", "component", "check_name", "reason_code", "monitored_identity", "state", "occurrence_count", "record_sha256"),
     ("monitoring", "incident_occurrences"): ("incident_occurrence_id", "incident_id", "monitoring_run_id", "health_check_result_id", "occurred_at_utc", "record_sha256"),
-    ("monitoring", "fix_sessions"): ("fix_session_id", "session_key", "state", "next_inbound_seq_num", "next_outbound_seq_num", "simulated", "record_sha256"),
-    ("monitoring", "fix_messages"): ("fix_message_id", "fix_session_id", "direction", "msg_type", "msg_seq_num", "body_length", "checksum", "business_identity_sha256", "raw_message_sha256", "record_sha256"),
+    ("monitoring", "fix_sessions"): ("fix_session_id", "session_key", "state", "next_inbound_seq_num", "next_outbound_seq_num", "test_request_grace_seconds", "disconnect_timeout_seconds", "pending_test_deadline_at_utc", "state_version", "previous_state_hash", "last_transition_event_id", "simulated", "record_sha256"),
+    ("monitoring", "fix_messages"): ("fix_message_id", "fix_session_id", "direction", "msg_type", "msg_seq_num", "validation_status", "rejection_code", "rejection_reason", "body_length", "checksum", "business_identity_sha256", "replay_identity_sha256", "raw_message_sha256", "record_sha256"),
     ("monitoring", "fix_order_links"): ("fix_order_link_id", "fix_session_id", "cl_ord_id", "order_intent_id", "order_id", "fill_id", "record_sha256"),
     ("monitoring", "latency_samples"): ("latency_sample_id", "fix_session_id", "stage", "duration_microseconds", "breached", "record_sha256"),
     ("monitoring", "connection_faults"): ("connection_fault_id", "fix_session_id", "fault_type", "scheduled_at_utc", "activated_at_utc", "record_sha256"),
@@ -718,6 +718,11 @@ REQUIRED_INDEXES = (
     ("monitoring", "connection_faults", "idx_phase6_faults_session_time"),
     ("monitoring", "monitoring_events", "idx_phase6_monitoring_events_run_component_time"),
     ("monitoring", "fix_session_events", "idx_phase6_fix_session_events_session_time"),
+    ("monitoring", "incidents", "idx_phase6_incidents_check_evidence"),
+    ("monitoring", "fix_messages", "uq_phase6_fix_valid_sequence"),
+    ("monitoring", "fix_messages", "uq_phase6_fix_rejected_observation"),
+    ("monitoring", "fix_messages", "idx_phase6_fix_replay_identity"),
+    ("monitoring", "fix_sessions", "idx_phase6_fix_session_projection_version"),
     ("audit", "artifacts", "idx_artifacts_run_id"),
     ("audit", "artifacts", "idx_artifacts_classification"),
 )
@@ -774,7 +779,6 @@ REQUIRED_UNIQUE_CONSTRAINTS = (
     ("monitoring", "health_check_results", ("monitoring_run_id", "category", "component", "check_name")),
     ("monitoring", "health_snapshots", ("monitoring_run_id", "component")),
     ("monitoring", "fix_sessions", ("session_key",)),
-    ("monitoring", "fix_messages", ("fix_session_id", "direction", "msg_seq_num")),
 )
 
 REQUIRED_FOREIGN_KEYS = (
@@ -904,6 +908,7 @@ REQUIRED_FOREIGN_KEYS = (
     ("monitoring", "fix_order_links", ("fix_session_id",), "monitoring", "fix_sessions", ("fix_session_id",)),
     ("monitoring", "latency_samples", ("fix_session_id",), "monitoring", "fix_sessions", ("fix_session_id",)),
     ("monitoring", "connection_faults", ("fix_session_id",), "monitoring", "fix_sessions", ("fix_session_id",)),
+    ("monitoring", "fix_sessions", ("fix_session_id", "last_transition_event_id"), "monitoring", "fix_session_events", ("fix_session_id", "fix_session_event_id")),
     (
         "execution", "cash_ledger_entries", ("fill_id", "currency"),
         "execution", "fills", ("fill_id", "fee_asset"),
@@ -946,6 +951,14 @@ REQUIRED_CHECK_CONSTRAINTS = (
     ("monitoring", "fix_session_events", "phase6_fix_session_event_state_check", True),
     ("monitoring", "fix_session_events", "phase6_fix_session_event_new_state_check", True),
     ("monitoring", "fix_session_events", "phase6_fix_session_event_hash_check", True),
+    ("monitoring", "fix_session_events", "phase6_fix_event_previous_hash_check", True),
+    ("monitoring", "fix_session_events", "phase6_fix_event_transition_sequence_nonnegative", True),
+    ("monitoring", "fix_sessions", "phase6_fix_session_state_version_check", True),
+    ("monitoring", "fix_sessions", "phase6_fix_session_previous_hash_check", True),
+    ("monitoring", "fix_sessions", "phase6_fix_session_timeout_config_check", True),
+    ("monitoring", "fix_sessions", "phase6_fix_session_pending_deadline_check", True),
+    ("monitoring", "fix_messages", "phase6_fix_message_validation_shape_check", True),
+    ("monitoring", "fix_messages", "phase6_fix_replay_hash_check", True),
     ("alpha", "alpha_registry", "chk_alpha_registry_minimum_warmup", True),
     ("alpha", "alpha_registry", "chk_alpha_registry_implementation_sha256", True),
     ("alpha", "alpha_registry", "chk_alpha_registry_content_sha256", True),
@@ -1054,6 +1067,14 @@ ALLOWED_DATA_MIGRATIONS = {
         r"\bUPDATE\s+backtesting\.backtest_position_states\s+AS\s+state\s+SET\b.*?;",
         r"\bUPDATE\s+backtesting\.backtest_position_states\s+SET\b.*?;",
         r"\bUPDATE\s+backtesting\.backtest_position_states\s+SET\b.*?;",
+    ),    "0014_phase6_first_audit_repairs.sql": (
+        r"\bUPDATE\s+monitoring\.incidents\s+SET\b.*?;",
+        r"\bUPDATE\s+monitoring\.fix_messages\s+SET\b.*?;",
+        r"\bUPDATE\s+monitoring\.fix_session_events\s+AS\s+event\s+SET\b.*?;",
+        r"\bUPDATE\s+monitoring\.fix_session_events\s+SET\b.*?;",
+        r"\bUPDATE\s+monitoring\.fix_sessions\s+SET\b.*?;",
+        r"\bUPDATE\s+monitoring\.fix_sessions\s+SET\b.*?;",
+        r"\bUPDATE\s+ON\s+monitoring\.fix_sessions\s+FOR\s+EACH\s+ROW\s+EXECUTE\s+FUNCTION\s+monitoring\.validate_fix_session_projection\(\)\s*;",
     ),
 }
 

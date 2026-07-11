@@ -236,7 +236,7 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add expired-A/filled-B, long-A/flat-B, and long-A/reversed-B real PostgreSQL regressions.
 - [x] Pass clean install, seeded `0011` to `0012` upgrade, full-suite, packaging, boundary, and final CI validation.
 
-### Phase 6: monitoring + simulated FIX API
+### Phase 6 checkpoint: monitoring + simulated FIX API (reopened for first-audit repairs)
 
 - [x] Repair Phase 5 complete-run final-position valuation from the latest run-owned immutable snapshot.
 - [x] Add migration `0013` with valuation backfill and normalized monitoring/FIX persistence without modifying migrations `0001` through `0012`.
@@ -254,9 +254,25 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Pass 364-test local suite, dedicated Phase 5 audits, 60-test Phase 6 suite, 31-test FIX suite, editable install, console, compile, JSON, YAML, migration-hash, and boundary validation.
 - [x] Pass GitHub Actions run `29122849335` on `ea81231c6c6a2fd1be6305022c187ba989a66ecd`, including PostgreSQL 16 clean `0001` to `0013`, seeded `0012` to `0013`, catalog, Phase 5/6 persistence, and rollback gates.
 - [x] Confirm Phase 7 remains entirely todo and no paper/live broker, external FIX connection, authenticated exchange access, leverage, margin, collateral, liquidation, or machine learning was added.
+#### Phase 6 first independent audit repairs completed locally
+
+- [x] Implement real double-gated PostgreSQL persistence for both Phase 6 CLIs and source wrappers.
+- [x] Make the simulated FIX gateway position/accounting aware with fill-only mutation and replay protection.
+- [x] Correct heartbeat, TestRequest grace, and disconnect-timeout semantics with independent boundaries.
+- [x] Repair PossDup replay identity and introduce typed receive dispositions.
+- [x] Persist typed rejected raw FIX observations without advancing session/economic state.
+- [x] Protect the FIX session projection with chained immutable authoritative events and optimistic version/hash checks.
+- [x] Preserve active and acknowledged incidents when evidence is unknown.
+- [x] Integrate all eight deterministic fault-schedule behaviors with session events and monitoring evidence.
+- [x] Review and test the exact supported FIX 4.4-compatible profile against FIX Trading Community FIXimate.
+- [x] Add migration `0014` without modifying migrations `0001` through `0013`.
+- [x] Pass 386-test real-PostgreSQL-enabled full suite, Phase 5 audit/PostgreSQL suites, Phase 6 focused suites, 12 real Phase 6 PostgreSQL tests, clean `0001` to `0014`, seeded `0013` to `0014`, editable install, entry points, compile, JSON, YAML, catalog, migration-hash, socket-boundary, and public/private boundary validation.
 
 ## Todo
 
+### Phase 6: first independent audit repairs
+
+- [ ] Push the repair commit to `main`, pass all six required GitHub Actions jobs on the resulting main SHA, then mark Phase 6 completed without beginning Phase 7.
 ### Future provider enhancements
 
 - [ ] Consider additional public OHLCV/trade/funding/instrument adapters after Phase 2; Bybit and Coinbase are not currently implemented.

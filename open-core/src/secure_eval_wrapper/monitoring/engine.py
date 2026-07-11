@@ -88,22 +88,64 @@ class MonitoringEngine:
         return bundle
 
     @staticmethod
-    def _evaluate_incidents(configuration,reference,checks,previous,as_of_utc,monitoring_run_id):
-        if not configuration.incident_management_enabled: return (),()
-        active={(item.category,item.component,item.reason_code,item.monitored_identity):item for item in previous if item.state in (IncidentState.OPEN,IncidentState.ACKNOWLEDGED)}
-        failing={}
+    def _evaluate_incidents(configuration, reference, checks, previous, as_of_utc, monitoring_run_id):
+        if not configuration.incident_management_enabled:
+            return (), ()
+        active = {
+            (item.category, item.component, item.reason_code, item.monitored_identity): item
+            for item in previous
+            if item.state in (IncidentState.OPEN, IncidentState.ACKNOWLEDGED)
+        }
+        evidence_by_check = {(result.category, result.component, result.check_name): result for result in checks}
+        failing = {}
         for result in checks:
-            if result.health_status in (HealthStatus.DEGRADED,HealthStatus.UNHEALTHY):
-                failing[(result.category,result.component,result.reason_code,reference.monitored_identity)]=result
-        incidents=[]; occurrences=[]
-        for key,result in sorted(failing.items(),key=lambda item:tuple(str(v) for v in item[0])):
-            prior=active.get(key)
+            if result.health_status in (HealthStatus.DEGRADED, HealthStatus.UNHEALTHY):
+                failing[(result.category, result.component, result.reason_code, reference.monitored_identity)] = result
+        incidents = []
+        occurrences = []
+        for key, result in sorted(failing.items(), key=lambda item: tuple(str(v) for v in item[0])):
+            prior = active.get(key)
             if prior is None:
-                incident=MonitoringIncident(category=result.category,component=result.component,reason_code=result.reason_code,monitored_identity=reference.monitored_identity,state=IncidentState.OPEN,severity=result.severity,episode_started_at_utc=as_of_utc,latest_at_utc=as_of_utc,occurrence_count=1,configuration_sha256=configuration.config_sha256,stable_input_sha256=result.stable_input_sha256)
+                incident = MonitoringIncident(
+                    category=result.category, component=result.component, check_name=result.check_name,
+                    reason_code=result.reason_code, monitored_identity=reference.monitored_identity,
+                    state=IncidentState.OPEN, severity=result.severity,
+                    episode_started_at_utc=as_of_utc, latest_at_utc=as_of_utc, occurrence_count=1,
+                    configuration_sha256=configuration.config_sha256, stable_input_sha256=result.stable_input_sha256,
+                )
             else:
-                incident=MonitoringIncident(category=prior.category,component=prior.component,reason_code=prior.reason_code,monitored_identity=prior.monitored_identity,state=prior.state,severity=max((prior.severity,result.severity),key=lambda s:(Severity.INFO,Severity.WARNING,Severity.ERROR,Severity.CRITICAL).index(s)),episode_started_at_utc=prior.episode_started_at_utc,latest_at_utc=as_of_utc,occurrence_count=prior.occurrence_count+1,configuration_sha256=configuration.config_sha256,stable_input_sha256=result.stable_input_sha256,incident_id=prior.incident_id)
-            incidents.append(incident); occurrences.append(IncidentOccurrence(incident_id=incident.incident_id,monitoring_run_id=monitoring_run_id,health_check_result_id=result.health_check_result_id,occurred_at_utc=as_of_utc))
-        for key,prior in active.items():
-            if key not in failing:
-                incidents.append(MonitoringIncident(category=prior.category,component=prior.component,reason_code=prior.reason_code,monitored_identity=prior.monitored_identity,state=IncidentState.RESOLVED,severity=prior.severity,episode_started_at_utc=prior.episode_started_at_utc,latest_at_utc=as_of_utc,resolved_at_utc=as_of_utc,occurrence_count=prior.occurrence_count,configuration_sha256=configuration.config_sha256,stable_input_sha256=prior.stable_input_sha256,incident_id=prior.incident_id))
-        return tuple(incidents),tuple(occurrences)
+                incident = MonitoringIncident(
+                    category=prior.category, component=prior.component, check_name=prior.check_name,
+                    reason_code=prior.reason_code, monitored_identity=prior.monitored_identity,
+                    state=prior.state,
+                    severity=max((prior.severity, result.severity), key=lambda s: (Severity.INFO, Severity.WARNING, Severity.ERROR, Severity.CRITICAL).index(s)),
+                    episode_started_at_utc=prior.episode_started_at_utc, latest_at_utc=as_of_utc,
+                    occurrence_count=prior.occurrence_count + 1,
+                    configuration_sha256=configuration.config_sha256, stable_input_sha256=result.stable_input_sha256,
+                    incident_id=prior.incident_id,
+                )
+            incidents.append(incident)
+            occurrences.append(IncidentOccurrence(
+                incident_id=incident.incident_id, monitoring_run_id=monitoring_run_id,
+                health_check_result_id=result.health_check_result_id, occurred_at_utc=as_of_utc,
+            ))
+        for key, prior in active.items():
+            if key in failing:
+                continue
+            evidence = evidence_by_check.get((prior.category, prior.component, prior.check_name))
+            if evidence is None or evidence.health_status is HealthStatus.UNKNOWN:
+                incidents.append(prior)
+                continue
+            if evidence.health_status is HealthStatus.HEALTHY:
+                incidents.append(MonitoringIncident(
+                    category=prior.category, component=prior.component, check_name=prior.check_name,
+                    reason_code=prior.reason_code, monitored_identity=prior.monitored_identity,
+                    state=IncidentState.RESOLVED, severity=prior.severity,
+                    episode_started_at_utc=prior.episode_started_at_utc, latest_at_utc=as_of_utc,
+                    resolved_at_utc=as_of_utc, occurrence_count=prior.occurrence_count,
+                    configuration_sha256=configuration.config_sha256, stable_input_sha256=evidence.stable_input_sha256,
+                    incident_id=prior.incident_id,
+                ))
+            else:
+                incidents.append(prior)
+        return tuple(incidents), tuple(occurrences)

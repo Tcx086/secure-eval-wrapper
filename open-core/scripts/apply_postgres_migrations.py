@@ -57,7 +57,7 @@ def bootstrap(connection) -> None:
         """)
 
 
-def apply(*, database=None, first=None, through=None, seed_legacy=False, seed_phase5=False) -> None:
+def apply(*, database=None, first=None, through=None, seed_legacy=False, seed_phase5=False, seed_phase6=False) -> None:
     psycopg = _driver()
     connection = psycopg.connect(**_config(database), autocommit=True)
     try:
@@ -83,6 +83,44 @@ def apply(*, database=None, first=None, through=None, seed_legacy=False, seed_ph
                 description = path.stem.split("_", 1)[1].replace("_", " ")
                 cursor.execute("INSERT INTO audit.schema_migrations (migration_id, filename, sha256, description) VALUES (%s, %s, %s, %s)", (migration_id, path.name, digest, description))
             print(f"OK: applied {path.name} sha256={digest}")
+        if seed_phase6:
+            timestamp = "2026-01-01T00:00:00+00:00"
+            session_id = "00000000-0000-5000-8000-000000001401"
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO monitoring.fix_sessions (
+                        fix_session_id,session_key,sender_comp_id,target_comp_id,state,
+                        next_inbound_seq_num,next_outbound_seq_num,heartbeat_interval_seconds,
+                        last_inbound_at_utc,last_outbound_at_utc,pending_test_request_id,
+                        configuration_sha256,record_sha256,updated_at_utc
+                    ) VALUES (%s,'SEEDED_CLIENT->SEEDED_SERVER','SEEDED_CLIENT','SEEDED_SERVER',
+                        'test_request_pending',2,2,30,%s,%s,'SEEDED-TEST',%s,%s,%s)
+                """, (session_id,timestamp,timestamp,"a"*64,"b"*64,timestamp))
+                cursor.execute("""
+                    INSERT INTO monitoring.fix_messages (
+                        fix_message_id,fix_session_id,direction,msg_type,msg_seq_num,sending_time_utc,
+                        processing_time_utc,validation_status,rejection_reason,body_length,checksum,
+                        business_identity_sha256,raw_message_sha256,parsed_fields_jsonb,record_sha256
+                    ) VALUES ('00000000-0000-5000-8000-000000001402',%s,'inbound','A',1,%s,%s,
+                        'valid',NULL,1,1,%s,%s,'{}'::jsonb,%s)
+                """, (session_id,timestamp,timestamp,"c"*64,"d"*64,"e"*64))
+                cursor.execute("""
+                    INSERT INTO monitoring.fix_session_events (
+                        fix_session_event_id,session_id,event_type,sequence_number,event_time_utc,
+                        payload_jsonb,simulated,fix_session_id,prior_state,new_state,reason_code,record_sha256
+                    ) VALUES ('00000000-0000-5000-8000-000000001403','SEEDED_CLIENT->SEEDED_SERVER',
+                        'test_request_sent',1,%s,'{}'::jsonb,TRUE,%s,'established','test_request_pending',
+                        'seeded_pending_test_request',%s)
+                """, (timestamp,session_id,"f"*64))
+                cursor.execute("""
+                    INSERT INTO monitoring.incidents (
+                        incident_id,category,component,reason_code,monitored_identity,state,severity,
+                        episode_started_at_utc,latest_at_utc,occurrence_count,configuration_sha256,
+                        stable_input_sha256,record_sha256
+                    ) VALUES ('00000000-0000-5000-8000-000000001404','fix_session','seeded',
+                        'seeded_failure','seeded-upgrade','open','error',%s,%s,1,%s,%s,%s)
+                """, (timestamp,timestamp,"1"*64,"2"*64,"3"*64))
+            print("OK: seeded public-safe Phase 6 rows at migration 0013")
         if seed_legacy:
             with connection.cursor() as cursor:
                 cursor.execute("INSERT INTO backtesting.backtest_runs (backtest_run_id, run_id, status, metadata_jsonb) VALUES (%s, %s, 'completed', '{}'::jsonb) ON CONFLICT DO NOTHING", ("00000000-0000-0000-0000-000000000851", "00000000-0000-0000-0000-000000000852"))
@@ -194,12 +232,13 @@ def main(argv=None):
     parser.add_argument("--through")
     parser.add_argument("--seed-legacy", action="store_true")
     parser.add_argument("--seed-phase5", action="store_true")
+    parser.add_argument("--seed-phase6", action="store_true")
     args = parser.parse_args(argv)
     if args.create_database:
         if not args.database:
             parser.error("--create-database requires --database")
         create_database(args.database)
-    apply(database=args.database, first=args.from_migration, through=args.through, seed_legacy=args.seed_legacy, seed_phase5=args.seed_phase5)
+    apply(database=args.database, first=args.from_migration, through=args.through, seed_legacy=args.seed_legacy, seed_phase5=args.seed_phase5, seed_phase6=args.seed_phase6)
     return 0
 
 

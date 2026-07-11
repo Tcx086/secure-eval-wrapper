@@ -2,67 +2,85 @@
 
 ## Scope and safety boundary
 
-Phase 6 adds deterministic point-in-time health evaluation and a strictly simulated, in-process FIX 4.4-compatible subset. It observes public data, signal lineage, Phase 5 simulated execution, recorded risk state, explicit system evidence, and simulated session state. Monitoring writes audit records only; it never mutates signals, orders, fills, positions, cash, equity, PnL, or backtest results.
+Phase 6 provides deterministic point-in-time health evaluation and a strictly simulated, in-process FIX 4.4-compatible profile. It observes public data, signal lineage, Phase 5 simulated execution, recorded risk state, explicit system evidence, and simulated session state. Monitoring writes audit records only. It never mutates research or execution state.
 
-The FIX subsystem is educational and research-oriented. It is not FIX-certified, opens no TCP listener or outbound connection, has no exchange or real counterparty, performs no authenticated access, and cannot route paper or live orders. Acknowledgement never changes a portfolio. Only an explicit synthetic market event passed to the existing `SimulatedBroker` may create a fill, and only existing accounting callbacks may apply that fill.
+The FIX subsystem is educational and research-oriented. It is not FIX-certified, opens no TCP listener or outbound connection, has no exchange or real counterparty, performs no authenticated access, and cannot route paper or live orders. Acknowledgement never changes a portfolio. Only an explicit synthetic market event passed to `SimulatedBroker` may create a fill, and only a fill may update gateway/accounting position state.
 
-## Point-in-time identities
+## Point-in-time monitoring and incidents
 
-`MonitoringEngine` requires an explicit UTC `as_of_utc`, immutable inputs, configuration, monitored-run reference, implementation SHA-256, and source-tree identity. IDs are UUIDv5 values over stable canonical inputs. Record hashes include persisted logical/economic content. Operational metadata such as database creation time or host details is retained separately and excluded from stable identities. No check uses `datetime.now()`.
+`MonitoringEngine` requires an explicit UTC `as_of_utc`; no check uses the wall clock. IDs are UUIDv5 values over stable canonical inputs. Record hashes include persisted logical/economic content, while public-safe operational metadata is excluded from stable identity.
 
-## Health categories and aggregation
-
-Categories are `data`, `signal`, `execution`, `risk`, `system`, and `fix_session`. Check outcomes are `passed`, `warning`, `failed`, and `unknown`; aggregate health is `healthy`, `degraded`, `unhealthy`, or `unknown`. Severity is `info`, `warning`, `error`, or `critical`.
-
-Aggregation does not average enums. Precedence is:
+Categories are `data`, `signal`, `execution`, `risk`, `system`, and `fix_session`. Check outcomes are `passed`, `warning`, `failed`, and `unknown`; aggregate health is `healthy`, `degraded`, `unhealthy`, or `unknown`. Aggregation precedence is:
 
 ```text
 critical unhealthy > unhealthy > degraded > unknown > healthy
 ```
 
-Every snapshot retains the exact child check IDs that caused its state. Disabled checks are omitted. Missing or unchecked evidence is `unknown`, never an assumed pass. Threshold comparisons are explicit; rate, utilization, and drawdown warning/critical boundaries use inclusive `>=` semantics. Health is operational evidence and does not predict profit.
+A continuous degraded/unhealthy episode is keyed to its exact health check and reason. Repeated failures update the episode. An explicit healthy result for that check resolves it. Missing or `unknown` evidence preserves an open or acknowledged incident and does not create a false recovery. A later failure after resolution creates a new deterministic episode ID.
 
-## Category checks
+## Supported FIX 4.4-compatible profile
 
-Data health evaluates economic-availability freshness, future timestamps, fixed-duration gaps, duplicate identities, economic conflicts, finality, OHLC relationships, negative volume, identity support, and perpetual funding realization/interval/settlement evidence. It never synthesizes a bar or guesses calendar durations.
+The implementation was reviewed against FIX Trading Community’s [FIXimate FIX 4.4 message repository](https://fiximate.fixtrading.org/legacy/en/FIX.4.4/messages_sorted_by_name.html), including the authoritative pages for [NewOrderSingle](https://fiximate.fixtrading.org/legacy/en/FIX.4.4/body_495268.html), [OrderCancelRequest](https://fiximate.fixtrading.org/legacy/en/FIX.4.4/body_495470.html), [ExecutionReport](https://fiximate.fixtrading.org/legacy/en/FIX.4.4/body_5756.html), [OrderCancelReject](https://fiximate.fixtrading.org/legacy/en/FIX.4.4/body_494857.html), [BusinessMessageReject](https://fiximate.fixtrading.org/legacy/en/FIX.4.4/body_5251106.html), and [Logon](https://fiximate.fixtrading.org/legacy/en/FIX.4.4/body_494965.html). This is a deliberately narrow profile, not a claim of complete FIX 4.4 support or certification.
 
-Signal health evaluates freshness, alpha/signal run status, skipped/warmup output, component lineage, duplicate identity, market-series lineage, point-in-time availability, overlap handling, hash conflicts, and flat concentration. Signal confidence is not treated as profit probability, and PnL is not a signal-health input.
+All messages require the exact standard header/trailer profile: `8`, `9`, `35`, `34`, `49`, `56`, `52`, optional replay tags `43`/`122`, and `10`, with `8=FIX.4.4`. The profile is ASCII with SOH delimiters. `BodyLength` counts bytes from tag 35 through the SOH before tag 10. `CheckSum` is the modulo-256 sum of every byte through that preceding SOH and is encoded as three digits.
 
-Execution health reads Phase 5 state for order age/status rates, fill latency evidence, risk lineage, blocked-order fills, fill/order/intent lineage, replay, stale/unmarked positions, accounting reconciliation, memberships/projections, complete reconstruction, equity curves, and fill-derived PnL. It cannot modify a backtest.
+| Message | MsgType | Profile-required body fields | Conditional/profile notes |
+|---|---:|---|---|
+| Heartbeat | `0` | none | `112` is emitted when answering TestRequest. |
+| TestRequest | `1` | `112` | Starts an explicit pending response deadline. |
+| ResendRequest | `2` | `7`, `16` | Generated for an inbound sequence gap. |
+| Reject | `3` | `45` | `372` and `58` are emitted when available. |
+| SequenceReset | `4` | `36` | `123` is supported; new sequence must move forward. |
+| Logout | `5` | none | `58` is supported. |
+| Logon | `A` | `98`, `108` | The profile supports no credentials or authentication fields. |
+| ExecutionReport | `8` | `37`, `17`, `11`, `55`, `54`, `39`, `150`, `151`, `14`, `6` | Electronic simulated-order profile only. |
+| OrderCancelReject | `9` | `37`, `11`, `41`, `39`, `434` | `102` and `58` are emitted. `434=1` identifies OrderCancelRequest. |
+| NewOrderSingle | `D` | `11`, `55`, `54`, `60`, `38`, `40`, `59` | `44` required for limit; `99` required for stop; both for stop-limit. The profile requires TIF and supports only GTC/IOC. |
+| OrderCancelRequest | `F` | `11`, `41`, `55`, `54`, `60`, `38` | Quantity must identify the remaining order quantity in this profile. |
+| BusinessMessageReject | `j` | `372`, `380` | `45` and `58` are emitted; supported reason values are FIX 4.4 values `0` through `7`. |
 
-Risk health evaluates recorded block rates/reasons, limit and exposure utilization, drawdown/equity, Spot-short and cash attempts, invalid prices, decision lineage, and accepted-limit violations. It introduces no leverage, margin, collateral, or liquidation model.
+Supported values are Side `1/2`, OrdType `1/2/3/4`, TimeInForce `1/3`, OrdStatus `0/2/4/8/C`, and ExecType `0/F/4/8/C`. An internal stop/stop-limit activation that remains working is represented with `ExecType=0` and `OrdStatus=0`; the implementation does not invent a non-FIX-4.4 “triggered” enum. Trade fills use `ExecType=F`, current filled status uses `OrdStatus=2`, cancel uses `4`, rejection uses `8`, and expiry uses `C`.
 
-System health accepts explicit results for migration/catalog state, schema objects, PostgreSQL availability/transactions, package/source identity, status synchronization, live-disabled state, PostgreSQL-only authority, path boundaries, configuration, engine exceptions, and simulated FIX health. An item that was not checked remains `unknown`.
+The codec enforces deterministic tag ordering, required/singleton tags, integer/finite Decimal/UTC values, enum values, BeginString, BodyLength, CheckSum, and non-empty text. Exact byte-hash and round-trip tests cover every supported message type.
 
-## Incidents
+## Replay and rejection semantics
 
-A continuous degraded/unhealthy episode is keyed by category, component, reason code, and monitored identity. The first result opens one deterministic episode; repeated results update its count and latest timestamp without opening duplicates; recovery resolves it; a later failure begins a new episode using its new start boundary. `acknowledged` is represented in domain/storage. Phase 6 sends no email, SMS, PagerDuty, Slack, Telegram, or other external notification.
+A canonical replay identity includes MsgType, CompIDs, and every supported body/administrative field, including order, execution, quantity, price, stop, TIF, status, and reject fields. Only legitimate replay transport differences are excluded: `PossDupFlag`, current `SendingTime`, and `OrigSendingTime`.
 
-## Implemented FIX subset
+Session receive returns a typed disposition: `accepted_new`, `accepted_replay`, `rejected`, or `sequence_gap`. An identical low-sequence PossDup is accepted as replay but never passed to economic gateway handling. Changed quantity, price, symbol, side, or any other supported field is rejected as a replay conflict. PostgreSQL uses the same replay identity, making identical replay persistence idempotent while rejecting changed content at the same session/direction/sequence.
 
-Header/trailer tags are `8`, `9`, `35`, `34`, `49`, `56`, `52`, optional `43`/`122`, and `10`, with `8=FIX.4.4`. Messages are ASCII with SOH delimiters. `BodyLength` counts bytes beginning at tag 35 through the SOH immediately before tag 10. `CheckSum` is the modulo-256 sum of every byte through that preceding SOH and is encoded as three digits.
+Malformed bytes produce a typed rejected observation even when they cannot decode into `FixMessage`. The observation preserves session, direction, processing time, raw SHA-256, safely parsed header fields and sequence when available, typed rejection code/reason, deterministic observation ID, and record hash. Malformed BodyLength, CheckSum, MsgType, singleton tags, field values, and wrong CompIDs do not advance inbound sequence or economic processing. They persist in `monitoring.fix_messages` with `validation_status='rejected'`.
 
-Administrative messages: Logon `A`, Heartbeat `0`, TestRequest `1`, ResendRequest `2`, Reject `3`, SequenceReset `4`, and Logout `5`.
+## Session timing semantics
 
-Application messages: NewOrderSingle `D`, OrderCancelRequest `F`, ExecutionReport `8`, OrderCancelReject `9`, and BusinessMessageReject `j`. Supported order types are market, limit, stop, and stop-limit; time in force is GTC or IOC. Implemented fields include `11`, `41`, `37`, `17`, `55`, `54`, `60`, `38`, `40`, `44`, `99`, `59`, `39`, `150`, `151`, `14`, `6`, and `58`.
+All time is injected; no session method reads a wall clock.
 
-The codec enforces deterministic ordering, required/singleton tags, integer/finite Decimal/UTC values, enum values, BeginString, BodyLength, CheckSum, and non-empty required text. Unknown optional tags are rejected unless public-safe extension preservation is explicitly enabled. A failed message never advances session or economic processing.
+- Peer silence is measured only from the most recent inbound activity.
+- At `heartbeat_interval_seconds`, the session emits TestRequest and records both send time and `pending_test_deadline_at_utc = sent + test_request_grace_seconds`.
+- At the grace boundary, the pending request is marked expired and an immutable `test_request_grace_expired` event is emitted. A late matching Heartbeat cannot falsely restore the session.
+- The connection remains in `test_request_pending` until `sent + disconnect_timeout_seconds`; at that independent boundary it disconnects.
+- `disconnect_timeout_seconds` must be at least the grace period.
+- When peer silence has not triggered TestRequest, outbound heartbeat scheduling uses the most recent outbound activity.
 
-## Session, sequence, heartbeat, and faults
+Thus heartbeat interval, response grace, and disconnect timeout each materially control a distinct boundary.
 
-States are `disconnected`, `logon_pending`, `established`, `test_request_pending`, `logout_pending`, `recovering`, and `terminated`. Lower inbound sequence is rejected unless a matching valid `PossDup` replay is recognized. A higher sequence enters recovery and emits ResendRequest. SequenceReset cannot decrease expected sequence. Each outbound message increments exactly once.
+## Position/accounting lifecycle
 
-All time comes from explicit timestamps. Peer silence at the heartbeat threshold emits TestRequest; a matching Heartbeat restores the session; the configured timeout causes a recorded simulated disconnect. Reconnect requires a new Logon.
+Every NewOrderSingle reads the current fill-derived quantity through the gateway’s deterministic position provider (or its internal fill-derived state). Spot sells up to owned inventory are accepted; a sell beyond inventory is blocked. Linear perpetual increase, reduce, flat, and reversal use the actual current quantity. Acknowledgements never change state. Fills are applied once by fill ID, then ExecutionReport reflects the resulting lifecycle. Optional callbacks allow the same fills to update a Phase 5 `Portfolio` or another deterministic accounting provider.
 
-The latency model records fixed decode, validation, risk, acknowledgement, broker, fill-report, and encode durations and thresholds. These are simulated processing durations, not network measurements. The preconfigured fault schedule supports drops around logon/acknowledgement/active orders, heartbeat loss, duplicate/gapped inbound messages, delayed reports, and reconnect delay. Fault activation is deterministic, public-safe, and recorded.
+## Deterministic fault orchestration
+
+`FaultOrchestrator` consumes `FaultSchedule` in-process. It implements drop before Logon processing, drop after acknowledgement, drop with an active order, heartbeat response loss, duplicate inbound delivery, inbound sequence gap, delayed outbound report, and reconnect delay. Every activation produces an activated `ConnectionFault`, an immutable session event, monitoring evidence, and a deterministic outcome. There is no randomness or networking.
 
 ## PostgreSQL persistence
 
-Migration `0013_phase6_monitoring_simulated_fix.sql` adds normalized monitoring runs, check results, health snapshots, incidents/occurrences, simulated FIX sessions/messages/order links, latency samples, and connection faults. It also repairs Phase 5 final-position projections by backfilling the latest snapshot belonging to the same complete run and position lineage, including mark, unrealized PnL, valuation time/source/staleness/status, source snapshot, and final hash.
+Migration `0013` remains unchanged. Migration `0014_phase6_first_audit_repairs.sql` adds rejected-observation support, canonical replay hashes, incident check identity, timeout state, immutable event-chain ordinals/hashes, and an optimistic current-session projection.
 
-Repositories use an injected DB-API PostgreSQL connection, parameterized SQL, deterministic ordering, half-open reads, database-selected IDs, idempotent same-hash retries, explicit different-hash conflicts, and no import-time I/O. One monitoring bundle transaction covers the run and every child. Simulated FIX message acceptance and resulting session/sequence state are persisted together. PostgreSQL is the only authority; there is no SQLite or file fallback.
+`monitoring.fix_session_events` is the immutable authority. `monitoring.fix_sessions` is a projection protected by `state_version`, `previous_state_hash`, non-regressing sequences, legal transition checks, and stale-writer failure. SequenceReset forward recovery remains supported. Session messages, rejected observations, events, order links, latency, faults, and the projection share one transaction; rollback leaves no orphan records.
 
-## Offline demos
+PostgreSQL is the only authority. There is no SQLite or file fallback.
+
+## Double-gated offline CLIs
 
 After `python -m pip install -e ./open-core`:
 
@@ -71,13 +89,13 @@ secure-eval-monitor
 secure-eval-fix-sim
 ```
 
-Source wrappers are `python open-core/scripts/run_public_monitoring.py` and `python open-core/scripts/run_simulated_fix.py`. Defaults are synthetic, compact, database-free, and socket-free. Persistence requires both `--persist` and `ENABLE_POSTGRES_PERSISTENCE=true`; no fallback database is selected.
+Source wrappers are `python open-core/scripts/run_public_monitoring.py` and `python open-core/scripts/run_simulated_fix.py`. Defaults are synthetic, compact, database-free, socket-free, and do not import a PostgreSQL driver. Persistence requires both `--persist` and `ENABLE_POSTGRES_PERSISTENCE=true`, plus explicit `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and optional `POSTGRES_SSLMODE`. The driver is imported lazily, the connection is closed, and `persistence_status="postgresql"` is printed only after commit succeeds.
 
 ## Limitations
 
 - Not FIX-certified and not a complete FIX engine.
-- No external TCP session, exchange connectivity, or real counterparty.
-- No paper/live routing, authenticated endpoint, credentials, or real account monitoring.
+- No external TCP session, exchange connectivity, real counterparty, credentials, or account monitoring.
+- No paper/live routing, leverage, margin, collateral, or liquidation model.
 - No production latency measurement or alert-delivery integration.
 - No partial-fill/liquidity/order-book model beyond Phase 5.
 - Operational thresholds are policies, not statistical guarantees.

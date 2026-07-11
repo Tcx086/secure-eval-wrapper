@@ -1,4 +1,4 @@
-﻿# Open Core (Public)
+# Open Core (Public)
 
 ## What this is
 Runtime core for a production-style evaluation system.
@@ -118,4 +118,4 @@ or live runtime. See `../docs/SIMULATED_EXECUTION_AND_BACKTESTING.md`.
 
 ## Monitoring and strictly simulated FIX
 
-`secure-eval-monitor` evaluates synthetic data, signal, execution, risk, system, and simulated-session evidence at an explicit UTC point in time. `secure-eval-fix-sim` demonstrates the in-process FIX 4.4-compatible subset, deterministic heartbeat/sequence/fault behavior, acknowledgements, explicit-market-event fills, and cancel/reject flow. Both commands are offline by default. PostgreSQL persistence requires `--persist` plus `ENABLE_POSTGRES_PERSISTENCE=true`; no SQLite fallback exists. See `../docs/MONITORING_AND_SIMULATED_FIX.md`.
+`secure-eval-monitor` evaluates synthetic data, signal, execution, risk, system, and simulated-session evidence at an explicit UTC point in time. `secure-eval-fix-sim` demonstrates the in-process FIX 4.4-compatible profile, fill-derived Spot buy/close accounting, deterministic heartbeat/grace/disconnect semantics, replay handling, rejected observations, fault orchestration, and cancel/reject flow. Both commands are socket-free and driver-free by default. PostgreSQL persistence lazily connects only when `--persist` and `ENABLE_POSTGRES_PERSISTENCE=true` are both present, closes the connection, and reports `persistence_status="postgresql"` only after commit. No SQLite fallback exists. See `../docs/MONITORING_AND_SIMULATED_FIX.md`.

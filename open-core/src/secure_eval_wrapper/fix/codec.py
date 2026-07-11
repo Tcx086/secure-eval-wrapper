@@ -11,11 +11,11 @@ class FixValidationError(ValueError): pass
 
 _REQUIRED={
  FixMessageType.LOGON:{98,108}, FixMessageType.HEARTBEAT:set(), FixMessageType.TEST_REQUEST:{112}, FixMessageType.RESEND_REQUEST:{7,16}, FixMessageType.SEQUENCE_RESET:{36}, FixMessageType.LOGOUT:set(), FixMessageType.REJECT:{45},
- FixMessageType.NEW_ORDER_SINGLE:{11,55,54,60,38,40,59}, FixMessageType.ORDER_CANCEL_REQUEST:{11,41,55,54,60}, FixMessageType.EXECUTION_REPORT:{37,17,11,55,54,39,150,151,14,6}, FixMessageType.ORDER_CANCEL_REJECT:{37,11,41,39,58}, FixMessageType.BUSINESS_MESSAGE_REJECT:{45,58},
+ FixMessageType.NEW_ORDER_SINGLE:{11,55,54,60,38,40,59}, FixMessageType.ORDER_CANCEL_REQUEST:{11,41,55,54,60,38}, FixMessageType.EXECUTION_REPORT:{37,17,11,55,54,39,150,151,14,6}, FixMessageType.ORDER_CANCEL_REJECT:{37,11,41,39,434}, FixMessageType.BUSINESS_MESSAGE_REJECT:{372,380},
 }
-_ORDER={98:10,108:20,141:30,112:40,7:50,16:60,36:70,123:80,45:90,372:100,373:110,380:120,11:200,41:210,37:220,17:230,55:240,54:250,60:260,38:270,40:280,44:290,99:300,59:310,39:320,150:330,151:340,14:350,6:360,58:370}
+_ORDER={98:10,108:20,141:30,112:40,7:50,16:60,36:70,123:80,45:90,371:95,372:100,373:110,380:120,102:130,434:140,11:200,41:210,37:220,17:230,55:240,54:250,60:260,38:270,40:280,44:290,99:300,59:310,39:320,150:330,151:340,14:350,6:360,58:370}
 _HEADER={8,9,35,34,49,56,52,43,122,10}; _KNOWN=_HEADER|set(_ORDER)
-_DECIMAL_TAGS={38,44,99,151,14,6}; _INTEGER_TAGS={34,7,16,36,45,98,108}; _TIME_TAGS={52,60,122}
+_DECIMAL_TAGS={38,44,99,151,14,6}; _INTEGER_TAGS={34,7,16,36,45,98,108,102,373,380,434}; _TIME_TAGS={52,60,122}
 
 def format_utc(value:datetime)->str:
  if value.tzinfo is None or value.utcoffset() is None: raise FixValidationError("FIX timestamp must be timezone-aware UTC")
@@ -57,6 +57,8 @@ def _validate_fields(msg_type,fields):
  if 150 in fields:
   try: FixExecType(fields[150])
   except ValueError as exc: raise FixValidationError("invalid ExecType") from exc
+ if 434 in fields and fields[434] != "1": raise FixValidationError("unsupported CxlRejResponseTo")
+ if 380 in fields and fields[380] not in {"0","1","2","3","4","5","6","7"}: raise FixValidationError("unsupported BusinessRejectReason")
 
 class FixCodec:
  def __init__(self,*,preserve_unknown_tags:bool=False): self.preserve_unknown_tags=preserve_unknown_tags

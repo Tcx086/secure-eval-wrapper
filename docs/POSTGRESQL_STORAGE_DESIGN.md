@@ -1,4 +1,4 @@
-﻿# PostgreSQL Storage Design
+# PostgreSQL Storage Design
 
 ## Positioning
 PostgreSQL is the authoritative storage layer for the target crypto trading framework. SQLite must
@@ -323,3 +323,9 @@ remains the only authority and persistence is disabled by default in the offline
 ## Phase 6 monitoring and simulated FIX storage
 
 Migration `0013_phase6_monitoring_simulated_fix.sql` adds normalized monitoring runs, check results, health snapshots, incident episodes/occurrences, simulated FIX sessions/messages/order links, fixed latency samples, and deterministic connection faults. It strengthens the original monitoring event skeleton and backfills Phase 5 final-position projections from the latest snapshot belonging to the same complete run and position lineage. PostgreSQL remains the only authority. Monitoring and FIX repositories accept injected DB-API connections, use parameterized SQL, reject deterministic identity/content conflicts, provide half-open ordered reads, and persist complete monitoring or session-transition bundles atomically.
+
+### Phase 6 first-audit persistence repairs
+
+Migration `0014_phase6_first_audit_repairs.sql` leaves `0001` through `0013` immutable and extends the Phase 6 model. Valid and rejected raw FIX observations share `monitoring.fix_messages`; rejected rows retain raw SHA-256, safe header fields, typed rejection code/reason, and deterministic identity. Canonical replay hashes support identical PossDup idempotency and changed-content conflict detection.
+
+`monitoring.fix_session_events` remains the immutable authority. Its deterministic transition ordinal and previous-event hash form an append-only chain. `monitoring.fix_sessions` is a current-state projection guarded by expected `state_version` and prior record hash, non-decreasing inbound/outbound sequences, legal state transitions, and a deferred link to the last transition event. Messages, events, faults, links, and projection changes commit or roll back together. Clean `0001 -> 0014` and seeded `0013 -> 0014` upgrades are tested on PostgreSQL 16.

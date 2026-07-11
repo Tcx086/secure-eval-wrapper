@@ -6,7 +6,7 @@ from secure_eval_wrapper.monitoring.models import HealthStatus, MonitoringCatego
 
 @dataclass(frozen=True)
 class SystemHealthInput:
-    expected_migration_version: str = "0013"
+    expected_migration_version: str = "0014"
     observed_migration_version: str | None = None
     migration_hashes_match: bool | None = None
     expected_schema_objects_present: bool | None = None

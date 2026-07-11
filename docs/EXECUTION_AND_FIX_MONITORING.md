@@ -1,4 +1,4 @@
-﻿# Execution and FIX-Style Monitoring
+# Execution and FIX-Style Monitoring
 
 ## Purpose
 The execution layer defines one shared contract for backtests, paper trading, and future guarded
@@ -155,4 +155,8 @@ See `SIMULATED_EXECUTION_AND_BACKTESTING.md` for the normative Phase 5 rules.
 
 ## Phase 6 implemented monitoring and simulated FIX
 
-The monitoring concepts are now implemented as deterministic point-in-time checks with explicit `unknown` handling and PostgreSQL atomic bundles. The simulated FIX layer implements an ASCII-SOH FIX 4.4-compatible subset, exact BodyLength/CheckSum validation, sequence recovery, heartbeat/TestRequest timeout, fixed simulated latency, recorded fault schedules, NewOrderSingle, ExecutionReport, and cancel/reject flows. It is in-process only and can call only the existing `SimulatedBroker`; it has no external TCP, exchange, paper, or live route. Normative semantics are in `MONITORING_AND_SIMULATED_FIX.md`.
+The monitoring concepts are implemented as deterministic point-in-time checks with explicit `unknown` handling and PostgreSQL atomic bundles. Unknown evidence preserves open/acknowledged incidents; only explicit healthy evidence resolves them.
+
+The audited simulated FIX profile now uses fill-derived positions, typed receive dispositions, canonical all-supported-field replay identity, rejected raw-message observations, independent heartbeat/grace/disconnect boundaries, deterministic in-process fault orchestration, and version/hash-protected PostgreSQL session projections backed by immutable session events. Spot inventory and perpetual reduce/flat/reverse behavior come only from fills; acknowledgements never mutate positions and duplicate fills cannot apply twice.
+
+It remains in-process only and can call only `SimulatedBroker`; it has no external TCP, exchange, paper, or live route. Normative semantics and the FIX 4.4 compatibility table are in `MONITORING_AND_SIMULATED_FIX.md`.

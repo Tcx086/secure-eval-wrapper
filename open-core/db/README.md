@@ -1,4 +1,4 @@
-﻿# PostgreSQL Database Assets
+# PostgreSQL Database Assets
 
 This directory contains PostgreSQL-only database definitions for the public crypto trading
 framework rebuild. It does not contain private data, seeds, account snapshots, trade logs, or
@@ -102,3 +102,7 @@ published.
 ## Migration 0013
 
 `0013_phase6_monitoring_simulated_fix.sql` repairs complete-run final-position valuation and adds the normalized deterministic monitoring and strictly simulated FIX persistence model. It supports clean installation and a seeded `0012 -> 0013` upgrade without modifying migrations `0001` through `0012`.
+
+## Migration 0014
+
+`0014_phase6_first_audit_repairs.sql` preserves migrations `0001` through `0013` byte-for-byte. It adds rejected raw FIX observations, canonical replay identity, incident check identity, explicit grace/disconnect state, chained immutable session-event ordinals, and an optimistic current-session projection with version/hash, non-regressing sequence, legal-transition, and stale-writer protection. Validation covers clean `0001 -> 0014` and public-safe seeded `0013 -> 0014` upgrades.
