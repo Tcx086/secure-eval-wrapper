@@ -128,12 +128,17 @@ class PostgresPaperRepository(_PostgresRepositoryBase):
             if fail_at=="difference":raise RuntimeError("injected reconciliation difference failure")
             if kill_switch is not None:self.record_kill_switch(kill_switch)
             if fail_at=="kill_switch":raise RuntimeError("injected kill switch failure")
-    def record_recovery(self,value):
-        with self.transaction():self._strict("execution.paper_recovery_records","recovery_id",value.recovery_id,("paper_run_id","submission_id","started_at_utc","completed_at_utc","status","action","explanation","parent_ids"),(value.paper_run_id,value.submission_id,value.started_at_utc,value.completed_at_utc,value.status.value,value.action,value.explanation,list(value.parent_ids)),value.record_sha256)
-    def persist_kill_event(self,value,event):
+    def record_recovery(self,value,fail_at=None):
+        with self.transaction():
+            self._strict("execution.paper_recovery_records","recovery_id",value.recovery_id,("paper_run_id","submission_id","started_at_utc","completed_at_utc","status","action","explanation","parent_ids"),(value.paper_run_id,value.submission_id,value.started_at_utc,value.completed_at_utc,value.status.value,value.action,value.explanation,list(value.parent_ids)),value.record_sha256)
+            if fail_at=="recovery":raise RuntimeError("injected recovery record failure")
+    def persist_kill_event(self,value,event,fail_at=None):
         from .models import deterministic_paper_uuid
         with self.transaction():
-            prior=self.get_kill_switch(value.paper_run_id); self.record_kill_switch(value); event_id=deterministic_paper_uuid("kill-event",{"kill":value.kill_switch_id,"state":value.state,"at":value.updated_at_utc,"event":event}); self._strict("execution.paper_kill_switch_events","kill_switch_event_id",event_id,("kill_switch_id","paper_run_id","prior_state","next_state","reason","occurred_at_utc","details_jsonb"),(value.kill_switch_id,value.paper_run_id,None if prior is None else prior["state"],value.state.value,None if value.reason is None else value.reason.value,value.updated_at_utc,_json_param(event)),sha256_payload(event))
+            prior=self.get_kill_switch(value.paper_run_id); self.record_kill_switch(value)
+            if fail_at=="kill_switch":raise RuntimeError("injected kill-switch projection failure")
+            event_id=deterministic_paper_uuid("kill-event",{"kill":value.kill_switch_id,"state":value.state,"at":value.updated_at_utc,"event":event}); self._strict("execution.paper_kill_switch_events","kill_switch_event_id",event_id,("kill_switch_id","paper_run_id","prior_state","next_state","reason","occurred_at_utc","details_jsonb"),(value.kill_switch_id,value.paper_run_id,None if prior is None else prior["state"],value.state.value,None if value.reason is None else value.reason.value,value.updated_at_utc,_json_param(event)),sha256_payload(event))
+            if fail_at=="kill_event":raise RuntimeError("injected kill-switch event failure")
     def get_active_run(self,paper_run_id):return self._fetchone("SELECT * FROM execution.paper_runs WHERE paper_run_id=%s AND state IN ('approved','running','paused','killed')",(paper_run_id,))
     def get_manifest(self,paper_run_id):return self._fetchone("SELECT * FROM execution.paper_run_manifests WHERE paper_run_id=%s",(paper_run_id,))
     def get_kill_switch(self,paper_run_id):return self._fetchone("SELECT * FROM execution.paper_kill_switches WHERE paper_run_id=%s",(paper_run_id,))

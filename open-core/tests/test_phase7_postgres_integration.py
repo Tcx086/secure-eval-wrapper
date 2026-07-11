@@ -6,10 +6,10 @@ from secure_eval_wrapper.data_collection.hashing import sha256_payload
 from secure_eval_wrapper.paper.approval import ApprovalController
 from secure_eval_wrapper.paper.configuration import internal_demo_configuration
 from secure_eval_wrapper.paper.demo import run_internal_demo
-from secure_eval_wrapper.paper.enums import CredentialSourceType,KillSwitchState,PaperProvider,PaperRunState
+from secure_eval_wrapper.paper.enums import CredentialSourceType,KillSwitchReason,KillSwitchState,PaperProvider,PaperRunState,RecoveryStatus
 from secure_eval_wrapper.paper.kill_switch import PaperKillSwitchController
 from secure_eval_wrapper.paper.manifests import create_manifest
-from secure_eval_wrapper.paper.models import CredentialReference,PaperKillSwitch,PaperRun,deterministic_paper_uuid
+from secure_eval_wrapper.paper.models import CredentialReference,PaperKillSwitch,PaperRecoveryRecord,PaperRun,deterministic_paper_uuid
 from secure_eval_wrapper.paper.persistence import PostgresPaperRepository
 from secure_eval_wrapper.paper.preflight import PaperPreflightEngine,PaperPreflightEvidence
 from secure_eval_wrapper.paper.venues.internal import InternalPaperVenue
@@ -60,6 +60,21 @@ class Phase7PostgresTests(unittest.TestCase):
                 self.setUp(); repo=Failing(self.connection); repo.fail=fail
                 with self.assertRaises(RuntimeError):run_internal_demo(persist_repository=repo)
                 counts=self.counts(); self.assertEqual(counts["paper_fills"],0); self.assertEqual(counts["paper_fee_entries"],0); self.assertEqual(counts["paper_reconciliations"],0)
+    def test_recovery_and_kill_event_rollback(self):
+        result=run_internal_demo(persist_repository=self.repo); run=__import__('uuid').UUID(result["paper_run_id"])
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT submission_id FROM execution.paper_order_submissions WHERE paper_run_id=%s ORDER BY submitted_at_utc LIMIT 1",(run,)); submission=cursor.fetchone()[0]
+            cursor.execute("SELECT count(*) FROM execution.paper_recovery_records WHERE paper_run_id=%s",(run,)); recovery_before=cursor.fetchone()[0]
+            cursor.execute("SELECT count(*) FROM execution.paper_kill_switch_events WHERE paper_run_id=%s",(run,)); kill_events_before=cursor.fetchone()[0]
+        recovery=PaperRecoveryRecord(run,submission,T0+timedelta(seconds=200),T0+timedelta(seconds=201),RecoveryStatus.FAILED,"rollback-test","injected rollback evidence",(submission,))
+        with self.assertRaises(RuntimeError):self.repo.record_recovery(recovery,fail_at="recovery")
+        for fail in ("kill_switch","kill_event"):
+            value=PaperKillSwitch(run,KillSwitchState.RESET_PENDING,KillSwitchReason.MANUAL,T0+timedelta(seconds=202),T0+timedelta(seconds=202),sha256_payload("rollback-kill"))
+            with self.subTest(fail=fail),self.assertRaises(RuntimeError):self.repo.persist_kill_event(value,{"test":fail},fail_at=fail)
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT count(*) FROM execution.paper_recovery_records WHERE paper_run_id=%s",(run,)); self.assertEqual(cursor.fetchone()[0],recovery_before)
+            cursor.execute("SELECT count(*) FROM execution.paper_kill_switch_events WHERE paper_run_id=%s",(run,)); self.assertEqual(cursor.fetchone()[0],kill_events_before)
+            cursor.execute("SELECT state FROM execution.paper_kill_switches WHERE paper_run_id=%s",(run,)); self.assertEqual(cursor.fetchone()[0],"killed")
     def test_kill_restart_recovery_and_complete_reconstruction(self):
         result=run_internal_demo(persist_repository=self.repo); run=__import__('uuid').UUID(result["paper_run_id"]); kill=self.repo.get_kill_switch(run); self.assertEqual(kill["state"],"killed"); self.assertEqual(self.repo.get_active_run(run)["state"],"killed"); self.assertIsNotNone(self.repo.get_manifest(run)); self.assertEqual(len(self.repo.list_unresolved_submissions(run)),0)
     def test_half_open_lifecycle_and_no_orphans(self):
