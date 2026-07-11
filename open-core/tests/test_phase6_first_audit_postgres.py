@@ -91,6 +91,19 @@ class Phase6FirstAuditPostgresTests(unittest.TestCase):
             self.assertGreater(cursor.fetchone()[0], 10)
             cursor.execute("SELECT count(*) FROM monitoring.fix_session_events e JOIN monitoring.fix_sessions s USING(fix_session_id) WHERE s.session_key='PUBLIC_CLIENT->SIMULATED_VENUE'")
             self.assertGreater(cursor.fetchone()[0], 10)
+            demo_run = "00000000-0000-5000-8000-000000000001"
+            cursor.execute("SELECT count(*) FROM execution.order_intents WHERE run_id=%s AND execution_mode='simulated_fix'", (demo_run,))
+            self.assertGreater(cursor.fetchone()[0], 0)
+            cursor.execute("SELECT count(*) FROM execution.risk_decisions WHERE run_id=%s", (demo_run,))
+            self.assertGreater(cursor.fetchone()[0], 0)
+            cursor.execute("SELECT count(*) FROM execution.orders WHERE run_id=%s", (demo_run,))
+            self.assertGreater(cursor.fetchone()[0], 0)
+            cursor.execute("SELECT count(*) FROM execution.fills WHERE run_id=%s", (demo_run,))
+            self.assertGreater(cursor.fetchone()[0], 0)
+            cursor.execute("SELECT count(*) FROM monitoring.fix_order_links l JOIN monitoring.fix_sessions s USING(fix_session_id) WHERE s.session_key='PUBLIC_CLIENT->SIMULATED_VENUE'")
+            self.assertGreater(cursor.fetchone()[0], 0)
+            cursor.execute("SELECT count(*) FROM monitoring.fix_messages m JOIN monitoring.fix_sessions s USING(fix_session_id) WHERE s.session_key='PUBLIC_CLIENT->SIMULATED_VENUE' AND m.direction='outbound' AND m.msg_type='8'")
+            self.assertGreater(cursor.fetchone()[0], 0)
 
     def test_unknown_incident_evidence_persists_open_then_healthy_resolves(self):
         engine = MonitoringEngine()

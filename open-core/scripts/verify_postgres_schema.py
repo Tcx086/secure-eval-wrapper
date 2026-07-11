@@ -95,6 +95,7 @@ REQUIRED_TABLES: dict[str, tuple[str, ...]] = {
         "latency_samples",
         "fix_sessions",
         "fix_messages",
+        "fix_rejection_occurrences",
         "fix_order_links",
         "connection_faults",
     ),
@@ -612,7 +613,16 @@ REQUIRED_COLUMNS: dict[tuple[str, str], tuple[str, ...]] = {
         "prior_state",
         "new_state",
         "reason_code",
+        "transition_sequence",
+        "previous_event_sha256",
         "record_sha256",
+        "projected_next_inbound_seq_num",
+        "projected_next_outbound_seq_num",
+        "projected_last_inbound_at_utc",
+        "projected_last_outbound_at_utc",
+        "projected_pending_test_request_id",
+        "projected_pending_test_deadline_at_utc",
+        "projected_test_request_grace_expired",
     ),
     ("monitoring", "risk_events"): (
         "risk_event_id",
@@ -625,7 +635,8 @@ REQUIRED_COLUMNS: dict[tuple[str, str], tuple[str, ...]] = {
     ("monitoring", "health_snapshots"): ("health_snapshot_id", "monitoring_run_id", "evaluation_at_utc", "component", "health_status", "causing_check_ids", "record_sha256"),
     ("monitoring", "incidents"): ("incident_id", "category", "component", "check_name", "reason_code", "monitored_identity", "state", "occurrence_count", "record_sha256"),
     ("monitoring", "incident_occurrences"): ("incident_occurrence_id", "incident_id", "monitoring_run_id", "health_check_result_id", "occurred_at_utc", "record_sha256"),
-    ("monitoring", "fix_sessions"): ("fix_session_id", "session_key", "state", "next_inbound_seq_num", "next_outbound_seq_num", "test_request_grace_seconds", "disconnect_timeout_seconds", "pending_test_deadline_at_utc", "state_version", "previous_state_hash", "last_transition_event_id", "simulated", "record_sha256"),
+    ("monitoring", "fix_sessions"): ("fix_session_id", "session_key", "state", "next_inbound_seq_num", "next_outbound_seq_num", "test_request_grace_seconds", "disconnect_timeout_seconds", "pending_test_deadline_at_utc", "state_version", "previous_state_hash", "last_transition_event_id", "last_transition_sequence", "authoritative_event_sha256", "simulated", "record_sha256"),
+    ("monitoring", "fix_rejection_occurrences"): ("fix_rejection_occurrence_id", "fix_message_id", "fix_session_id", "direction", "validation_status", "processing_time_utc", "record_sha256"),
     ("monitoring", "fix_messages"): ("fix_message_id", "fix_session_id", "direction", "msg_type", "msg_seq_num", "validation_status", "rejection_code", "rejection_reason", "body_length", "checksum", "business_identity_sha256", "replay_identity_sha256", "raw_message_sha256", "record_sha256"),
     ("monitoring", "fix_order_links"): ("fix_order_link_id", "fix_session_id", "cl_ord_id", "order_intent_id", "order_id", "fill_id", "record_sha256"),
     ("monitoring", "latency_samples"): ("latency_sample_id", "fix_session_id", "stage", "duration_microseconds", "breached", "record_sha256"),
@@ -723,6 +734,7 @@ REQUIRED_INDEXES = (
     ("monitoring", "fix_messages", "uq_phase6_fix_rejected_observation"),
     ("monitoring", "fix_messages", "idx_phase6_fix_replay_identity"),
     ("monitoring", "fix_sessions", "idx_phase6_fix_session_projection_version"),
+    ("monitoring", "fix_rejection_occurrences", "idx_phase6_fix_rejection_occurrence_history"),
     ("audit", "artifacts", "idx_artifacts_run_id"),
     ("audit", "artifacts", "idx_artifacts_classification"),
 )
@@ -779,6 +791,10 @@ REQUIRED_UNIQUE_CONSTRAINTS = (
     ("monitoring", "health_check_results", ("monitoring_run_id", "category", "component", "check_name")),
     ("monitoring", "health_snapshots", ("monitoring_run_id", "component")),
     ("monitoring", "fix_sessions", ("session_key",)),
+    ("monitoring", "fix_session_events", ("fix_session_id", "transition_sequence")),
+    ("monitoring", "fix_session_events", ("fix_session_id", "fix_session_event_id")),
+    ("monitoring", "fix_messages", ("fix_session_id", "fix_message_id", "direction", "validation_status")),
+    ("monitoring", "fix_rejection_occurrences", ("fix_message_id", "processing_time_utc")),
 )
 
 REQUIRED_FOREIGN_KEYS = (
@@ -909,6 +925,7 @@ REQUIRED_FOREIGN_KEYS = (
     ("monitoring", "latency_samples", ("fix_session_id",), "monitoring", "fix_sessions", ("fix_session_id",)),
     ("monitoring", "connection_faults", ("fix_session_id",), "monitoring", "fix_sessions", ("fix_session_id",)),
     ("monitoring", "fix_sessions", ("fix_session_id", "last_transition_event_id"), "monitoring", "fix_session_events", ("fix_session_id", "fix_session_event_id")),
+    ("monitoring", "fix_rejection_occurrences", ("fix_session_id", "fix_message_id", "direction", "validation_status"), "monitoring", "fix_messages", ("fix_session_id", "fix_message_id", "direction", "validation_status")),
     (
         "execution", "cash_ledger_entries", ("fill_id", "currency"),
         "execution", "fills", ("fill_id", "fee_asset"),
@@ -953,12 +970,19 @@ REQUIRED_CHECK_CONSTRAINTS = (
     ("monitoring", "fix_session_events", "phase6_fix_session_event_hash_check", True),
     ("monitoring", "fix_session_events", "phase6_fix_event_previous_hash_check", True),
     ("monitoring", "fix_session_events", "phase6_fix_event_transition_sequence_nonnegative", True),
+    ("monitoring", "fix_session_events", "phase6_fix_event_projected_sequence_check", True),
+    ("monitoring", "fix_session_events", "phase6_fix_event_projected_pending_check", True),
     ("monitoring", "fix_sessions", "phase6_fix_session_state_version_check", True),
     ("monitoring", "fix_sessions", "phase6_fix_session_previous_hash_check", True),
     ("monitoring", "fix_sessions", "phase6_fix_session_timeout_config_check", True),
     ("monitoring", "fix_sessions", "phase6_fix_session_pending_deadline_check", True),
     ("monitoring", "fix_messages", "phase6_fix_message_validation_shape_check", True),
     ("monitoring", "fix_messages", "phase6_fix_replay_hash_check", True),
+    ("monitoring", "fix_sessions", "phase6_fix_session_tail_sequence_check", True),
+    ("monitoring", "fix_sessions", "phase6_fix_session_authoritative_hash_check", True),
+    ("monitoring", "fix_rejection_occurrences", "phase6_fix_rejection_occurrence_direction_check", True),
+    ("monitoring", "fix_rejection_occurrences", "phase6_fix_rejection_occurrence_parent_status_check", True),
+    ("monitoring", "fix_rejection_occurrences", "phase6_fix_rejection_occurrence_hash_check", True),
     ("alpha", "alpha_registry", "chk_alpha_registry_minimum_warmup", True),
     ("alpha", "alpha_registry", "chk_alpha_registry_implementation_sha256", True),
     ("alpha", "alpha_registry", "chk_alpha_registry_content_sha256", True),
@@ -1012,6 +1036,45 @@ REQUIRED_CHECK_CONSTRAINTS = (
         False,
     ),
 )
+
+REQUIRED_TRIGGERS = (
+    (
+        "monitoring",
+        "fix_session_events",
+        "trg_phase6_validate_fix_session_event_append",
+        False,
+        False,
+    ),
+    (
+        "monitoring",
+        "fix_sessions",
+        "trg_phase6_validate_fix_session_projection",
+        False,
+        False,
+    ),
+    (
+        "monitoring",
+        "fix_sessions",
+        "trg_phase6_fix_session_projection_authority",
+        True,
+        True,
+    ),
+    (
+        "monitoring",
+        "fix_session_events",
+        "trg_phase6_fix_session_event_tail",
+        True,
+        True,
+    ),
+    (
+        "monitoring",
+        "fix_session_events",
+        "trg_phase6_protect_fix_session_event_immutability",
+        False,
+        False,
+    ),
+)
+
 UNSAFE_SQL_PATTERNS = (
     r"\bDROP\s+DATABASE\b",
     r"\bDROP\s+SCHEMA\b",
@@ -1075,6 +1138,17 @@ ALLOWED_DATA_MIGRATIONS = {
         r"\bUPDATE\s+monitoring\.fix_sessions\s+SET\b.*?;",
         r"\bUPDATE\s+monitoring\.fix_sessions\s+SET\b.*?;",
         r"\bUPDATE\s+ON\s+monitoring\.fix_sessions\s+FOR\s+EACH\s+ROW\s+EXECUTE\s+FUNCTION\s+monitoring\.validate_fix_session_projection\(\)\s*;",
+    ),
+    "0015_phase6_concurrency_and_audit_integrity.sql": (
+        r"\bUPDATE\s+monitoring\.fix_session_events\s+AS\s+event\s+SET\b.*?;",
+        r"\bUPDATE\s+monitoring\.fix_session_events\s+SET\b.*?;",
+        r"\bUPDATE\s+monitoring\.fix_session_events\s+AS\s+event\s+SET\b.*?;",
+        r"\bINSERT\s+INTO\s+monitoring\.fix_session_events\s*\(.*?\)\s*SELECT\b.*?;",
+        r"\bUPDATE\s+monitoring\.fix_sessions\s+AS\s+session\s+SET\b.*?;",
+        r"\bUPDATE'\s+THEN\b.*?;",
+        r"\bUPDATE\s+ON\s+monitoring\.fix_sessions\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+monitoring\.fix_session_events\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+monitoring\.fix_session_events\b.*?;",
     ),
 }
 
@@ -1428,6 +1502,53 @@ def verify_check_constraints(client: CatalogClient) -> None:
         fail("required check constraints are missing from PostgreSQL: " + formatted)
     print(f"OK: found {len(REQUIRED_CHECK_CONSTRAINTS)} required PostgreSQL check constraints")
 
+
+def fetch_existing_triggers(
+    client: CatalogClient,
+) -> set[tuple[str, str, str, bool, bool]]:
+    rows = client.query(
+        f"""
+        SELECT
+            namespace.nspname,
+            table_class.relname,
+            trigger_info.tgname,
+            CASE WHEN trigger_info.tgdeferrable THEN 'true' ELSE 'false' END,
+            CASE WHEN trigger_info.tginitdeferred THEN 'true' ELSE 'false' END
+        FROM pg_trigger AS trigger_info
+        JOIN pg_class AS table_class
+          ON table_class.oid = trigger_info.tgrelid
+        JOIN pg_namespace AS namespace
+          ON namespace.oid = table_class.relnamespace
+        WHERE NOT trigger_info.tgisinternal
+          AND trigger_info.tgenabled <> 'D'
+          AND namespace.nspname IN ({sql_string_list(REQUIRED_TABLES)})
+        """
+    )
+    return {
+        (
+            str(row[0]),
+            str(row[1]),
+            str(row[2]),
+            str(row[3]).lower() == "true",
+            str(row[4]).lower() == "true",
+        )
+        for row in rows
+    }
+
+
+def verify_required_triggers(client: CatalogClient) -> None:
+    existing = fetch_existing_triggers(client)
+    missing = sorted(set(REQUIRED_TRIGGERS) - existing)
+    if missing:
+        formatted = ", ".join(
+            f"{schema}.{table}.{name} "
+            f"(deferrable={deferrable}, initially_deferred={initially_deferred})"
+            for schema, table, name, deferrable, initially_deferred in missing
+        )
+        fail("required PostgreSQL triggers are missing or misconfigured: " + formatted)
+    print(f"OK: found {len(REQUIRED_TRIGGERS)} required PostgreSQL triggers")
+
+
 def fetch_foreign_keys(client: CatalogClient) -> set[
     tuple[str, str, tuple[str, ...], str, str, tuple[str, ...]]
 ]:
@@ -1649,6 +1770,7 @@ def main() -> None:
         verify_required_indexes(client)
         verify_unique_constraints(client)
         verify_check_constraints(client)
+        verify_required_triggers(client)
         verify_foreign_keys(client)
         verify_migration_records(client, migrations)
     finally:

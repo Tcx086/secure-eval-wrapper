@@ -11,7 +11,7 @@ from secure_eval_wrapper.execution.models import AccountingMode,BrokerConfigurat
 from secure_eval_wrapper.execution.slippage import ZeroSlippage
 from secure_eval_wrapper.fix.gateway import GatewaySeries,SimulatedFixGateway
 from secure_eval_wrapper.fix.messages import logon,new_order_single,order_cancel_request
-from secure_eval_wrapper.fix.models import FixMessage,FixMessageType,FixOrderType,FixSessionConfiguration,FixSide,FixTimeInForce
+from secure_eval_wrapper.fix.models import FixMessage,FixMessageType,FixOrderType,FixSessionConfiguration,FixSide,FixTimeInForce,ReceiveDisposition
 from secure_eval_wrapper.fix.session import SimulatedFixSession
 T=datetime(2026,1,1,tzinfo=timezone.utc)
 def fixture():
@@ -29,5 +29,5 @@ class GatewayTests(unittest.TestCase):
  def test_clord_content_conflict(self):
   s,b,g=fixture(); g.handle(order(),T+timedelta(seconds=2)); changed=order(seq=3,kind=FixOrderType.LIMIT,price=Decimal("90")); self.assertEqual(g.handle(changed,T+timedelta(seconds=3))[-1].msg_type,FixMessageType.BUSINESS_MESSAGE_REJECT); self.assertEqual(len(b.active_orders()),1)
  def test_wrong_session_is_rejected_before_order(self):
-  s,b,g=fixture(); wrong=FixMessage(FixMessageType.NEW_ORDER_SINGLE,2,"OTHER","CLIENT",T,{11:"C",55:"BTC/USDT",54:"1",60:"20260101-00:00:00",38:"1",40:"1",59:"1"}); self.assertRaises(Exception,g.handle,wrong,T); self.assertEqual(len(b.active_orders()),0)
+  s,b,g=fixture(); wrong=FixMessage(FixMessageType.NEW_ORDER_SINGLE,2,"OTHER","CLIENT",T,{11:"C",55:"BTC/USDT",54:"1",60:"20260101-00:00:00",38:"1",40:"1",59:"1"}); self.assertEqual(g.handle(wrong,T),()); self.assertEqual(s.rejected_observations[-1].rejection_code,"wrong_comp_ids"); self.assertEqual(s.next_inbound_seq_num,2); self.assertEqual(len(b.active_orders()),0)
 if __name__=="__main__": unittest.main()

@@ -95,8 +95,21 @@ def main(argv=None):
                 PostgresPhase6Repository(connection), session=session,
                 at_utc=datetime(2026, 1, 1, 0, 0, 11, tzinfo=timezone.utc),
                 inbound_messages=tuple(session.inbound_messages), outbound_messages=tuple(session.outbound_messages),
-                rejected_observations=tuple(session.rejected_observations), session_events=tuple(session.events),
+                rejected_observations=tuple(session.rejected_observations),
+                rejected_occurrences=tuple(session.rejected_occurrences),
+                session_events=tuple(session.events),
+                order_links=gateway.links,
+                order_intents=gateway.intents,
+                risk_decisions=gateway.risk_decisions,
+                orders=gateway.orders,
+                fills=gateway.fills,
             )
+            summary["persisted_order_intents"] = len(gateway.intents)
+            summary["persisted_risk_decisions"] = len(gateway.risk_decisions)
+            summary["persisted_orders"] = len(gateway.orders)
+            summary["persisted_fills"] = len(gateway.fills)
+            summary["persisted_fix_order_links"] = len(gateway.links)
+            summary["persisted_execution_reports"] = len(gateway.reports)
             summary["persistence_status"] = "postgresql"
         finally:
             connection.close()

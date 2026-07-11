@@ -36,7 +36,7 @@ class CodecTests(unittest.TestCase):
 class SessionTests(unittest.TestCase):
  def setUp(self): self.s=SimulatedFixSession(FixSessionConfiguration("CLIENT","SERVER",Decimal("5"),Decimal("2"),Decimal("4"))); self.s.connect(T); self.s.receive(logon(1,"SERVER","CLIENT",T),T)
  def test_logon(self): self.assertEqual(self.s.state,FixSessionState.ESTABLISHED)
- def test_duplicate_logon_rejected(self): self.assertEqual(self.s.receive(logon(2,"SERVER","CLIENT",T+timedelta(seconds=1)),T+timedelta(seconds=1))[0].msg_type,FixMessageType.REJECT)
+ def test_duplicate_logon_rejected(self): result=self.s.receive(logon(2,"SERVER","CLIENT",T+timedelta(seconds=1)),T+timedelta(seconds=1)); self.assertEqual(result.disposition,ReceiveDisposition.REJECTED); self.assertEqual(result.rejected_observation.rejection_code,"unsupported_session_state"); self.assertEqual(self.s.next_inbound_seq_num,2)
  def test_heartbeat_test_recovery(self):
   request=self.s.tick(T+timedelta(seconds=5))[0]; self.assertEqual(request.msg_type,FixMessageType.TEST_REQUEST); self.s.receive(heartbeat(2,"SERVER","CLIENT",T+timedelta(seconds=6),test_request_id=self.s.pending_test_request_id),T+timedelta(seconds=6)); self.assertEqual(self.s.state,FixSessionState.ESTABLISHED)
  def test_timeout_disconnect(self): self.s.tick(T+timedelta(seconds=5)); self.s.tick(T+timedelta(seconds=9)); self.assertEqual(self.s.state,FixSessionState.DISCONNECTED)
@@ -48,7 +48,7 @@ class SessionTests(unittest.TestCase):
  def test_backwards_sequence_reset(self): self.assertEqual(self.s.receive(sequence_reset(2,"SERVER","CLIENT",T+timedelta(seconds=1),1),T+timedelta(seconds=1))[0].msg_type,FixMessageType.REJECT)
  def test_logout_and_reconnect(self): self.s.receive(logout(2,"SERVER","CLIENT",T+timedelta(seconds=1)),T+timedelta(seconds=1)); self.assertEqual(self.s.state,FixSessionState.TERMINATED)
  def test_invalid_message_does_not_advance(self):
-  before=self.s.next_inbound_seq_num; bad=FixMessage(FixMessageType.NEW_ORDER_SINGLE,before,"SERVER","CLIENT",T,{11:"C"}); self.assertRaises(FixValidationError,self.s.receive,bad,T); self.assertEqual(self.s.next_inbound_seq_num,before)
+  before=self.s.next_inbound_seq_num; bad=FixMessage(FixMessageType.NEW_ORDER_SINGLE,before,"SERVER","CLIENT",T,{11:"C"}); result=self.s.receive(bad,T); self.assertEqual(result.disposition,ReceiveDisposition.REJECTED); self.assertEqual(result.rejected_observation.rejection_code,"validation_rejected"); self.assertEqual(self.s.next_inbound_seq_num,before)
 class LatencyFaultTests(unittest.TestCase):
  def test_fixed_latency_breach(self):
   from secure_eval_wrapper.fix.latency import FixedLatencyModel

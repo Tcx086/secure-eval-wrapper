@@ -34,7 +34,7 @@ class RealPostgresPhase6Tests(unittest.TestCase):
  def test_incident_persistence(self):
   persist_monitoring_bundle(self.repo,self.bundle); rows=self.repo.list_open_incidents(); self.assertGreaterEqual(len(rows),1)
  def test_fix_session_message_state_atomic(self):
-  session=SimulatedFixSession(FixSessionConfiguration("CLIENT","SERVER")); outbound=session.connect(T); inbound=logon(1,"SERVER","CLIENT",T); session.receive(inbound,T); persist_fix_transition(self.repo,session=session,at_utc=T,inbound_messages=(inbound,),outbound_messages=(outbound,)); row=self.repo.get_fix_session(session.fix_session_id); self.assertEqual(row["state"],"established"); self.assertEqual(len(self.repo.list_fix_messages(session.fix_session_id,FixDirection.INBOUND,1,2)),1)
+  session=SimulatedFixSession(FixSessionConfiguration("CLIENT","SERVER")); outbound=session.connect(T); inbound=logon(1,"SERVER","CLIENT",T); session.receive(inbound,T); persist_fix_transition(self.repo,session=session,at_utc=T,inbound_messages=(inbound,),outbound_messages=(outbound,),session_events=tuple(session.events)); row=self.repo.get_fix_session(session.fix_session_id); self.assertEqual(row["state"],"established"); self.assertEqual(len(self.repo.list_fix_messages(session.fix_session_id,FixDirection.INBOUND,1,2)),1)
  def test_bundle_rollback(self):
   class Failing:
    def __init__(self,repo): self.repo=repo

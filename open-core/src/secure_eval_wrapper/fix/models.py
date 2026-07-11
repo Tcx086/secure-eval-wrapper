@@ -88,6 +88,7 @@ class FixSessionEventType(str, Enum):
     STATE_TRANSITION = "state_transition"
     MESSAGE_ACCEPTED = "message_accepted"
     MESSAGE_REJECTED = "message_rejected"
+    MESSAGE_SENT = "message_sent"
     SEQUENCE_GAP = "sequence_gap"
     DUPLICATE_ACCEPTED = "duplicate_accepted"
     TEST_REQUEST_SENT = "test_request_sent"
@@ -256,13 +257,41 @@ class RejectedFixObservation:
     def record_sha256(self):
         return sha256_payload({
             "observation_id": self.observation_id,
-            "processing_time_utc": self.processing_time_utc,
             "parsed_header_fields": dict(self.parsed_header_fields),
             "msg_seq_num": self.msg_seq_num,
             "msg_type": self.msg_type,
             "sender_comp_id": self.sender_comp_id,
             "target_comp_id": self.target_comp_id,
             "rejection_reason": self.rejection_reason,
+        })
+
+
+@dataclass(frozen=True)
+class RejectedFixOccurrence:
+    observation_id: UUID
+    fix_session_id: UUID
+    direction: FixDirection
+    processing_time_utc: datetime
+
+    def __post_init__(self):
+        object.__setattr__(self, "direction", FixDirection(self.direction))
+        require_utc_datetime(self.processing_time_utc, field_name="rejected FIX occurrence time")
+
+    @property
+    def occurrence_id(self):
+        return fix_uuid("rejected-occurrence", {
+            "observation": self.observation_id,
+            "session": self.fix_session_id,
+            "direction": self.direction,
+            "processing_time_utc": self.processing_time_utc,
+        })
+
+    @property
+    def record_sha256(self):
+        return sha256_payload({
+            "occurrence_id": self.occurrence_id,
+            "observation_id": self.observation_id,
+            "processing_time_utc": self.processing_time_utc,
         })
 
 
@@ -348,6 +377,13 @@ class FixSessionEvent:
     parent_message_id: UUID | None = None
     transition_sequence: int = 0
     previous_event_sha256: str | None = None
+    projected_next_inbound_seq_num: int | None = None
+    projected_next_outbound_seq_num: int | None = None
+    projected_last_inbound_at_utc: datetime | None = None
+    projected_last_outbound_at_utc: datetime | None = None
+    projected_pending_test_request_id: str | None = None
+    projected_pending_test_deadline_at_utc: datetime | None = None
+    projected_test_request_grace_expired: bool | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "event_type", FixSessionEventType(self.event_type))
@@ -357,6 +393,25 @@ class FixSessionEvent:
         _text(self.reason_code, "reason_code")
         if self.transition_sequence < 0:
             raise ValueError("transition_sequence must be non-negative")
+        for name in ("projected_next_inbound_seq_num", "projected_next_outbound_seq_num"):
+            value = getattr(self, name)
+            if value is not None and (
+                not isinstance(value, int) or isinstance(value, bool) or value <= 0
+            ):
+                raise ValueError(f"{name} must be a positive integer when present")
+        for name in (
+            "projected_last_inbound_at_utc",
+            "projected_last_outbound_at_utc",
+            "projected_pending_test_deadline_at_utc",
+        ):
+            value = getattr(self, name)
+            if value is not None:
+                require_utc_datetime(value, field_name=name)
+        if (
+            self.projected_test_request_grace_expired is not None
+            and not isinstance(self.projected_test_request_grace_expired, bool)
+        ):
+            raise ValueError("projected_test_request_grace_expired must be boolean when present")
 
     @property
     def event_id(self):
@@ -377,6 +432,13 @@ class FixSessionEvent:
             "prior": self.prior_state,
             "new": self.new_state,
             "previous_event_sha256": self.previous_event_sha256,
+            "projected_next_inbound_seq_num": self.projected_next_inbound_seq_num,
+            "projected_next_outbound_seq_num": self.projected_next_outbound_seq_num,
+            "projected_last_inbound_at_utc": self.projected_last_inbound_at_utc,
+            "projected_last_outbound_at_utc": self.projected_last_outbound_at_utc,
+            "projected_pending_test_request_id": self.projected_pending_test_request_id,
+            "projected_pending_test_deadline_at_utc": self.projected_pending_test_deadline_at_utc,
+            "projected_test_request_grace_expired": self.projected_test_request_grace_expired,
         })
 
 

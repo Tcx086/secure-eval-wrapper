@@ -18,6 +18,7 @@ from secure_eval_wrapper.fix.models import (
     FixSessionState,
     ReceiveDisposition,
     RejectedFixObservation,
+    RejectedFixOccurrence,
     SessionReceiveResult,
 )
 
@@ -43,9 +44,15 @@ class SimulatedFixSession:
         self.inbound_messages = []
         self.outbound_messages = []
         self.rejected_observations = []
+        self.rejected_occurrences = []
+        self._rejected_observations_by_id = {}
+        self._rejected_occurrence_ids = set()
         self._accepted = {}
         self.persisted_state_version = None
         self.persisted_record_sha256 = None
+        self.persisted_transition_sequence = None
+        self.persisted_event_sha256 = None
+        self.persisted_transition_event_id = None
 
     @property
     def fix_session_id(self):
@@ -64,6 +71,13 @@ class SimulatedFixSession:
             parent,
             transition_sequence=len(self.events),
             previous_event_sha256=previous,
+            projected_next_inbound_seq_num=self.next_inbound_seq_num,
+            projected_next_outbound_seq_num=self.next_outbound_seq_num,
+            projected_last_inbound_at_utc=self.last_inbound_at_utc,
+            projected_last_outbound_at_utc=self.last_outbound_at_utc,
+            projected_pending_test_request_id=self.pending_test_request_id,
+            projected_pending_test_deadline_at_utc=self.pending_test_deadline_at_utc,
+            projected_test_request_grace_expired=self.test_request_grace_expired,
         )
         self.events.append(event)
         return event
@@ -79,6 +93,15 @@ class SimulatedFixSession:
         self.next_outbound_seq_num += 1
         self.last_outbound_at_utc = at
         self.outbound_messages.append(msg)
+        self._event(
+            FixSessionEventType.MESSAGE_SENT,
+            at,
+            self.state,
+            self.state,
+            f"message_sent_{msg.msg_type.value}",
+            msg.msg_seq_num,
+            msg.fix_message_id,
+        )
         return msg
 
     def connect(self, at: datetime):
@@ -114,7 +137,9 @@ class SimulatedFixSession:
                 parsed[tag] = value
         return parsed
 
-    def _rejected_observation(self, raw, at, reason, code="validation_rejected"):
+    def _record_rejected_observation(
+        self, raw, at, reason, code="validation_rejected", *, record_event=True
+    ):
         parsed = self._safe_header(raw)
         seq = None
         try:
@@ -136,8 +161,42 @@ class SimulatedFixSession:
             sender_comp_id=parsed.get(49),
             target_comp_id=parsed.get(56),
         )
-        self.rejected_observations.append(observation)
-        self._event(FixSessionEventType.MESSAGE_REJECTED, at, self.state, self.state, code, seq, observation.observation_id)
+        stored = self._rejected_observations_by_id.get(observation.observation_id)
+        if stored is not None and stored.record_sha256 != observation.record_sha256:
+            raise ValueError("same rejected FIX observation identity has conflicting content")
+        if stored is None:
+            self._rejected_observations_by_id[observation.observation_id] = observation
+            self.rejected_observations.append(observation)
+        else:
+            observation = stored
+        occurrence = RejectedFixOccurrence(
+            observation.observation_id,
+            self.fix_session_id,
+            FixDirection.INBOUND,
+            at,
+        )
+        if occurrence.occurrence_id in self._rejected_occurrence_ids:
+            return observation, False
+        self._rejected_occurrence_ids.add(occurrence.occurrence_id)
+        self.rejected_occurrences.append(occurrence)
+        if record_event:
+            self._event(
+                FixSessionEventType.MESSAGE_REJECTED,
+                at,
+                self.state,
+                self.state,
+                code,
+                seq,
+                observation.observation_id,
+            )
+        return observation, True
+
+    def _rejected_observation(
+        self, raw, at, reason, code="validation_rejected", *, record_event=True
+    ):
+        observation, _ = self._record_rejected_observation(
+            raw, at, reason, code, record_event=record_event
+        )
         return observation
 
     def receive_raw(self, raw: bytes, processing_at_utc: datetime):
@@ -147,29 +206,91 @@ class SimulatedFixSession:
         except (FixValidationError, ValueError) as exc:
             observation = self._rejected_observation(raw, processing_at_utc, exc)
             return SessionReceiveResult(ReceiveDisposition.REJECTED, rejected_observation=observation)
-        if msg.sender_comp_id != self.configuration.target_comp_id or msg.target_comp_id != self.configuration.sender_comp_id:
-            observation = self._rejected_observation(raw, processing_at_utc, "FIX CompIDs do not match simulated session", "wrong_comp_ids")
-            return SessionReceiveResult(ReceiveDisposition.REJECTED, message=msg, rejected_observation=observation)
-        return self.receive(msg, processing_at_utc)
+        return self.receive(msg, processing_at_utc, raw_bytes=raw)
 
-    def receive(self, msg: FixMessage, at: datetime):
+    @staticmethod
+    def _typed_fallback_raw(msg):
+        fields = [
+            f"35={msg.msg_type.value}",
+            f"34={msg.msg_seq_num}",
+            f"49={msg.sender_comp_id}",
+            f"56={msg.target_comp_id}",
+            f"52={msg.sending_time_utc.isoformat()}",
+        ]
+        fields.extend(
+            f"{tag}={value}"
+            for tag, value in sorted({**msg.fields, **msg.extensions}.items())
+        )
+        return ("\x01".join(fields) + "\x01").encode(
+            "ascii", errors="backslashreplace"
+        )
+
+    def receive(self, msg: FixMessage, at: datetime, *, raw_bytes=None):
         require_utc_datetime(at, field_name="session receive")
-        self.codec.encode(msg)
+        try:
+            encoded = self.codec.encode(msg) if raw_bytes is None else bytes(raw_bytes)
+            if raw_bytes is not None:
+                self.codec.encode(msg)
+        except (FixValidationError, ValueError, TypeError) as exc:
+            raw = self._typed_fallback_raw(msg) if raw_bytes is None else bytes(raw_bytes)
+            observation = self._rejected_observation(raw, at, exc, "validation_rejected")
+            return SessionReceiveResult(ReceiveDisposition.REJECTED, message=msg, rejected_observation=observation)
         if msg.sender_comp_id != self.configuration.target_comp_id or msg.target_comp_id != self.configuration.sender_comp_id:
-            raise FixSessionError("FIX CompIDs do not match simulated session")
+            observation = self._rejected_observation(encoded, at, "FIX CompIDs do not match simulated session", "wrong_comp_ids")
+            return SessionReceiveResult(ReceiveDisposition.REJECTED, message=msg, rejected_observation=observation)
+        unsupported = (
+            (msg.msg_type is FixMessageType.LOGON and self.state not in (FixSessionState.LOGON_PENDING, FixSessionState.DISCONNECTED))
+            or (self.state is FixSessionState.LOGON_PENDING and msg.msg_type is not FixMessageType.LOGON)
+            or (msg.msg_type in (FixMessageType.NEW_ORDER_SINGLE, FixMessageType.ORDER_CANCEL_REQUEST) and self.state is not FixSessionState.ESTABLISHED)
+            or (self.state in (FixSessionState.DISCONNECTED, FixSessionState.TERMINATED) and msg.msg_type is not FixMessageType.LOGON)
+        )
+        if unsupported:
+            observation = self._rejected_observation(encoded, at, f"{msg.msg_type.value} is unsupported while session is {self.state.value}", "unsupported_session_state")
+            return SessionReceiveResult(ReceiveDisposition.REJECTED, message=msg, rejected_observation=observation)
         expected = self.next_inbound_seq_num
         if msg.msg_seq_num < expected:
             prior_hash = self._accepted.get(msg.msg_seq_num)
             if msg.poss_dup_flag and prior_hash == msg.replay_identity_sha256:
                 self._event(FixSessionEventType.DUPLICATE_ACCEPTED, at, self.state, self.state, "valid_possdup_replay", msg.msg_seq_num, msg.fix_message_id)
                 return SessionReceiveResult(ReceiveDisposition.ACCEPTED_REPLAY, message=msg)
-            self._event(FixSessionEventType.MESSAGE_REJECTED, at, self.state, self.state, "inbound_sequence_too_low", msg.msg_seq_num, msg.fix_message_id)
+            observation, occurrence_created = self._record_rejected_observation(
+                encoded,
+                at,
+                "MsgSeqNum too low or replay content conflict",
+                "inbound_sequence_too_low",
+                record_event=False,
+            )
+            if not occurrence_created:
+                return SessionReceiveResult(
+                    ReceiveDisposition.REJECTED,
+                    message=msg,
+                    rejected_observation=observation,
+                )
             response = self._emit(reject, at, ref_seq_num=msg.msg_seq_num, text="MsgSeqNum too low or replay content conflict", ref_msg_type=msg.msg_type)
-            return SessionReceiveResult(ReceiveDisposition.REJECTED, (response,), message=msg)
+            self._event(FixSessionEventType.MESSAGE_REJECTED, at, self.state, self.state, "inbound_sequence_too_low", msg.msg_seq_num, observation.observation_id)
+            return SessionReceiveResult(ReceiveDisposition.REJECTED, (response,), message=msg, rejected_observation=observation)
         if msg.msg_seq_num > expected:
             self._transition(FixSessionState.RECOVERING, at, "inbound_sequence_gap", FixSessionEventType.SEQUENCE_GAP, msg.fix_message_id)
             response = self._emit(resend_request, at, begin_seq_no=expected, end_seq_no=msg.msg_seq_num - 1)
             return SessionReceiveResult(ReceiveDisposition.SEQUENCE_GAP, (response,), message=msg)
+
+        if msg.msg_type is FixMessageType.SEQUENCE_RESET and int(msg.fields[36]) <= expected:
+            observation, occurrence_created = self._record_rejected_observation(
+                encoded,
+                at,
+                "SequenceReset cannot decrease expected sequence",
+                "sequence_reset_not_forward",
+                record_event=False,
+            )
+            if not occurrence_created:
+                return SessionReceiveResult(
+                    ReceiveDisposition.REJECTED,
+                    message=msg,
+                    rejected_observation=observation,
+                )
+            response = self._emit(reject, at, ref_seq_num=msg.msg_seq_num, text="SequenceReset cannot decrease expected sequence", ref_msg_type=msg.msg_type)
+            self._event(FixSessionEventType.MESSAGE_REJECTED, at, self.state, self.state, "sequence_reset_not_forward", msg.msg_seq_num, observation.observation_id)
+            return SessionReceiveResult(ReceiveDisposition.REJECTED, (response,), message=msg, rejected_observation=observation)
 
         self.inbound_messages.append(msg)
         self.last_inbound_at_utc = at
@@ -177,10 +298,6 @@ class SimulatedFixSession:
         responses = []
         if msg.msg_type is FixMessageType.SEQUENCE_RESET:
             new_seq = int(msg.fields[36])
-            if new_seq <= expected:
-                self._event(FixSessionEventType.MESSAGE_REJECTED, at, self.state, self.state, "sequence_reset_not_forward", msg.msg_seq_num, msg.fix_message_id)
-                response = self._emit(reject, at, ref_seq_num=msg.msg_seq_num, text="SequenceReset cannot decrease expected sequence", ref_msg_type=msg.msg_type)
-                return SessionReceiveResult(ReceiveDisposition.REJECTED, (response,), message=msg)
             self.next_inbound_seq_num = new_seq
             self._transition(FixSessionState.ESTABLISHED, at, "sequence_recovered", parent=msg.fix_message_id)
         else:

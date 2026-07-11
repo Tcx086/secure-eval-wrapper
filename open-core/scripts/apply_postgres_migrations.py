@@ -113,6 +113,14 @@ def apply(*, database=None, first=None, through=None, seed_legacy=False, seed_ph
                         'seeded_pending_test_request',%s)
                 """, (timestamp,session_id,"f"*64))
                 cursor.execute("""
+                    INSERT INTO monitoring.fix_session_events (
+                        fix_session_event_id,session_id,event_type,sequence_number,event_time_utc,
+                        payload_jsonb,simulated,fix_session_id,prior_state,new_state,reason_code,record_sha256
+                    ) VALUES ('00000000-0000-5000-8000-000000001405','SEEDED_CLIENT->SEEDED_SERVER',
+                        'state_transition',2,%s::timestamptz + interval '1 second','{}'::jsonb,TRUE,%s,
+                        'test_request_pending','test_request_pending','seeded_chain_checkpoint',%s)
+                """, (timestamp,session_id,"9"*64))
+                cursor.execute("""
                     INSERT INTO monitoring.incidents (
                         incident_id,category,component,reason_code,monitored_identity,state,severity,
                         episode_started_at_utc,latest_at_utc,occurrence_count,configuration_sha256,

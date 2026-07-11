@@ -64,6 +64,8 @@ jobs:
         run: python -m unittest discover -s open-core/tests -p "test_phase6_fix*.py" -v
       - name: Phase 6 first-audit offline regression suite
         run: python -m unittest discover -s open-core/tests -p "test_phase6_first_audit_repairs.py" -v
+      - name: Phase 6 second-audit concurrency and rejection regression suite
+        run: python -m unittest discover -s open-core/tests -p "test_phase6_second_audit.py" -v
       - name: Compile package and scripts
         run: python -m compileall -q open-core/src open-core/scripts
       - run: secure-eval-backtest
@@ -102,7 +104,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -e "./open-core[postgres,test]"
-      - name: Clean migration install 0001 through 0014
+      - name: Clean migration install 0001 through 0015
         run: python open-core/scripts/apply_postgres_migrations.py
       - name: Migration hashes and Phase 5/6 catalog
         run: |
@@ -129,13 +131,18 @@ jobs:
           RUN_POSTGRES_INTEGRATION: "true"
           ENABLE_POSTGRES_PERSISTENCE: "true"
         run: python -m unittest discover -s open-core/tests -p "test_phase6_first_audit_postgres.py" -v
-      - name: Seeded 0013 to 0014 upgrade with existing Phase 5 and Phase 6 rows
+      - name: Phase 6 second-audit event authority, occurrences, lineage, and rollback
+        env:
+          RUN_POSTGRES_INTEGRATION: "true"
+        run: python -m unittest discover -s open-core/tests -p "test_phase6_second_audit_postgres.py" -v
+      - name: Seeded 0013 through 0015 upgrade with existing Phase 5 and Phase 6 rows
         run: |
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --create-database --through 0009 --seed-phase5
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0010 --through 0011
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0012 --through 0012
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0013 --through 0013 --seed-phase6
-          python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0014
+          python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0014 --through 0014
+          python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0015
           POSTGRES_DB=secure_eval_upgrade python open-core/scripts/verify_postgres_schema.py
           POSTGRES_DB=secure_eval_upgrade python open-core/scripts/verify_phase5_postgres_schema.py
 

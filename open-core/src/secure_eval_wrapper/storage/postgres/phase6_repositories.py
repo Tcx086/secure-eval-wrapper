@@ -4,6 +4,12 @@ from __future__ import annotations
 from contextlib import contextmanager
 
 from secure_eval_wrapper.storage.postgres.alpha_signal_base import _PostgresRepositoryBase, _json_param
+from secure_eval_wrapper.storage.postgres.phase5_rows import (
+    fill_row,
+    order_intent_row,
+    order_lineage_row,
+    risk_decision_row,
+)
 
 
 class Phase6ConflictError(RuntimeError):
@@ -122,49 +128,163 @@ class PostgresPhase6Repository(_PostgresRepositoryBase):
         with self._write_scope():
             return self._strict("monitoring.incident_occurrences", "incident_occurrence_id", row)
 
-    def record_fix_session(self, session, updated_at_utc, *, expected_state_version=None, expected_record_sha256=None, last_transition_event_id=None):
-        current_hash = session_record_hash(session)
+    def record_fix_session(
+        self,
+        session,
+        updated_at_utc,
+        *,
+        expected_state_version=None,
+        expected_record_sha256=None,
+        last_transition_event_id=None,
+        last_transition_sequence=None,
+        authoritative_event_sha256=None,
+    ):
         last_event_id = last_transition_event_id
+        tail_sequence = last_transition_sequence
+        tail_hash = authoritative_event_sha256
+        if last_event_id is None:
+            last_event_id = getattr(session, "persisted_transition_event_id", None)
+        if tail_sequence is None:
+            tail_sequence = getattr(session, "persisted_transition_sequence", None)
+        if tail_hash is None:
+            tail_hash = getattr(session, "persisted_event_sha256", None)
+        current_hash = session_record_hash(
+            session,
+            last_transition_event_id=last_event_id,
+            last_transition_sequence=tail_sequence,
+            authoritative_event_sha256=tail_hash,
+        )
         cursor = self.connection.cursor()
         try:
-            cursor.execute("SELECT state_version,record_sha256 FROM monitoring.fix_sessions WHERE fix_session_id=%s FOR UPDATE", (session.fix_session_id,))
+            cursor.execute(
+                "SELECT state_version,record_sha256,last_transition_sequence,"
+                "authoritative_event_sha256,last_transition_event_id "
+                "FROM monitoring.fix_sessions WHERE fix_session_id=%s FOR UPDATE",
+                (session.fix_session_id,),
+            )
             stored = cursor.fetchone()
             if stored is None:
                 if expected_state_version not in (None, 0) or expected_record_sha256 is not None:
                     raise Phase6ConflictError("stale writer expected an existing FIX session projection")
+                if last_event_id is None or tail_sequence is None or tail_hash is None:
+                    raise Phase6ConflictError("new FIX session projection requires an authoritative event tail")
                 cursor.execute(
-                    "INSERT INTO monitoring.fix_sessions (fix_session_id,session_key,sender_comp_id,target_comp_id,state,next_inbound_seq_num,next_outbound_seq_num,heartbeat_interval_seconds,test_request_grace_seconds,disconnect_timeout_seconds,last_inbound_at_utc,last_outbound_at_utc,pending_test_request_id,pending_test_deadline_at_utc,test_request_grace_expired,configuration_sha256,record_sha256,state_version,previous_state_hash,last_transition_event_id,updated_at_utc) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,NULL,%s,%s) RETURNING state_version,record_sha256",
-                    (session.fix_session_id, session.configuration.session_key, session.configuration.sender_comp_id,
-                     session.configuration.target_comp_id, session.state.value, session.next_inbound_seq_num,
-                     session.next_outbound_seq_num, session.configuration.heartbeat_interval_seconds,
-                     session.configuration.test_request_grace_seconds, session.configuration.disconnect_timeout_seconds,
-                     session.last_inbound_at_utc, session.last_outbound_at_utc, session.pending_test_request_id,
-                     session.pending_test_deadline_at_utc, session.test_request_grace_expired,
-                     session.configuration.config_sha256, current_hash,
-                     last_event_id, updated_at_utc),
+                    "INSERT INTO monitoring.fix_sessions "
+                    "(fix_session_id,session_key,sender_comp_id,target_comp_id,state,"
+                    "next_inbound_seq_num,next_outbound_seq_num,heartbeat_interval_seconds,"
+                    "test_request_grace_seconds,disconnect_timeout_seconds,last_inbound_at_utc,"
+                    "last_outbound_at_utc,pending_test_request_id,pending_test_deadline_at_utc,"
+                    "test_request_grace_expired,configuration_sha256,record_sha256,state_version,"
+                    "previous_state_hash,last_transition_event_id,last_transition_sequence,"
+                    "authoritative_event_sha256,updated_at_utc) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,NULL,%s,%s,%s,%s) "
+                    "RETURNING state_version,record_sha256,last_transition_sequence,"
+                    "authoritative_event_sha256,last_transition_event_id",
+                    (
+                        session.fix_session_id,
+                        session.configuration.session_key,
+                        session.configuration.sender_comp_id,
+                        session.configuration.target_comp_id,
+                        session.state.value,
+                        session.next_inbound_seq_num,
+                        session.next_outbound_seq_num,
+                        session.configuration.heartbeat_interval_seconds,
+                        session.configuration.test_request_grace_seconds,
+                        session.configuration.disconnect_timeout_seconds,
+                        session.last_inbound_at_utc,
+                        session.last_outbound_at_utc,
+                        session.pending_test_request_id,
+                        session.pending_test_deadline_at_utc,
+                        session.test_request_grace_expired,
+                        session.configuration.config_sha256,
+                        current_hash,
+                        last_event_id,
+                        tail_sequence,
+                        tail_hash,
+                        updated_at_utc,
+                    ),
                 )
             else:
                 expected_version = session.persisted_state_version if expected_state_version is None else expected_state_version
                 expected_hash = session.persisted_record_sha256 if expected_record_sha256 is None else expected_record_sha256
-                if expected_version is None or expected_hash is None or int(stored[0]) != int(expected_version) or str(stored[1]) != str(expected_hash):
+                stored_tail_sequence = None if stored[2] is None else int(stored[2])
+                stored_tail_hash = None if stored[3] is None else str(stored[3])
+                stored_tail_event_id = stored[4]
+                exact_replay = (
+                    str(stored[1]) == current_hash
+                    and stored_tail_sequence == tail_sequence
+                    and stored_tail_hash == tail_hash
+                    and stored_tail_event_id == last_event_id
+                )
+                if exact_replay and expected_version is None and expected_hash is None:
+                    session.persisted_state_version = int(stored[0])
+                    session.persisted_record_sha256 = str(stored[1])
+                    session.persisted_transition_sequence = stored_tail_sequence
+                    session.persisted_event_sha256 = stored_tail_hash
+                    session.persisted_transition_event_id = stored_tail_event_id
+                    return session.fix_session_id
+                if (
+                    expected_version is None
+                    or expected_hash is None
+                    or int(stored[0]) != int(expected_version)
+                    or str(stored[1]) != str(expected_hash)
+                ):
                     raise Phase6ConflictError("stale FIX session projection writer")
+                if exact_replay:
+                    session.persisted_state_version = int(stored[0])
+                    session.persisted_record_sha256 = str(stored[1])
+                    session.persisted_transition_sequence = stored_tail_sequence
+                    session.persisted_event_sha256 = stored_tail_hash
+                    session.persisted_transition_event_id = stored_tail_event_id
+                    return session.fix_session_id
+                if (
+                    last_event_id is None
+                    or tail_sequence is None
+                    or tail_hash is None
+                    or (stored_tail_sequence is not None and tail_sequence <= stored_tail_sequence)
+                ):
+                    raise Phase6ConflictError("changed FIX session projection requires a new authoritative event tail")
                 cursor.execute(
-                    "UPDATE monitoring.fix_sessions SET state=%s,next_inbound_seq_num=%s,next_outbound_seq_num=%s,last_inbound_at_utc=%s,last_outbound_at_utc=%s,pending_test_request_id=%s,pending_test_deadline_at_utc=%s,test_request_grace_expired=%s,record_sha256=%s,state_version=state_version+1,previous_state_hash=%s,last_transition_event_id=%s,updated_at_utc=%s WHERE fix_session_id=%s AND state_version=%s AND record_sha256=%s RETURNING state_version,record_sha256",
-                    (session.state.value, session.next_inbound_seq_num, session.next_outbound_seq_num,
-                     session.last_inbound_at_utc, session.last_outbound_at_utc, session.pending_test_request_id,
-                     session.pending_test_deadline_at_utc, session.test_request_grace_expired, current_hash, stored[1],
-                     last_event_id, updated_at_utc, session.fix_session_id,
-                     expected_version, expected_hash),
+                    "UPDATE monitoring.fix_sessions SET state=%s,next_inbound_seq_num=%s,"
+                    "next_outbound_seq_num=%s,last_inbound_at_utc=%s,last_outbound_at_utc=%s,"
+                    "pending_test_request_id=%s,pending_test_deadline_at_utc=%s,"
+                    "test_request_grace_expired=%s,record_sha256=%s,state_version=state_version+1,"
+                    "previous_state_hash=%s,last_transition_event_id=%s,last_transition_sequence=%s,"
+                    "authoritative_event_sha256=%s,updated_at_utc=%s "
+                    "WHERE fix_session_id=%s AND state_version=%s AND record_sha256=%s "
+                    "RETURNING state_version,record_sha256,last_transition_sequence,"
+                    "authoritative_event_sha256,last_transition_event_id",
+                    (
+                        session.state.value,
+                        session.next_inbound_seq_num,
+                        session.next_outbound_seq_num,
+                        session.last_inbound_at_utc,
+                        session.last_outbound_at_utc,
+                        session.pending_test_request_id,
+                        session.pending_test_deadline_at_utc,
+                        session.test_request_grace_expired,
+                        current_hash,
+                        stored[1],
+                        last_event_id,
+                        tail_sequence,
+                        tail_hash,
+                        updated_at_utc,
+                        session.fix_session_id,
+                        expected_version,
+                        expected_hash,
+                    ),
                 )
                 if cursor.rowcount != 1:
                     raise Phase6ConflictError("stale FIX session projection writer")
-            version, record_hash = cursor.fetchone()
+            version, record_hash, persisted_sequence, persisted_event_hash, persisted_event_id = cursor.fetchone()
             session.persisted_state_version = int(version)
             session.persisted_record_sha256 = str(record_hash)
+            session.persisted_transition_sequence = int(persisted_sequence)
+            session.persisted_event_sha256 = str(persisted_event_hash)
+            session.persisted_transition_event_id = persisted_event_id
             return session.fix_session_id
         finally:
             cursor.close()
-
     def record_fix_session_event(self, session, event):
         existing = self._fetchone("SELECT fix_session_event_id,record_sha256 FROM monitoring.fix_session_events WHERE fix_session_event_id=%s", (event.event_id,))
         if existing is not None:
@@ -179,7 +299,15 @@ class PostgresPhase6Repository(_PostgresRepositoryBase):
             "fix_session_id": session.fix_session_id, "prior_state": event.prior_state.value,
             "new_state": event.new_state.value, "reason_code": event.reason_code,
             "parent_message_id": event.parent_message_id, "transition_sequence": event.transition_sequence,
-            "previous_event_sha256": event.previous_event_sha256, "record_sha256": event.record_sha256,
+            "previous_event_sha256": event.previous_event_sha256,
+            "projected_next_inbound_seq_num": event.projected_next_inbound_seq_num,
+            "projected_next_outbound_seq_num": event.projected_next_outbound_seq_num,
+            "projected_last_inbound_at_utc": event.projected_last_inbound_at_utc,
+            "projected_last_outbound_at_utc": event.projected_last_outbound_at_utc,
+            "projected_pending_test_request_id": event.projected_pending_test_request_id,
+            "projected_pending_test_deadline_at_utc": event.projected_pending_test_deadline_at_utc,
+            "projected_test_request_grace_expired": event.projected_test_request_grace_expired,
+            "record_sha256": event.record_sha256,
         }
         with self._write_scope():
             return self._strict("monitoring.fix_session_events", "fix_session_event_id", row)
@@ -238,6 +366,57 @@ class PostgresPhase6Repository(_PostgresRepositoryBase):
         with self._write_scope():
             return self._strict("monitoring.fix_messages", "fix_message_id", row)
 
+    def record_rejected_fix_occurrence(self, occurrence):
+        row = {
+            "fix_rejection_occurrence_id": occurrence.occurrence_id,
+            "fix_message_id": occurrence.observation_id,
+            "fix_session_id": occurrence.fix_session_id,
+            "direction": occurrence.direction.value,
+            "validation_status": "rejected",
+            "processing_time_utc": occurrence.processing_time_utc,
+            "record_sha256": occurrence.record_sha256,
+        }
+        with self._write_scope():
+            return self._strict(
+                "monitoring.fix_rejection_occurrences",
+                "fix_rejection_occurrence_id",
+                row,
+            )
+    def record_simulated_fix_order_intent(self, value):
+        row = order_intent_row(value)
+        row.update(
+            signal_id=None,
+            backtest_run_id=None,
+            execution_mode="simulated_fix",
+        )
+        with self._write_scope():
+            return self._strict(
+                "execution.order_intents",
+                "order_intent_id",
+                row,
+            )
+
+    def record_simulated_fix_order(self, value):
+        row = order_lineage_row(value)
+        row.update(backtest_run_id=None)
+        with self._write_scope():
+            return self._strict("execution.orders", "order_id", row)
+
+    def record_simulated_fix_risk_decision(self, value):
+        row = risk_decision_row(value)
+        row.update(backtest_run_id=None)
+        with self._write_scope():
+            return self._strict(
+                "execution.risk_decisions",
+                "risk_decision_id",
+                row,
+            )
+
+    def record_simulated_fix_fill(self, value):
+        row = fill_row(value)
+        row.update(backtest_run_id=None)
+        with self._write_scope():
+            return self._strict("execution.fills", "fill_id", row)
     def record_fix_order_link(self, value):
         row = {"fix_order_link_id": value.fix_order_link_id, "fix_session_id": value.fix_session_id, "cl_ord_id": value.cl_ord_id, "orig_cl_ord_id": value.orig_cl_ord_id, "order_intent_id": value.order_intent_id, "order_id": value.order_id, "fill_id": value.fill_id, "execution_report_message_id": value.execution_report_message_id, "business_identity_sha256": value.business_identity_sha256, "record_sha256": value.record_sha256}
         with self._write_scope():
@@ -266,12 +445,35 @@ class PostgresPhase6Repository(_PostgresRepositoryBase):
     def list_incident_history(self, start_utc, end_utc): return self._fetchall("SELECT * FROM monitoring.incidents WHERE episode_started_at_utc>=%s AND episode_started_at_utc<%s ORDER BY episode_started_at_utc,incident_id", (start_utc, end_utc))
     def get_fix_session(self, fix_session_id): return self._fetchone("SELECT * FROM monitoring.fix_sessions WHERE fix_session_id=%s", (fix_session_id,))
     def list_fix_messages(self, fix_session_id, direction, begin_seq_num, end_seq_num): return self._fetchall("SELECT * FROM monitoring.fix_messages WHERE fix_session_id=%s AND direction=%s AND msg_seq_num>=%s AND msg_seq_num<%s ORDER BY msg_seq_num,fix_message_id", (fix_session_id, getattr(direction, 'value', direction), begin_seq_num, end_seq_num))
+    def list_rejected_fix_occurrences(self, fix_session_id, start_utc, end_utc):
+        return self._fetchall(
+            "SELECT occurrence.*,message.rejection_code,message.rejection_reason,"
+            "message.raw_message_sha256,message.msg_seq_num,message.msg_type,"
+            "message.parsed_fields_jsonb ->> '49' AS sender_comp_id,"
+            "message.parsed_fields_jsonb ->> '56' AS target_comp_id,message.parsed_fields_jsonb "
+            "FROM monitoring.fix_rejection_occurrences AS occurrence "
+            "JOIN monitoring.fix_messages AS message "
+            "ON message.fix_message_id=occurrence.fix_message_id "
+            "AND message.fix_session_id=occurrence.fix_session_id "
+            "AND message.direction=occurrence.direction "
+            "AND message.validation_status=occurrence.validation_status "
+            "WHERE occurrence.fix_session_id=%s "
+            "AND occurrence.processing_time_utc>=%s AND occurrence.processing_time_utc<%s "
+            "ORDER BY occurrence.processing_time_utc,occurrence.fix_rejection_occurrence_id",
+            (fix_session_id, start_utc, end_utc),
+        )
     def list_order_lifecycle(self, fix_session_id, cl_ord_id): return self._fetchall("SELECT * FROM monitoring.fix_order_links WHERE fix_session_id=%s AND cl_ord_id=%s ORDER BY fix_order_link_id", (fix_session_id, cl_ord_id))
     def list_latency_history(self, fix_session_id, start_utc, end_utc): return self._fetchall("SELECT * FROM monitoring.latency_samples WHERE fix_session_id=%s AND simulated_start_utc>=%s AND simulated_start_utc<%s ORDER BY simulated_start_utc,latency_sample_id", (fix_session_id, start_utc, end_utc))
     def list_connection_fault_history(self, fix_session_id, start_utc, end_utc): return self._fetchall("SELECT * FROM monitoring.connection_faults WHERE fix_session_id=%s AND scheduled_at_utc>=%s AND scheduled_at_utc<%s ORDER BY scheduled_at_utc,connection_fault_id", (fix_session_id, start_utc, end_utc))
 
 
-def session_record_hash(session):
+def session_record_hash(
+    session,
+    *,
+    last_transition_event_id=None,
+    last_transition_sequence=None,
+    authoritative_event_sha256=None,
+):
     from secure_eval_wrapper.data_collection.hashing import sha256_payload
     return sha256_payload({
         "fix_session_id": session.fix_session_id, "state": session.state,
@@ -279,4 +481,7 @@ def session_record_hash(session):
         "last_inbound": session.last_inbound_at_utc, "last_outbound": session.last_outbound_at_utc,
         "pending_test": session.pending_test_request_id, "pending_deadline": session.pending_test_deadline_at_utc,
         "grace_expired": session.test_request_grace_expired, "configuration": session.configuration.config_sha256,
+        "last_transition_event_id": last_transition_event_id,
+        "last_transition_sequence": last_transition_sequence,
+        "authoritative_event_sha256": authoritative_event_sha256,
     })

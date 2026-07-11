@@ -53,7 +53,7 @@ class SimulatedBroker(Broker):
             values = (item for item in values if item.series_identity.series_identity_sha256 == digest)
         return tuple(sorted(values, key=lambda row: (row.submitted_at_utc, str(row.order_id))))
 
-    def _fill(self, order: SimulatedOrder, *, timestamp, base_price: Decimal, liquidity: LiquidityFlag, reason: str, risk_check, apply_slippage: bool) -> BrokerResult:
+    def _fill(self, order: SimulatedOrder, *, timestamp, base_price: Decimal, liquidity: LiquidityFlag, reason: str, risk_check, apply_slippage: bool, fill_application=None) -> BrokerResult:
         if apply_slippage:
             price, slippage_amount = self.slippage_model.apply(base_price=base_price, side=order.side)
             slippage_bps = self.slippage_model.configuration.adverse_bps
@@ -72,6 +72,8 @@ class SimulatedBroker(Broker):
             self._history.append(rejected)
             return BrokerResult((rejected,), (), (risk,))
         fill = Fill(order.run_id, order.order_id, order.order_intent_id, order.series_identity, timestamp, order.side, order.quantity, base_price, price, order.accounting_mode, liquidity, fee, self.fee_model.configuration.fee_currency, slippage_amount, slippage_bps, reason, self.configuration.config_sha256, parent_ids=(order.order_id, risk.risk_decision_id))
+        if fill_application is not None:
+            fill_application(fill)
         self._active.pop(order.order_id, None)
         filled = replace(order, status=OrderStatus.FILLED)
         self._history.append(filled)
@@ -80,22 +82,22 @@ class SimulatedBroker(Broker):
     def _eligible(self, order: SimulatedOrder, timestamp) -> bool:
         return timestamp >= order.submitted_at_utc
 
-    def process_bar_open(self, *, series_identity, timestamp_utc, open_price, risk_check) -> BrokerResult:
+    def process_bar_open(self, *, series_identity, timestamp_utc, open_price, risk_check, fill_application=None) -> BrokerResult:
         updates, fills, risks = [], [], []
         for order in self.active_orders(series_identity=series_identity):
             if not self._eligible(order, timestamp_utc):
                 continue
             result = None
             if order.order_type is OrderType.MARKET:
-                result = self._fill(order, timestamp=timestamp_utc, base_price=open_price, liquidity=LiquidityFlag.TAKER, reason="next_bar_open", risk_check=risk_check, apply_slippage=True)
+                result = self._fill(order, timestamp=timestamp_utc, base_price=open_price, liquidity=LiquidityFlag.TAKER, reason="next_bar_open", risk_check=risk_check, apply_slippage=True, fill_application=fill_application)
             elif order.order_type is OrderType.LIMIT or (order.order_type is OrderType.STOP_LIMIT and order.status is OrderStatus.TRIGGERED):
                 reached = open_price <= order.limit_price if order.side.value == "buy" else open_price >= order.limit_price
                 if reached:
-                    result = self._fill(order, timestamp=timestamp_utc, base_price=open_price, liquidity=LiquidityFlag.MAKER, reason="limit_open_gap", risk_check=risk_check, apply_slippage=False)
+                    result = self._fill(order, timestamp=timestamp_utc, base_price=open_price, liquidity=LiquidityFlag.MAKER, reason="limit_open_gap", risk_check=risk_check, apply_slippage=False, fill_application=fill_application)
             elif order.order_type is OrderType.STOP:
                 reached = open_price >= order.stop_price if order.side.value == "buy" else open_price <= order.stop_price
                 if reached:
-                    result = self._fill(order, timestamp=timestamp_utc, base_price=open_price, liquidity=LiquidityFlag.TAKER, reason="stop_open_gap", risk_check=risk_check, apply_slippage=True)
+                    result = self._fill(order, timestamp=timestamp_utc, base_price=open_price, liquidity=LiquidityFlag.TAKER, reason="stop_open_gap", risk_check=risk_check, apply_slippage=True, fill_application=fill_application)
             elif order.order_type is OrderType.STOP_LIMIT:
                 triggered = open_price >= order.stop_price if order.side.value == "buy" else open_price <= order.stop_price
                 if triggered:
@@ -104,7 +106,7 @@ class SimulatedBroker(Broker):
                     updates.append(activated)
                     marketable = open_price <= order.limit_price if order.side.value == "buy" else open_price >= order.limit_price
                     if marketable:
-                        result = self._fill(activated, timestamp=timestamp_utc, base_price=open_price, liquidity=LiquidityFlag.TAKER, reason="stop_limit_open", risk_check=risk_check, apply_slippage=False)
+                        result = self._fill(activated, timestamp=timestamp_utc, base_price=open_price, liquidity=LiquidityFlag.TAKER, reason="stop_limit_open", risk_check=risk_check, apply_slippage=False, fill_application=fill_application)
             if result is not None:
                 updates.extend(result.order_updates); fills.extend(result.fills); risks.extend(result.risk_decisions)
             elif order.time_in_force is TimeInForce.IOC and order.order_id in self._active:
@@ -113,7 +115,7 @@ class SimulatedBroker(Broker):
                 updates.append(expired); self._history.append(expired)
         return BrokerResult(tuple(updates), tuple(fills), tuple(risks))
 
-    def process_completed_bar(self, *, series_identity, timestamp_utc, open_price, high, low, close, risk_check) -> BrokerResult:
+    def process_completed_bar(self, *, series_identity, timestamp_utc, open_price, high, low, close, risk_check, fill_application=None) -> BrokerResult:
         updates, fills, risks = [], [], []
         for order in self.active_orders(series_identity=series_identity):
             if timestamp_utc <= order.submitted_at_utc or order.time_in_force is TimeInForce.IOC:
@@ -122,11 +124,11 @@ class SimulatedBroker(Broker):
             if order.order_type is OrderType.LIMIT or (order.order_type is OrderType.STOP_LIMIT and order.status is OrderStatus.TRIGGERED):
                 reached = low <= order.limit_price if order.side.value == "buy" else high >= order.limit_price
                 if reached:
-                    result = self._fill(order, timestamp=timestamp_utc, base_price=order.limit_price, liquidity=LiquidityFlag.MAKER, reason="limit_intrabar_cross", risk_check=risk_check, apply_slippage=False)
+                    result = self._fill(order, timestamp=timestamp_utc, base_price=order.limit_price, liquidity=LiquidityFlag.MAKER, reason="limit_intrabar_cross", risk_check=risk_check, apply_slippage=False, fill_application=fill_application)
             elif order.order_type is OrderType.STOP:
                 reached = high >= order.stop_price if order.side.value == "buy" else low <= order.stop_price
                 if reached:
-                    result = self._fill(order, timestamp=timestamp_utc, base_price=order.stop_price, liquidity=LiquidityFlag.TAKER, reason="stop_intrabar_trigger", risk_check=risk_check, apply_slippage=True)
+                    result = self._fill(order, timestamp=timestamp_utc, base_price=order.stop_price, liquidity=LiquidityFlag.TAKER, reason="stop_intrabar_trigger", risk_check=risk_check, apply_slippage=True, fill_application=fill_application)
             elif order.order_type is OrderType.STOP_LIMIT:
                 reached = high >= order.stop_price if order.side.value == "buy" else low <= order.stop_price
                 if reached:

@@ -49,7 +49,9 @@ A canonical replay identity includes MsgType, CompIDs, and every supported body/
 
 Session receive returns a typed disposition: `accepted_new`, `accepted_replay`, `rejected`, or `sequence_gap`. An identical low-sequence PossDup is accepted as replay but never passed to economic gateway handling. Changed quantity, price, symbol, side, or any other supported field is rejected as a replay conflict. PostgreSQL uses the same replay identity, making identical replay persistence idempotent while rejecting changed content at the same session/direction/sequence.
 
-Malformed bytes produce a typed rejected observation even when they cannot decode into `FixMessage`. The observation preserves session, direction, processing time, raw SHA-256, safely parsed header fields and sequence when available, typed rejection code/reason, deterministic observation ID, and record hash. Malformed BodyLength, CheckSum, MsgType, singleton tags, field values, and wrong CompIDs do not advance inbound sequence or economic processing. They persist in `monitoring.fix_messages` with `validation_status='rejected'`.
+Malformed bytes and constructed `FixMessage` values use the same typed rejected disposition. Codec validation failures, wrong CompIDs, invalid direct content, unsupported session state, and conflicting low-sequence content create a stable rejected observation, an immutable rejection event, and no inbound-sequence or economic processing. Both `SimulatedFixGateway.handle_raw()` and the tuple-compatible typed handler preserve the disposition and never throw an unaudited CompID exception.
+
+A stable observation is keyed by session, direction, raw SHA-256, and rejection code. Timestamped delivery occurrences are persisted separately and can reference only a rejected parent message, so retrying the same logical occurrence is idempotent while the same malformed content received at two different times produces two ordered audit occurrences. Half-open history reads join each occurrence to its rejection code, reason, raw hash, sequence, type, and parsed header evidence. A different reason under the same stable identity conflicts; a different rejection code is explicitly separate.
 
 ## Session timing semantics
 
@@ -66,7 +68,9 @@ Thus heartbeat interval, response grace, and disconnect timeout each materially 
 
 ## Position/accounting lifecycle
 
-Every NewOrderSingle reads the current fill-derived quantity through the gateway’s deterministic position provider (or its internal fill-derived state). Spot sells up to owned inventory are accepted; a sell beyond inventory is blocked. Linear perpetual increase, reduce, flat, and reversal use the actual current quantity. Acknowledgements never change state. Fills are applied once by fill ID, then ExecutionReport reflects the resulting lifecycle. Optional callbacks allow the same fills to update a Phase 5 `Portfolio` or another deterministic accounting provider.
+Every NewOrderSingle reads the current fill-derived quantity through the gateway's deterministic position provider (or its internal fill-derived state). Spot available inventory is current filled inventory minus the remaining quantities of active Spot sell orders. Submission therefore reserves inventory deterministically; cancellation, rejection, expiry, and fill remove the active reservation. Pre-fill risk recalculates inventory at the actual fill boundary.
+
+The existing `SimulatedBroker` invokes gateway accounting after each accepted fill and before evaluating the next eligible order. A fill is not returned or finalized if accounting raises, duplicate fills are replay-protected, and no Spot position may become negative. External accounting application requires paired snapshot and restore callbacks; mutation failures restore and verify the authoritative position before the exception escapes. Linear perpetual increase, reduce, flat, short, and reversal remain signed and do not use Spot reservations. Acknowledgements never change positions.
 
 ## Deterministic fault orchestration
 
@@ -74,9 +78,9 @@ Every NewOrderSingle reads the current fill-derived quantity through the gateway
 
 ## PostgreSQL persistence
 
-Migration `0013` remains unchanged. Migration `0014_phase6_first_audit_repairs.sql` adds rejected-observation support, canonical replay hashes, incident check identity, timeout state, immutable event-chain ordinals/hashes, and an optimistic current-session projection.
+Migrations `0013` and `0014` remain unchanged. Migration `0015_phase6_concurrency_and_audit_integrity.sql` adds rejected-occurrence history, complete per-event projection snapshots, and an authoritative session tail ordinal and hash. The upgrade repairs legacy hash links, appends a deterministic authoritative snapshot to every upgraded projection, including eventless sessions, and validates every existing chain before commit. Deferred PostgreSQL validation requires every changed session projection to identify a contiguous immutable event tail, match all state, sequence, last-message, pending-test, and grace-expiry fields, and carry the appropriate accepted-message, sent-message, transition, or timeout evidence. Exact unchanged replay from either the original or a freshly reconstructed object is idempotent without an unexplained projection version.
 
-`monitoring.fix_session_events` is the immutable authority. `monitoring.fix_sessions` is a projection protected by `state_version`, `previous_state_hash`, non-regressing sequences, legal transition checks, and stale-writer failure. SequenceReset forward recovery remains supported. Session messages, rejected observations, events, order links, latency, faults, and the projection share one transaction; rollback leaves no orphan records.
+The public FIX demo persists one complete transaction containing the session projection, messages, rejected observations and occurrences, immutable session events, gateway-created `OrderIntent`, `RiskDecision`, `SimulatedOrder`, `Fill`, FIX order links, and execution reports. Any child failure rolls the entire session and execution lineage back. These records use only the existing `SimulatedBroker` and public simulation mode.
 
 PostgreSQL is the only authority. There is no SQLite or file fallback.
 
@@ -89,7 +93,7 @@ secure-eval-monitor
 secure-eval-fix-sim
 ```
 
-Source wrappers are `python open-core/scripts/run_public_monitoring.py` and `python open-core/scripts/run_simulated_fix.py`. Defaults are synthetic, compact, database-free, socket-free, and do not import a PostgreSQL driver. Persistence requires both `--persist` and `ENABLE_POSTGRES_PERSISTENCE=true`, plus explicit `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and optional `POSTGRES_SSLMODE`. The driver is imported lazily, the connection is closed, and `persistence_status="postgresql"` is printed only after commit succeeds.
+Source wrappers are `python open-core/scripts/run_public_monitoring.py` and `python open-core/scripts/run_simulated_fix.py`. Defaults are synthetic, compact, database-free, socket-free, and do not import a PostgreSQL driver. Persistence requires both `--persist` and `ENABLE_POSTGRES_PERSISTENCE=true`, plus explicit `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and optional `POSTGRES_SSLMODE`. The driver is imported lazily, the connection is closed, and `persistence_status="postgresql"` plus non-zero execution-lineage counts are printed only after the combined transaction commits.
 
 ## Limitations
 
