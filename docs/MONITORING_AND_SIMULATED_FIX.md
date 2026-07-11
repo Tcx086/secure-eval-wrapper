@@ -104,3 +104,7 @@ Source wrappers are `python open-core/scripts/run_public_monitoring.py` and `pyt
 - No partial-fill/liquidity/order-book model beyond Phase 5.
 - Operational thresholds are policies, not statistical guarantees.
 - Health state and simulated execution do not predict profitability.
+
+## Phase 7 paper monitoring integration
+
+Paper runs extend the monitoring input boundary with explicit endpoint, authenticated transport, credential age/failure, order acknowledgement/unknown/cancel age, rate utilization, duplicate/missing fill, fee, partial-fill reconciliation, balance/position freshness, unapproved state, drawdown/loss, account mode, clock skew, and kill/reset evidence. Monitoring remains read-only; cancellation and kill transitions belong to the paper controller.

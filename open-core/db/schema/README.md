@@ -52,3 +52,7 @@ complete `backtest_run_id`.
 ## Phase 6 schema
 
 The `monitoring` schema now includes monitoring runs, check results, health snapshots, incident episodes and occurrences, simulated FIX sessions/messages/order links, latency samples, and configured connection faults. `backtesting.backtest_position_states` includes final valuation time, source, stale age, status, and source snapshot lineage. See `docs/MONITORING_AND_SIMULATED_FIX.md` for semantics.
+
+## Phase 7 paper schema
+
+Migration 0016 keeps paper execution separate from Phase 5 simulation. Paper fills require `accounting_applied=true`, environment constraints forbid live rows, credential tables accept public-safe references only, and half-open indexes support lifecycle and reconciliation reads. Start, submission, fill, reconciliation, and kill writers use explicit PostgreSQL transactions.

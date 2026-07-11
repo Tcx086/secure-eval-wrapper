@@ -47,7 +47,7 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e "./open-core[test]"
-      - run: python -c "import secure_eval_wrapper; import secure_eval_wrapper.execution; import secure_eval_wrapper.backtesting; import secure_eval_wrapper.monitoring; import secure_eval_wrapper.fix"
+      - run: python -c "import secure_eval_wrapper; import secure_eval_wrapper.execution; import secure_eval_wrapper.backtesting; import secure_eval_wrapper.monitoring; import secure_eval_wrapper.fix; import secure_eval_wrapper.paper"
       - name: Dedicated Phase 5 second-audit regression suite
         run: python -m unittest discover -s open-core/tests -p "test_phase5_second_audit.py" -v
       - name: Dedicated Phase 5 third-audit offline regression suite
@@ -66,12 +66,24 @@ jobs:
         run: python -m unittest discover -s open-core/tests -p "test_phase6_first_audit_repairs.py" -v
       - name: Phase 6 second-audit concurrency and rejection regression suite
         run: python -m unittest discover -s open-core/tests -p "test_phase6_second_audit.py" -v
+      - name: Phase 7 contracts, preflight, approval, and endpoint safety
+        run: python -m unittest discover -s open-core/tests -p "test_phase7_contracts_preflight_approval.py" -v
+      - name: Phase 7 internal venue, accounting, reconciliation, recovery, and kill switch
+        run: python -m unittest discover -s open-core/tests -p "test_phase7_internal_accounting_reconciliation_kill.py" -v
+      - name: Phase 7 official-demo fake transport, credential redaction, CLI, monitoring, and boundaries
+        run: python -m unittest discover -s open-core/tests -p "test_phase7_official_sandbox_adapter.py" -v && python -m unittest discover -s open-core/tests -p "test_phase7_cli_monitoring_boundaries.py" -v
       - name: Compile package and scripts
         run: python -m compileall -q open-core/src open-core/scripts
       - run: secure-eval-backtest
       - run: secure-eval-validate
       - run: secure-eval-monitor
       - run: secure-eval-fix-sim
+      - run: secure-eval-paper-preflight
+      - run: secure-eval-paper-internal
+      - run: secure-eval-paper-run
+      - run: secure-eval-paper-status
+      - run: secure-eval-paper-kill
+      - run: secure-eval-paper-reconcile
 
   postgres-integration:
     name: PostgreSQL 16 integration
@@ -104,12 +116,13 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -e "./open-core[postgres,test]"
-      - name: Clean migration install 0001 through 0015
+      - name: Clean migration install 0001 through 0016
         run: python open-core/scripts/apply_postgres_migrations.py
-      - name: Migration hashes and Phase 5/6 catalog
+      - name: Migration hashes and Phase 5/6/7 catalog
         run: |
           python open-core/scripts/verify_postgres_schema.py --migration-only
           python open-core/scripts/verify_phase5_postgres_schema.py
+          python open-core/scripts/verify_phase7_postgres_schema.py
       - name: Real repository, all-writer conflicts, bundle idempotency, constraints, and rollback
         env:
           RUN_POSTGRES_INTEGRATION: "true"
@@ -135,16 +148,23 @@ jobs:
         env:
           RUN_POSTGRES_INTEGRATION: "true"
         run: python -m unittest discover -s open-core/tests -p "test_phase6_second_audit_postgres.py" -v
-      - name: Seeded 0013 through 0015 upgrade with existing Phase 5 and Phase 6 rows
+      - name: Phase 7 PostgreSQL transactions, idempotency, rollback, recovery, redaction, and complete CLI replay
+        env:
+          RUN_POSTGRES_INTEGRATION: "true"
+          ENABLE_POSTGRES_PERSISTENCE: "true"
+        run: python -m unittest discover -s open-core/tests -p "test_phase7_postgres_integration.py" -v
+      - name: Seeded 0013 through 0016 upgrade with existing Phase 5 and Phase 6 rows
         run: |
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --create-database --through 0009 --seed-phase5
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0010 --through 0011
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0012 --through 0012
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0013 --through 0013 --seed-phase6
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0014 --through 0014
-          python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0015
+          python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0015 --through 0015
+          python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0016
           POSTGRES_DB=secure_eval_upgrade python open-core/scripts/verify_postgres_schema.py
           POSTGRES_DB=secure_eval_upgrade python open-core/scripts/verify_phase5_postgres_schema.py
+          POSTGRES_DB=secure_eval_upgrade python open-core/scripts/verify_phase7_postgres_schema.py
 
   boundary:
     name: Public/private and runtime boundary

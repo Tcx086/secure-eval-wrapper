@@ -6,7 +6,7 @@ A public, auditable, and reproducible framework for building crypto trading syst
 
 The project is developed in explicit, auditable phases. Architecture, PostgreSQL foundations, public market data, public alpha, and standardized signals are complete. Deterministic simulated execution and event-driven backtesting are complete after local PostgreSQL 16 and independent GitHub Actions validation.
 
-> **Current status:** Phase 6 monitoring and strictly simulated FIX is completed after first-independent-audit repair and six-job CI validation. Phase 7 remains todo; paper/live/external FIX connectivity is not implemented.
+> **Current status:** Phase 6 monitoring and strictly simulated FIX is complete. Phase 7 safe paper trading is in progress with an offline internal venue and gated official demo adapter; live execution and external production FIX remain unimplemented.
 
 ## Why this project exists
 
@@ -305,6 +305,8 @@ Some earlier evaluation-wrapper components remain in the repository for compatib
 - [Public Alpha Library](docs/PUBLIC_ALPHA_LIBRARY.md)
 - [Signal Generation](docs/SIGNAL_GENERATION.md)
 - [Execution and FIX-Style Monitoring](docs/EXECUTION_AND_FIX_MONITORING.md)
+- [Safe Paper Trading](docs/SAFE_PAPER_TRADING.md)
+- [Live Trading Safety](docs/LIVE_TRADING_SAFETY.md)
 - [Local Data Governance](docs/LOCAL_DATA_GOVERNANCE.md)
 - [Folder Structure](docs/FOLDER_STRUCTURE.md)
 - [Implementation Status](docs/IMPLEMENTATION_STATUS.md)
@@ -335,7 +337,7 @@ The intended principle is simple: **make the infrastructure inspectable without 
 
 Phases 3 and 4 are complete and auditable: public alphas produce continuous point-in-time `AlphaValue` records, and standardized signals apply deterministic ranking, thresholding, combination, conflict, and confidence rules with PostgreSQL lineage.
 
-Phase 5 simulated execution and backtesting is complete through its fourth independent audit. Phase 6 monitoring and the strictly simulated FIX API are completed after first-independent-audit repair and GitHub Actions validation. Phase 7 remains todo; paper and live trading are not enabled.
+Phase 5 simulated execution and backtesting is complete through its fourth independent audit. Phase 6 monitoring and the strictly simulated FIX API are completed after first-independent-audit repair and GitHub Actions validation. Phase 7 safe paper trading is in progress; the internal venue and official OKX demo boundary are implemented, while live trading remains unimplemented and unreachable.
 
 ## Disclaimer
 
@@ -343,4 +345,8 @@ This repository is for software architecture, data engineering, testing, and res
 
 ## Phase 6 monitoring and simulated FIX
 
-The public framework now includes deterministic point-in-time monitoring and a strictly simulated, in-process FIX 4.4-compatible subset. Run `secure-eval-monitor` or `secure-eval-fix-sim` after installing `open-core`. Both demos are synthetic, socket-free, and persistence-free by default. See [Monitoring and Simulated FIX](docs/MONITORING_AND_SIMULATED_FIX.md). No paper/live broker, external FIX connection, or authenticated exchange access is implemented.
+The public framework now includes deterministic point-in-time monitoring and a strictly simulated, in-process FIX 4.4-compatible subset. Run `secure-eval-monitor` or `secure-eval-fix-sim` after installing `open-core`. Both demos are synthetic, socket-free, and persistence-free by default. See [Monitoring and Simulated FIX](docs/MONITORING_AND_SIMULATED_FIX.md). Phase 7 adds a separate safe PaperBroker and gated official demo adapter. No live broker or external production FIX connection is implemented.
+
+## Phase 7 safe paper trading
+
+`secure-eval-paper-internal` runs the complete deterministic, socket-free paper lifecycle with acknowledgement, partial fills, cancellation, timeout recovery, reconciliation, and kill handling. External OKX demo support is separately gated and uses only the immutable official-demo route/header contract. PostgreSQL remains the audit authority when persistence is requested. See [Safe Paper Trading](docs/SAFE_PAPER_TRADING.md). No production or live execution is implemented.

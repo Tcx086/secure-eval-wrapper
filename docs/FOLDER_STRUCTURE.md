@@ -179,3 +179,12 @@ contains only `simulated.py`; future paper/live brokers remain absent. The separ
 - `open-core/db/migrations/0013_phase6_monitoring_simulated_fix.sql`: projection valuation repair and initial Phase 6 PostgreSQL schema.
 - `open-core/db/migrations/0014_phase6_first_audit_repairs.sql`: rejected observations, replay hashes, event-chain integrity, and guarded session projection.
 - `open-core/scripts/run_public_monitoring.py` and `run_simulated_fix.py`: offline source-checkout demos.
+
+## Phase 7 additions
+
+- `open-core/src/secure_eval_wrapper/paper/`: safe paper contracts, internal venue, official demo adapter, lifecycle, accounting, reconciliation, recovery, kill switch, transport, credentials, persistence, and CLIs.
+- `open-core/db/migrations/0016_phase7_safe_paper_trading.sql`: separate paper audit schema objects.
+- `open-core/scripts/run_paper_*.py` and `run_internal_paper.py`: safe source-checkout commands.
+- `open-core/tests/test_phase7_*.py`: offline, adapter, boundary, and PostgreSQL coverage.
+
+Paper state is not stored under the Phase 5 simulated execution projections. Local PostgreSQL runtime state remains under ignored `var/postgres/` only.

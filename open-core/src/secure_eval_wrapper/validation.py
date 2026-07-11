@@ -33,15 +33,16 @@ def validate_status() -> None:
         raise RuntimeError("current_phase does not identify a declared phase")
     if phases["phase_6_monitoring_simulated_fix_api"]["status"] not in {"in_progress", "completed"}:
         raise RuntimeError("Phase 6 must be in progress or completed during the Phase 6 milestone")
-    if phases["phase_7_paper_trading"]["status"] != "todo" or phases["phase_7_paper_trading"]["completed"]:
-        raise RuntimeError("Phase 7 and paper-trading runtime must remain entirely todo")
+    if phases["phase_7_paper_trading"]["status"] not in {"in_progress", "completed"}:
+        raise RuntimeError("Phase 7 must be in progress or completed during the paper milestone")
+    if phases["phase_8_guarded_live_execution"]["status"] != "todo" or phases["phase_8_guarded_live_execution"]["completed"]:
+        raise RuntimeError("Phase 8 and guarded live execution must remain entirely todo")
     print("OK: implementation status JSON structure and fixed boundaries")
 
 
 _STATIC_FORBIDDEN = {
     "authoritative SQLite runtime": re.compile(r"(^|\n)\s*(import sqlite3|from sqlite3)", re.I),
     "SQLite connection URI": re.compile(r"sqlite(?:\+\w+)?://", re.I),
-    "paper broker implementation": re.compile(r"class\s+PaperBroker\b"),
     "live broker implementation": re.compile(r"class\s+LiveBroker\b"),
     "private key": re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
     "AWS access key": re.compile(r"AKIA[0-9A-Z]{16}"),
@@ -81,7 +82,8 @@ def content_boundary_findings(path: Path, text: str) -> list[str]:
             if _non_placeholder(value):
                 findings.append("non-placeholder exchange credential assignment")
                 break
-        if "tests" not in {part.lower() for part in path.parts} and _AUTHENTICATED_ENDPOINT.search(text):
+        approved_paper_contract = path.as_posix().endswith(("paper/endpoints.py", "paper/venues/official_sandbox.py"))
+        if "tests" not in {part.lower() for part in path.parts} and not approved_paper_contract and _AUTHENTICATED_ENDPOINT.search(text):
             findings.append("authenticated exchange account/order endpoint")
     return findings
 
@@ -152,6 +154,12 @@ def main(argv=None) -> int:
     _run(python, str(OPEN_CORE / "scripts" / "run_public_backtest_pipeline.py"))
     _run(python, str(OPEN_CORE / "scripts" / "run_public_monitoring.py"))
     _run(python, str(OPEN_CORE / "scripts" / "run_simulated_fix.py"))
+    _run(python, str(OPEN_CORE / "scripts" / "run_paper_preflight.py"))
+    _run(python, str(OPEN_CORE / "scripts" / "run_internal_paper.py"))
+    _run(python, str(OPEN_CORE / "scripts" / "run_paper_sandbox.py"))
+    _run(python, str(OPEN_CORE / "scripts" / "run_paper_status.py"))
+    _run(python, str(OPEN_CORE / "scripts" / "run_paper_kill.py"))
+    _run(python, str(OPEN_CORE / "scripts" / "run_paper_reconcile.py"))
     _run(python, str(OPEN_CORE / "scripts" / "verify_postgres_schema.py"), "--migration-only")
     validate_status()
     boundary_scan()

@@ -119,3 +119,7 @@ or live runtime. See `../docs/SIMULATED_EXECUTION_AND_BACKTESTING.md`.
 ## Monitoring and strictly simulated FIX
 
 `secure-eval-monitor` evaluates synthetic data, signal, execution, risk, system, and simulated-session evidence at an explicit UTC point in time. `secure-eval-fix-sim` demonstrates the in-process FIX 4.4-compatible profile, fill-derived Spot buy/close accounting, deterministic heartbeat/grace/disconnect semantics, replay handling, rejected observations, fault orchestration, and cancel/reject flow. Both commands are socket-free and driver-free by default. PostgreSQL persistence lazily connects only when `--persist` and `ENABLE_POSTGRES_PERSISTENCE=true` are both present, closes the connection, and reports `persistence_status="postgresql"` only after commit. No SQLite fallback exists. See `../docs/MONITORING_AND_SIMULATED_FIX.md`.
+
+## Safe paper package (Phase 7)
+
+`secure_eval_wrapper.paper` contains the provider-neutral broker, deterministic internal venue, OKX official-demo boundary, lazy credentials, endpoint catalog, preflight, approvals, manifests, paper accounting, reconciliation, recovery, monitoring evidence, kill switch, rate limits, PostgreSQL repository, and safe CLIs. Run `secure-eval-paper-internal` for the offline demo. External demo and PostgreSQL access remain off by default. See `../docs/SAFE_PAPER_TRADING.md`.

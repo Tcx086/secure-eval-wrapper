@@ -106,3 +106,7 @@ published.
 ## Migration 0014
 
 `0014_phase6_first_audit_repairs.sql` preserves migrations `0001` through `0013` byte-for-byte. It adds rejected raw FIX observations, canonical replay identity, incident check identity, explicit grace/disconnect state, chained immutable session-event ordinals, and an optimistic current-session projection with version/hash, non-regressing sequence, legal-transition, and stale-writer protection. Validation covers clean `0001 -> 0014` and public-safe seeded `0013 -> 0014` upgrades.
+
+## Migration 0016
+
+`0016_phase7_safe_paper_trading.sql` adds 23 Phase 7 tables for paper runs/manifests, preflight/approval, orders/fills/fees, account observations, reconciliation/recovery, persisted kill state, rate limits, transport attempts, public-safe credential references, and lifecycle events. It does not modify migrations `0001` through `0015`. `scripts/verify_phase7_postgres_schema.py` checks the PostgreSQL 16 catalog and orphan boundary.

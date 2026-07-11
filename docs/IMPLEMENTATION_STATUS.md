@@ -9,6 +9,8 @@ Every future functional PR must update both files in the same change:
 
 Completed work must be listed under `Completed`. Everything not done must remain under `Todo`.
 
+Current phase: `phase_7_paper_trading` (`in_progress`). Phase 8 remains entirely todo.
+
 ## Non-Negotiable Constraints
 - PostgreSQL is the only authoritative storage layer.
 - SQLite is explicitly disallowed as authoritative storage.
@@ -140,8 +142,8 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add unambiguous provider instrument identities that separate Spot, perpetual swaps, and dated futures.
 - [x] Verify and document current official public endpoint, request, response, pagination, limit, and authentication contracts.
 - [x] Implement Binance and OKX public Spot trade collection through injectable transports.
-- [x] Implement Binance USDÃ¢â€œË†-M and OKX SWAP public funding history.
-- [x] Implement Binance Spot/USDÃ¢â€œË†-M and OKX SPOT/SWAP public instrument metadata.
+- [x] Implement Binance USDÃƒÂ¢Ã¢â‚¬Å“Ã‹â€ -M and OKX SWAP public funding history.
+- [x] Implement Binance Spot/USDÃƒÂ¢Ã¢â‚¬Å“Ã‹â€ -M and OKX SPOT/SWAP public instrument metadata.
 - [x] Add deterministic normalization, validation reports, accepted/rejected gates, and quarantine for all three data types.
 - [x] Add PostgreSQL trade/funding persistence, immutable instrument metadata versions, conflict hashes, reads, indexes, constraints, and foreign-key verification.
 - [x] Add provider-neutral typed trade, funding, and instrument pipelines with fail-fast, partial, warning, and one-transaction persistence semantics.
@@ -279,18 +281,24 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add migration `0015` without modifying migrations `0001` through `0014`.
 - [x] Pass all required local, PostgreSQL 16, packaging, boundary, and migration validation, plus all six jobs in GitHub Actions checkpoint run `29143906785` on `e92d4484e7b4847a7a5b5ee49ae1dc2d573c0186`.
 
+### Phase 7: safe paper trading implementation (exit validation pending)
+
+- [x] Add provider-neutral PaperBroker contracts, bounded run configuration, preflight, explicit approval, immutable manifest, lifecycle, recovery, rate limiting, and safe CLI boundaries.
+- [x] Add the deterministic asynchronous InternalPaperVenue with partial fills, idempotency, deterministic faults, recovery, accounting, reconciliation, monitoring, and persisted kill-switch behavior.
+- [x] Verify and implement the credential-gated official OKX demo REST subset with an immutable route/marker catalog, lazy local credentials, bounded authenticated transport, and offline fake-transport tests.
+- [x] Add PostgreSQL migration 0016, 23 separate paper audit tables, transaction repositories, clean/seeded migration validation, replay idempotency, rollback injection, and catalog verification.
+- [x] Add Phase 7 documentation, 56 focused tests, package/CLI integration, CI jobs, public/private boundary scans, and explicit no-live/no-transfer/no-withdrawal constraints.
+
 ## Todo
 
 ### Future provider enhancements
 
 - [ ] Consider additional public OHLCV/trade/funding/instrument adapters after Phase 2; Bybit and Coinbase are not currently implemented.
 
-### Phase 7: paper trading
-- [ ] Design paper broker adapter.
-- [ ] Add paper-mode configuration.
-- [ ] Add sandbox/paper reconciliation.
-- [ ] Add paper trading run manifests.
-- [ ] Add paper trading safety checks.
+### Phase 7: paper trading (in progress)
+
+- [ ] Pass all six GitHub Actions jobs on the implementation SHA pushed to origin/main.
+- [ ] Complete the final status transition only after PostgreSQL 16 and final main-SHA validation evidence is confirmed.
 
 ### Phase 8: guarded live execution
 - [ ] Design live broker adapter.

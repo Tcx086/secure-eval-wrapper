@@ -218,9 +218,10 @@ class PackageCliCiBoundaryTests(unittest.TestCase):
         self.assertIn("postgres:16-alpine", workflow)
         self.assertIn("windows-latest", workflow)
 
-    def test_no_paper_live_or_sqlite_runtime_implementation(self):
+    def test_no_live_or_sqlite_runtime_implementation(self):
         combined = "\n".join(path.read_text(encoding="utf-8", errors="ignore") for path in (OPEN_CORE / "src" / "secure_eval_wrapper").rglob("*.py"))
-        self.assertNotRegex(combined, r"class\s+(?:PaperBroker|LiveBroker)\b")
+        self.assertNotRegex(combined, r"class\s+LiveBroker\b")
+        self.assertRegex(combined, r"class\s+PaperBroker\b")
         self.assertNotRegex(combined, r"(^|\n)\s*(?:import sqlite3|from sqlite3)")
         from secure_eval_wrapper.validation import boundary_scan
         boundary_scan()

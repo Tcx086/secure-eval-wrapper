@@ -1,4 +1,4 @@
-﻿# Crypto Trading System Architecture
+# Crypto Trading System Architecture
 
 ## Purpose
 This repository is being rebuilt from a demo evaluation wrapper into a public crypto-focused
@@ -86,7 +86,7 @@ Defines one shared execution contract for backtesting, paper trading, and future
 Core concepts:
 - `Broker` interface.
 - `SimulatedBroker`.
-- `PaperBroker` in a future phase.
+- `PaperBroker` for Phase 7 internal and official-demo paper execution.
 - `LiveBroker` in a future guarded phase.
 - Order intent.
 - Order result.
@@ -253,7 +253,7 @@ order intent
 Broker interface
     |
     +--> SimulatedBroker for backtests
-    +--> PaperBroker for exchange sandbox/paper mode, future
+    +--> PaperBroker for internal or official exchange demo paper mode
     +--> LiveBroker for guarded live mode, future and disabled by default
     |
     v
@@ -329,3 +329,9 @@ The normative semantics and limitations are in `SIMULATED_EXECUTION_AND_BACKTEST
 ## Phase 6 implemented monitoring boundary
 
 Phase 6 now implements immutable monitoring contracts, deterministic point-in-time category checks, explicit non-numeric health aggregation, continuous incident episodes, PostgreSQL bundle persistence, and an in-process simulated FIX 4.4-compatible subset. The gateway can call only `SimulatedBroker`; acknowledgement does not mutate accounting, and fills require explicit synthetic market events. The codec/session opens no external socket. Paper trading, live trading, authenticated access, external FIX connectivity, leverage, margin, and liquidation remain unimplemented.
+
+## Phase 7 implemented safe paper boundary
+
+Phase 7 adds `PaperBroker` without modifying `SimulatedBroker`. An immutable preflight report, explicit expiring approval, and manifest are required before submission. `InternalPaperVenue` provides deterministic asynchronous acknowledgements, partial fills, cancellation, faults, recovery, and venue account observations without networking or credentials. Paper accounting is fill-confirmed and separate from backtest metrics.
+
+The only external adapter is the verified official OKX demo REST subset. It requires demo keys, the official `x-simulated-trading: 1` marker, exact allowlisted routes, bounded no-redirect transport, and all CLI/persistence gates. The shared REST hostname is never sufficient environment proof. Reconciliation, monitoring, persisted kill state, restart recovery, and PostgreSQL migration 0016 complete the audit path. Production/live execution, arbitrary endpoints, withdrawals, transfers, external FIX, and automatic flattening remain absent. See `SAFE_PAPER_TRADING.md`.

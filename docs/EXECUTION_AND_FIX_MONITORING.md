@@ -160,3 +160,9 @@ The monitoring concepts are implemented as deterministic point-in-time checks wi
 The audited simulated FIX profile now uses fill-derived positions, typed receive dispositions, canonical all-supported-field replay identity, rejected raw-message observations, independent heartbeat/grace/disconnect boundaries, deterministic in-process fault orchestration, and version/hash-protected PostgreSQL session projections backed by immutable session events. Spot inventory and perpetual reduce/flat/reverse behavior come only from fills; acknowledgements never mutate positions and duplicate fills cannot apply twice.
 
 It remains in-process only and can call only `SimulatedBroker`; it has no external TCP, exchange, paper, or live route. Normative semantics and the FIX 4.4 compatibility table are in `MONITORING_AND_SIMULATED_FIX.md`.
+
+## Phase 7 paper execution
+
+The shared execution path now has a separate `PaperBroker`. Construction requires a matching preflight report, approval, manifest, limits, and kill switch. Internal and official-demo venues return typed venue orders and confirmed paper fills; acknowledgements and local fill predictions cannot change account state. Unknown submission results retain the original client order identity and enter query/reconciliation recovery.
+
+Phase 6 monitoring accepts paper environment references and emits paper transport, order, fill, account, reconciliation, and kill evidence without controlling orders. The paper controller consumes that evidence. External production FIX remains absent. Normative semantics are in `SAFE_PAPER_TRADING.md`.

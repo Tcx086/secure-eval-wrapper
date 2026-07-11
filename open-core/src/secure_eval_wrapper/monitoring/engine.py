@@ -28,6 +28,7 @@ class MonitoringInputs:
     risk: RiskHealthInput | None = None
     system: SystemHealthInput | None = None
     simulated_fix_state: object | None = None
+    paper: object | None = None
 
     @property
     def stable_input_sha256(self) -> str:
@@ -65,6 +66,9 @@ class MonitoringEngine:
             state=getattr(inputs.simulated_fix_state,"state",None); healthy=getattr(state,"value",state)=="established"
             system_input=SystemHealthInput(**{**system_input.__dict__,"fix_session_healthy":healthy})
         checks.extend(evaluate_system_health(context,system_input,configuration))
+        if inputs.paper is not None:
+            from secure_eval_wrapper.paper.monitoring import evaluate_paper_health
+            checks.extend(evaluate_paper_health(context, inputs.paper, configuration))
         checks=tuple(result for result in checks if configuration.enabled(result.check_name))
         grouped={}
         for result in checks: grouped.setdefault((result.category,result.component),[]).append(result)

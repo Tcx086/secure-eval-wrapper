@@ -151,8 +151,8 @@ class MonitoredRunReference:
     def __post_init__(self) -> None:
         _text(self.monitored_identity, "monitored_identity")
         _text(self.mode, "mode")
-        if self.mode != "public_simulation":
-            raise ValueError("Phase 6 can monitor public_simulation mode only")
+        if self.mode not in {"public_simulation", "paper_internal", "paper_exchange_sandbox"}:
+            raise ValueError("monitoring mode must be public simulation or an explicit Phase 7 paper environment")
 
 
 @dataclass(frozen=True)
