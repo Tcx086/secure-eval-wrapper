@@ -4,8 +4,8 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-11T17:54:27Z",
-  "current_phase": "phase_7_paper_trading",
+  "updated_at_utc": "2026-07-11T18:05:01Z",
+  "current_phase": "phase_8_guarded_live_execution",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
     "future_functional_prs_must_update_json_status": true,
@@ -323,18 +323,16 @@
     {
       "id": "phase_7_paper_trading",
       "title": "Phase 7: paper trading",
-      "status": "in_progress",
+      "status": "completed",
       "completed": [
         "Add provider-neutral PaperBroker contracts, bounded run configuration, preflight, explicit approval, immutable manifest, lifecycle, recovery, rate limiting, and safe CLI boundaries",
         "Add the deterministic asynchronous InternalPaperVenue with partial fills, idempotency, deterministic faults, recovery, accounting, reconciliation, monitoring, and persisted kill-switch behavior",
         "Verify and implement the credential-gated official OKX demo REST subset with an immutable route/marker catalog, lazy local credentials, bounded authenticated transport, and offline fake-transport tests",
         "Add PostgreSQL migration 0016, 23 separate paper audit tables, transaction repositories, clean and seeded migration validation, replay idempotency, rollback injection, and catalog verification",
-        "Add Phase 7 documentation, 56 focused tests, package and CLI integration, CI jobs, public/private boundary scans, and explicit no-live/no-transfer/no-withdrawal constraints"
+        "Add Phase 7 documentation, 56 focused tests, package and CLI integration, CI jobs, public/private boundary scans, and explicit no-live/no-transfer/no-withdrawal constraints",
+        "Pass all six jobs in GitHub Actions run 29162741634 on implementation main SHA 29222159e4ddac8ab3dd23c2334d3a2ab2236639, including PostgreSQL 16 clean and seeded migration plus transaction validation"
       ],
-      "todo": [
-        "Pass all six GitHub Actions jobs on the implementation SHA pushed to origin/main",
-        "Complete the final status transition only after PostgreSQL 16 and final main-SHA validation evidence is confirmed"
-      ]
+      "todo": []
     },
     {
       "id": "phase_8_guarded_live_execution",
