@@ -4,7 +4,7 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-11T07:02:02Z",
+  "updated_at_utc": "2026-07-11T07:09:06Z",
   "current_phase": "phase_6_monitoring_simulated_fix_api",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
@@ -280,7 +280,7 @@
     {
       "id": "phase_6_monitoring_simulated_fix_api",
       "title": "Phase 6: monitoring + simulated FIX API",
-      "status": "in_progress",
+      "status": "completed",
       "completed": [
         "Repair Phase 5 complete-run final-position valuation from latest run-owned snapshots",
         "Add migration 0013 valuation backfill and normalized monitoring/simulated FIX schema",
@@ -309,17 +309,16 @@
         "Review and test the exact supported FIX 4.4-compatible profile against FIX Trading Community FIXimate",
         "Add migration 0014 without modifying migrations 0001 through 0013",
         "Pass 386-test real-PostgreSQL-enabled full suite, Phase 5 and Phase 6 focused/PostgreSQL suites, clean and seeded upgrades, packaging, catalog, and boundary validation",
-        "Pass all six jobs in GitHub Actions repair run 29132859728 on 1d2de870f6653c3ae74d775856d55ef6a744dd92"
-      ],
-      "todo": [
+        "Pass all six jobs in GitHub Actions repair run 29132859728 on 1d2de870f6653c3ae74d775856d55ef6a744dd92",
         "Prevent concurrent Spot sell orders from reserving or filling beyond fill-derived inventory",
         "Unify raw and typed FIX rejection handling with auditable rejected dispositions and no economic processing",
         "Enforce immutable session-event authority over every changed FIX session projection",
         "Persist the complete public FIX-to-simulated-execution lineage in one outer PostgreSQL transaction",
         "Persist repeated rejected-message occurrences separately from stable rejection observations",
         "Add migration 0015 without modifying migrations 0001 through 0014",
-        "Pass all required local, PostgreSQL 16, packaging, boundary, migration, and final main-SHA CI validation"
-      ]
+        "Pass all required local, PostgreSQL 16, packaging, boundary, and migration validation plus all six jobs in GitHub Actions checkpoint run 29143906785 on e92d4484e7b4847a7a5b5ee49ae1dc2d573c0186"
+      ],
+      "todo": []
     },
     {
       "id": "phase_7_paper_trading",

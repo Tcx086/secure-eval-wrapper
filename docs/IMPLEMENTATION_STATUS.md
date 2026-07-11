@@ -236,7 +236,7 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Add expired-A/filled-B, long-A/flat-B, and long-A/reversed-B real PostgreSQL regressions.
 - [x] Pass clean install, seeded `0011` to `0012` upgrade, full-suite, packaging, boundary, and final CI validation.
 
-### Phase 6: monitoring + simulated FIX API (in progress: second-independent-audit repair)
+### Phase 6: monitoring + simulated FIX API (second independent audit accepted)
 
 - [x] Repair Phase 5 complete-run final-position valuation from the latest run-owned immutable snapshot.
 - [x] Add migration `0013` with valuation backfill and normalized monitoring/FIX persistence without modifying migrations `0001` through `0012`.
@@ -269,17 +269,17 @@ Completed work must be listed under `Completed`. Everything not done must remain
 - [x] Pass 386-test real-PostgreSQL-enabled full suite, Phase 5 audit/PostgreSQL suites, Phase 6 focused suites, 12 real Phase 6 PostgreSQL tests, clean `0001` to `0014`, seeded `0013` to `0014`, editable install, entry points, compile, JSON, YAML, catalog, migration-hash, socket-boundary, and public/private boundary validation.
 - [x] Pass all six jobs in GitHub Actions repair run `29132859728` on `1d2de870f6653c3ae74d775856d55ef6a744dd92`.
 
+#### Phase 6 second independent audit repairs completed
+
+- [x] Prevent concurrent Spot sell orders from reserving or filling beyond fill-derived inventory.
+- [x] Unify raw and typed FIX rejection handling with auditable rejected dispositions and no economic processing.
+- [x] Enforce immutable session-event authority over every changed FIX session projection.
+- [x] Persist the complete public FIX-to-simulated-execution lineage in one outer PostgreSQL transaction.
+- [x] Persist repeated rejected-message occurrences separately from stable rejection observations.
+- [x] Add migration `0015` without modifying migrations `0001` through `0014`.
+- [x] Pass all required local, PostgreSQL 16, packaging, boundary, and migration validation, plus all six jobs in GitHub Actions checkpoint run `29143906785` on `e92d4484e7b4847a7a5b5ee49ae1dc2d573c0186`.
+
 ## Todo
-
-### Phase 6 second independent audit repairs
-
-- [ ] Prevent concurrent Spot sell orders from reserving or filling beyond fill-derived inventory.
-- [ ] Unify raw and typed FIX rejection handling with auditable rejected dispositions and no economic processing.
-- [ ] Enforce immutable session-event authority over every changed FIX session projection.
-- [ ] Persist the complete public FIX-to-simulated-execution lineage in one outer PostgreSQL transaction.
-- [ ] Persist repeated rejected-message occurrences separately from stable rejection observations.
-- [ ] Add migration `0015` without modifying migrations `0001` through `0014`.
-- [ ] Pass all required local, PostgreSQL 16, packaging, boundary, migration, and final main-SHA CI validation.
 
 ### Future provider enhancements
 
