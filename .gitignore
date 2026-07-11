@@ -19,6 +19,7 @@ private/
 # Common secret-like config files
 secrets.*
 credentials.*
+!open-core/src/secure_eval_wrapper/paper/credentials.py
 config.local.*
 
 # ==============================
