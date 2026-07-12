@@ -323,7 +323,7 @@
     {
       "id": "phase_7_paper_trading",
       "title": "Phase 7: paper trading",
-      "status": "in_progress",
+      "status": "completed",
       "completed": [
         "Add provider-neutral PaperBroker contracts, bounded run configuration, preflight, explicit approval, immutable manifest, lifecycle, recovery, rate limiting, and safe CLI boundaries",
         "Add the deterministic asynchronous InternalPaperVenue with partial fills, idempotency, deterministic faults, recovery, accounting, reconciliation, monitoring, and persisted kill-switch behavior",
@@ -334,17 +334,16 @@
         "Pass all six jobs in GitHub Actions rollback-repair run 29163009702 on main SHA 3c0a7c2feb5be50baf9db5be4f89943c25bce1ec, including the expanded recovery-record and kill-event rollback matrix",
         "Add append-only migration 0017, PostgreSQL-authoritative prepare/claim/recovery and reservation state, complete restart reconstruction, atomic approval consumption, terminal kill semantics, full runtime risk enforcement, fill/accounting/reconciliation bundles, and truthful operational CLIs",
         "Add real PostgreSQL 16 crash-window, HTTP ambiguity, cancel, restart, late-fill, approval, concurrency, per-limit, immutability, clean/seeded/idempotency, rollback, conflict, and boundary regression coverage",
-        "Pass all six jobs in GitHub Actions durable-audit checkpoint run 29181658332 on main SHA 99ff61c287052918598bf41518e9ed3ac5eac521 without adding Phase 8 runtime"
+        "Pass all six jobs in GitHub Actions durable-audit checkpoint run 29181658332 on main SHA 99ff61c287052918598bf41518e9ed3ac5eac521 without adding Phase 8 runtime",
+        "Complete prepared/cancel outbox restart recovery with separate leased recovery claims and strict token ownership",
+        "Persist the exact reconciliation snapshot, order, and fill bundle without refetching",
+        "Make validated identity-bound market-data evidence the only operational freshness authority",
+        "Repair persisted created preflight reconstruction and atomic transition to running",
+        "Make open-order terminal accounting transition-based and exactly once across late fills",
+        "Make InternalPaperVenue.fill candidate-validated and exception-atomic with fee and slippage reservation coverage",
+        "Add migration 0018, expanded offline and PostgreSQL regressions, clean and seeded validation, and six-job CI checkpoint run 29201729953 on ae245f26ed21b13e9a32b723ff0112ae6bd3c82b"
       ],
-      "todo": [
-        "Complete prepared/cancel outbox restart recovery",
-        "Persist the exact reconciliation snapshot bundle",
-        "Make market-data evidence authoritative",
-        "Repair the created approval-to-running transition",
-        "Make open-order terminal accounting one-time and transition-based",
-        "Make InternalPaperVenue.fill atomic on every exception path",
-        "Enforce strict claim-token authority and recovery ownership"
-      ]
+      "todo": []
     },
     {
       "id": "phase_8_guarded_live_execution",

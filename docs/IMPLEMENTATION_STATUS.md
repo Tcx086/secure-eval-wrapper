@@ -9,7 +9,7 @@ Every future functional PR must update both files in the same change:
 
 Completed work must be listed under `Completed`. Everything not done must remain under `Todo`.
 
-Current phase: `phase_7_paper_trading` (`in_progress`). Phase 7 is undergoing third-round independent audit repairs; Phase 8 remains entirely todo.
+Current phase: `phase_7_paper_trading` (`completed`). Phase 7 third-round independent audit repairs are complete; Phase 8 remains entirely todo and has not started.
 
 ## Non-Negotiable Constraints
 - PostgreSQL is the only authoritative storage layer.
@@ -281,7 +281,7 @@ Current phase: `phase_7_paper_trading` (`in_progress`). Phase 7 is undergoing th
 - [x] Add migration `0015` without modifying migrations `0001` through `0014`.
 - [x] Pass all required local, PostgreSQL 16, packaging, boundary, and migration validation, plus all six jobs in GitHub Actions checkpoint run `29143906785` on `e92d4484e7b4847a7a5b5ee49ae1dc2d573c0186`.
 
-### Phase 7: safe paper trading (in progress)
+### Phase 7: safe paper trading (completed)
 
 - [x] Add provider-neutral PaperBroker contracts, bounded run configuration, preflight, explicit approval, immutable manifest, lifecycle, recovery, rate limiting, and safe CLI boundaries.
 - [x] Add the deterministic asynchronous InternalPaperVenue with partial fills, idempotency, deterministic faults, recovery, accounting, reconciliation, monitoring, and persisted kill-switch behavior.
@@ -293,17 +293,16 @@ Current phase: `phase_7_paper_trading` (`in_progress`). Phase 7 is undergoing th
 - [x] Add append-only migration `0017`, PostgreSQL-authoritative prepare/claim/recovery and reservation state, complete restart reconstruction, atomic approval consumption, terminal kill semantics, full runtime risk enforcement, fill/accounting/reconciliation bundles, and truthful operational CLIs.
 - [x] Add real PostgreSQL 16 crash-window, HTTP ambiguity, cancel, restart, late-fill, approval, concurrency, per-limit, immutability, clean/seeded/idempotency, rollback, conflict, and boundary regression coverage.
 - [x] Pass all six jobs in GitHub Actions durable-audit checkpoint run `29181658332` on main SHA `99ff61c287052918598bf41518e9ed3ac5eac521` without adding Phase 8 runtime.
+- [x] Complete prepared/cancel outbox restart recovery with separate leased recovery claims and strict token ownership.
+- [x] Persist the exact reconciliation snapshot/order/fill bundle without refetching snapshots.
+- [x] Make validated, identity-bound market-data evidence the only operational freshness authority.
+- [x] Repair persisted created preflight approval reconstruction and atomic transition to running.
+- [x] Make open-order terminal accounting transition-based and exactly once across late fills.
+- [x] Make `InternalPaperVenue.fill()` candidate-validated and exception-atomic with fee/slippage reservation coverage.
+- [x] Add migration `0018`, expanded offline/PostgreSQL regressions, clean/seeded validation, and six-job CI checkpoint run `29201729953` on `ae245f26ed21b13e9a32b723ff0112ae6bd3c82b`.
+
 ## Todo
 
-### Phase 7 third independent audit repairs
-
-- [ ] Complete prepared/cancel outbox restart recovery.
-- [ ] Persist the exact reconciliation snapshot bundle.
-- [ ] Make market-data evidence authoritative.
-- [ ] Repair the created approval-to-running transition.
-- [ ] Make open-order terminal accounting one-time and transition-based.
-- [ ] Make `InternalPaperVenue.fill()` atomic on every exception path.
-- [ ] Enforce strict claim-token authority and recovery ownership.
 
 ### Future provider enhancements
 
