@@ -1,6 +1,7 @@
 """Provider-neutral PaperBroker using the shared Broker contract."""
 from __future__ import annotations
 from dataclasses import replace
+import copy
 from decimal import Decimal
 from secure_eval_wrapper.data_collection.hashing import sha256_payload
 from secure_eval_wrapper.execution.broker import Broker,BrokerResult
@@ -9,11 +10,13 @@ from .accounting import PaperAccounting
 from .enums import PaperOrderState,VenueOrderState
 from .models import PaperOrderSubmission,deterministic_paper_uuid
 from .rate_limits import PaperRateLimiter
-from .venue import UnknownSubmissionResult,VenueTimeout
+from .venue import ExplicitVenueRejection,UnknownSubmissionResult,VenueTimeout
 
 class PaperBroker(Broker):
-    def __init__(self,*,configuration,manifest,approval,venue,accounting:PaperAccounting,kill_switch,clock,audit_callback=None):
+    def __init__(self,*,configuration,manifest,approval,venue,accounting:PaperAccounting,kill_switch,clock,audit_callback=None,repository=None,fixture_mode=False,worker_id="paper-worker",crash_hook=None):
         if manifest.approval_id!=approval.approval_id or manifest.configuration_sha256!=configuration.config_sha256:raise ValueError("PaperBroker requires an approved bound manifest")
+        if configuration.persistence_required and repository is None and not fixture_mode:raise ValueError("persistent PaperBroker requires PostgreSQL durable repository")
+        self.repository=repository;self.fixture_mode=fixture_mode;self.worker_id=worker_id;self.crash_hook=crash_hook
         self.configuration=configuration; self.manifest=manifest; self.approval=approval; self.venue=venue; self.accounting=accounting; self.kill_switch=kill_switch; self.clock=clock; self.audit_callback=audit_callback; self._submissions={}; self._orders={}; self._fills={}; self.daily_submitted_notional=Decimal(0); self.rate_limiter=PaperRateLimiter(orders_per_minute=configuration.maximum_orders_per_minute,cancellations_per_minute=configuration.maximum_cancellations_per_minute,clock=clock)
     def _audit(self,kind,value):
         if self.audit_callback:self.audit_callback(kind,value)
@@ -22,6 +25,9 @@ class PaperBroker(Broker):
         return PaperOrderSubmission(self.manifest.paper_run_id,self.manifest.manifest_id,self.approval.approval_id,intent.order_intent_id,client,client,intent.series_identity,intent.side,intent.order_type,intent.time_in_force,intent.accounting_mode,intent.quantity,intent.reference_price,intent.quantity*intent.reference_price,self.clock(),economics,limit_price=intent.limit_price,stop_price=intent.stop_price)
     def submit_order_intent(self,intent,risk_decision):
         if not self.kill_switch.accepts_new_orders:raise PermissionError("paper kill switch rejects new submissions")
+        if self.repository is not None:return self._durable_submit(intent,risk_decision)
+        if not self.fixture_mode:raise RuntimeError("venue side effects require PostgreSQL durable dispatch; use explicit fixture_mode only for offline fixtures")
+        # Explicit fixture-only path; operational modes always return above.
         if risk_decision.status is not RiskDecisionStatus.ACCEPTED:raise PermissionError("paper order requires accepted pre-submit risk")
         if intent.series_identity.canonical_symbol not in self.configuration.allowed_instruments or intent.order_type not in self.configuration.allowed_order_types:raise PermissionError("paper order is outside manifest allowlist")
         submission=self._prepare(intent); notional=submission.submitted_notional
@@ -49,6 +55,16 @@ class PaperBroker(Broker):
             mapping={VenueOrderState.PENDING_ACK:PaperOrderState.PENDING_ACK,VenueOrderState.ACKNOWLEDGED:PaperOrderState.ACKNOWLEDGED,VenueOrderState.PARTIALLY_FILLED:PaperOrderState.PARTIALLY_FILLED,VenueOrderState.FILLED:PaperOrderState.FILLED,VenueOrderState.CANCEL_PENDING:PaperOrderState.CANCEL_PENDING,VenueOrderState.CANCELLED:PaperOrderState.CANCELLED,VenueOrderState.REJECTED:PaperOrderState.REJECTED,VenueOrderState.EXPIRED:PaperOrderState.EXPIRED,VenueOrderState.UNKNOWN_PENDING_RECOVERY:PaperOrderState.PENDING_RECOVERY}
             if client_order_id in self._submissions:self._submissions[client_order_id]=replace(self._submissions[client_order_id],state=mapping[order.state])
             if order.state in (VenueOrderState.CANCELLED,VenueOrderState.REJECTED,VenueOrderState.EXPIRED):self.accounting.release(client_order_id)
+            if self.repository is not None:
+                submission=next((s for s in self.repository.typed_submissions(self.manifest.paper_run_id) if s.client_order_id==client_order_id),None)
+                if submission is not None:
+                    dispatch=self.repository._fetchone("SELECT * FROM execution.paper_dispatch_outbox WHERE submission_id=%s",(submission.submission_id,))
+                    if dispatch and dispatch["state"] in ("dispatch_claimed","unknown") and order.state is not VenueOrderState.UNKNOWN_PENDING_RECOVERY:
+                        outcome="explicitly_rejected" if order.state is VenueOrderState.REJECTED else "recovered";self.repository.complete_dispatch(submission,claim_token=dispatch.get("claim_token"),outcome=outcome,at_utc=self.clock(),order=order,classification="venue_query_evidence",evidence_sha256=order.record_sha256)
+                    if order.state is VenueOrderState.CANCELLED:
+                        cancel=self.repository._fetchone("SELECT * FROM execution.paper_cancel_outbox WHERE submission_id=%s",(submission.submission_id,))
+                        if cancel and cancel["state"] in ("cancel_claimed","cancel_unknown"):self.repository.complete_cancel(submission,claim_token=cancel.get("claim_token"),confirmed=True,at_utc=self.clock(),evidence_sha256=order.record_sha256)
+                    self.accounting=self.repository.hydrate_accounting(self.manifest.paper_run_id)
         return order
     def list_open_orders(self):return self.venue.list_open_orders()
     def active_orders(self,*,series_identity=None):
@@ -57,6 +73,8 @@ class PaperBroker(Broker):
         return values
     def cancel_paper_order(self,client_order_id,*,at_utc,reason):
         self.rate_limiter.acquire("cancel"); self._audit("cancel_intent",{"client_order_id":client_order_id,"at_utc":at_utc,"reason":reason})
+        if self.repository is not None:return self._durable_cancel(client_order_id,at_utc=at_utc,reason=reason)
+        if not self.fixture_mode:raise RuntimeError("venue cancellation requires PostgreSQL durable cancel outbox")
         try:
             order=self.venue.cancel_order(client_order_id,at_utc)
         except Exception:
@@ -66,6 +84,8 @@ class PaperBroker(Broker):
     def cancel_order(self,order_id,*,cancelled_at_utc,reason):
         client=next((c for c,o in self._orders.items() if o.venue_order_id==str(order_id) or o.submission_id==order_id),str(order_id)); return BrokerResult((self.cancel_paper_order(client,at_utc=cancelled_at_utc,reason=reason),))
     def sync_fills(self):
+        if self.repository is not None:return self._durable_sync_fills()
+        if not self.fixture_mode:raise RuntimeError("fill synchronization requires PostgreSQL accounting authority")
         applied=[]
         for fill in self.venue.fetch_fills():
             if fill.venue_fill_id not in self._fills:
@@ -78,7 +98,7 @@ class PaperBroker(Broker):
     def fetch_fills(self):return self.venue.fetch_fills()
     def fetch_account_snapshot(self):return self.venue.fetch_account_snapshot(self.manifest.paper_run_id,self.clock())
     def reconcile(self,reconciliation_engine):
-        venue=self.fetch_account_snapshot(); local=self.accounting.snapshot(at_utc=self.clock(),venue_sequence=venue.venue_sequence); return reconciliation_engine.reconcile(paper_run_id=self.manifest.paper_run_id,local_snapshot=local,venue_snapshot=venue,local_orders=tuple(self._orders.values()),venue_orders=tuple(self.venue._orders.values()) if hasattr(self.venue,"_orders") else self.list_open_orders(),local_fills=tuple(self._fills.values()),venue_fills=self.fetch_fills(),at_utc=self.clock())
+        venue=self.fetch_account_snapshot(); local=self.accounting.snapshot(at_utc=self.clock(),venue_sequence=venue.venue_sequence); return reconciliation_engine.reconcile(paper_run_id=self.manifest.paper_run_id,local_snapshot=local,venue_snapshot=venue,local_orders=tuple(self._orders.values()),venue_orders=tuple(self.venue._orders.values()) if hasattr(self.venue,"_orders") else self.list_open_orders(),local_fills=tuple(self._fills.values()),venue_fills=self.fetch_fills(),at_utc=self.clock(),maximum_snapshot_age_seconds=self.configuration.maximum_reconciliation_age_seconds)
     def process_bar_open(self,*,series_identity,timestamp_utc,open_price,risk_check=None):
         if hasattr(self.venue,"on_market_event"):self.venue.on_market_event(at_utc=timestamp_utc,prices={series_identity.canonical_symbol:open_price})
         return BrokerResult(tuple(self._orders.values()),self.sync_fills())
@@ -94,3 +114,48 @@ class PaperBroker(Broker):
     def local_orders(self):return tuple(self._orders.values())
     @property
     def local_fills(self):return tuple(self._fills.values())
+    def _crash(self,point):
+        if self.crash_hook:self.crash_hook(point)
+    def _durable_submit(self,intent,risk_decision):
+        submission,replay=self.repository.prepare_submission(configuration=self.configuration,approval=self.approval,manifest=self.manifest,intent=intent,risk_decision=risk_decision,now=self.clock())
+        self._submissions[submission.client_order_id]=submission;self.accounting=self.repository.hydrate_accounting(self.manifest.paper_run_id)
+        if replay:
+            orders={o.client_order_id:o for o in self.repository.typed_orders(self.manifest.paper_run_id)};self._orders.update(orders);return BrokerResult((orders[submission.client_order_id],) if submission.client_order_id in orders else ())
+        self._crash("after_durable_intent_before_claim");token=self.repository.claim_dispatch(submission,worker_id=self.worker_id,at_utc=self.clock());self._crash("after_dispatch_claim_before_venue")
+        try:
+            order=self.venue.submit_order(submission);self._crash("after_venue_accept_before_outcome");self.repository.complete_dispatch(submission,claim_token=token,outcome="acknowledged",at_utc=self.clock(),order=order,classification="venue_ack",evidence_sha256=order.record_sha256);self._orders[submission.client_order_id]=order;self._submissions[submission.client_order_id]=replace(submission,state=PaperOrderState.PENDING_ACK);return BrokerResult((order,))
+        except ExplicitVenueRejection as exc:
+            evidence=sha256_payload({"type":type(exc).__name__,"message":str(exc)});self.repository.complete_dispatch(submission,claim_token=token,outcome="explicitly_rejected",at_utc=self.clock(),classification="explicit_venue_rejection",evidence_sha256=evidence);self._submissions[submission.client_order_id]=replace(submission,state=PaperOrderState.REJECTED);self.accounting=self.repository.hydrate_accounting(self.manifest.paper_run_id);return BrokerResult()
+        except (UnknownSubmissionResult,VenueTimeout,Exception) as exc:
+            evidence=sha256_payload({"type":type(exc).__name__,"classification":"ambiguous_after_claim"});self._crash("after_ambiguous_transport_before_outcome");self.repository.complete_dispatch(submission,claim_token=token,outcome="unknown",at_utc=self.clock(),classification="ambiguous_transport",evidence_sha256=evidence);self._submissions[submission.client_order_id]=replace(submission,state=PaperOrderState.SUBMISSION_UNKNOWN);return BrokerResult()
+    def _durable_cancel(self,client_order_id,*,at_utc,reason):
+        submission=self._submissions.get(client_order_id) or next((s for s in self.repository.typed_submissions(self.manifest.paper_run_id) if s.client_order_id==client_order_id),None)
+        if submission is None:raise ValueError("cancel has no persisted submission")
+        self.repository.prepare_cancel(submission,at_utc=at_utc,maximum_cancellations_per_minute=self.configuration.maximum_cancellations_per_minute);self._crash("after_cancel_intent_before_claim");token=self.repository.claim_cancel(submission,worker_id=self.worker_id,at_utc=at_utc);self._crash("after_cancel_claim_before_venue")
+        try:
+            order=self.venue.cancel_order(client_order_id,at_utc);self._crash("after_venue_cancel_before_outcome");confirmed=order.state is VenueOrderState.CANCELLED;self.repository.complete_cancel(submission,claim_token=token,confirmed=confirmed,at_utc=self.clock(),evidence_sha256=order.record_sha256);self._orders[client_order_id]=order
+            if confirmed:self.accounting=self.repository.hydrate_accounting(self.manifest.paper_run_id)
+            return order
+        except Exception as exc:
+            evidence=sha256_payload({"type":type(exc).__name__,"classification":"cancel_ambiguous"});self.repository.complete_cancel(submission,claim_token=token,confirmed=False,at_utc=self.clock(),evidence_sha256=evidence);raise
+    def _durable_sync_fills(self):
+        from .models import PaperLifecycleEvent
+        from .reconciliation import PaperReconciliationEngine
+        applied=[]
+        for fill in self.venue.fetch_fills():
+            if fill.fill_id in self.accounting.applied_fill_ids:continue
+            candidate=copy.deepcopy(self.accounting)
+            if not candidate.apply_fill(fill):continue
+            order=self.venue.query_order(fill.client_order_id)
+            if order is None:continue
+            candidate_snapshot=candidate.snapshot(at_utc=self.clock(),venue_sequence=order.venue_sequence);venue_snapshot=self.venue.fetch_account_snapshot(self.manifest.paper_run_id,self.clock());local_orders=tuple({**self._orders,fill.client_order_id:order}.values());venue_orders=tuple(self.venue._orders.values()) if hasattr(self.venue,"_orders") else self.venue.list_open_orders();reconciliation,differences=PaperReconciliationEngine().reconcile(paper_run_id=self.manifest.paper_run_id,local_snapshot=candidate_snapshot,venue_snapshot=venue_snapshot,local_orders=local_orders,venue_orders=venue_orders,local_fills=tuple((*self._fills.values(),fill)),venue_fills=self.venue.fetch_fills(),at_utc=self.clock());state=self.repository.load_state_bundle(self.manifest.paper_run_id);sequence=int(state["risk_state"]["lifecycle_sequence"])+1;event=PaperLifecycleEvent(self.manifest.paper_run_id,"confirmed_fill_applied",self.clock(),sequence,{"fill_id":str(fill.fill_id),"venue_fill_id":fill.venue_fill_id},(fill.fill_id,))
+            if self.repository.persist_fill_bundle(fill=fill,order=order,local_snapshot=candidate_snapshot,venue_snapshot=venue_snapshot,reconciliation=reconciliation,differences=differences,lifecycle_event=event):self.accounting=candidate;self._fills[fill.venue_fill_id]=fill;self._orders[fill.client_order_id]=order;applied.append(fill)
+        return tuple(applied)
+    def hydrate_from_postgres(self):
+        self.accounting=self.repository.hydrate_accounting(self.manifest.paper_run_id);self._submissions={s.client_order_id:s for s in self.repository.typed_submissions(self.manifest.paper_run_id)};self._orders={o.client_order_id:o for o in self.repository.typed_orders(self.manifest.paper_run_id)};self._fills={f.venue_fill_id:f for f in self.repository.typed_fills(self.manifest.paper_run_id)};state=self.repository.load_state_bundle(self.manifest.paper_run_id);self.daily_submitted_notional=Decimal(str(state["risk_state"]["daily_submitted_notional"]));self.rate_limiter.consecutive_failures=int(state["risk_state"]["consecutive_transport_failures"])
+        if hasattr(self.venue,"reconstruct"):
+            events=tuple({"sequence":o.venue_sequence,"kind":"postgres_reconstruction","client_order_id":o.client_order_id,"details":{},"record_sha256":o.record_sha256} for o in self._orders.values());self.venue.reconstruct(tuple(self._orders.values()),tuple(self._fills.values()),events,balances=self.accounting.balances,positions=self.accounting.positions,reservations=self.accounting.reservations)
+        if not hasattr(self.venue,"reconstruct") and hasattr(self.venue,"register_persisted_submission"):
+            for submission in self._submissions.values():self.venue.register_persisted_submission(submission,self._orders.get(submission.client_order_id))
+            if hasattr(self.venue,"_fills"):self.venue._fills=dict(self._fills)
+        return self

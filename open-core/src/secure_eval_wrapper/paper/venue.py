@@ -20,3 +20,4 @@ class PaperVenue(ABC):
 class VenueTimeout(RuntimeError):pass
 class UnknownSubmissionResult(RuntimeError):pass
 class EconomicConflictError(RuntimeError):pass
+class ExplicitVenueRejection(RuntimeError):pass

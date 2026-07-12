@@ -37,17 +37,19 @@ class StandardLibraryOkxDemoTransport(AuthenticatedTransport):
         try:
             with self._opener.open(req,timeout=self.timeout) as response:
                 raw=response.read(self.max_response_bytes+1)
-                if len(raw)>self.max_response_bytes:raise ValueError("paper response exceeds configured size limit")
+                ambiguous=value.request_type.value in ("submit","cancel")
+                if len(raw)>self.max_response_bytes:return TransportResult(value.request_id,TransportResultType.UNKNOWN if ambiguous else TransportResultType.MALFORMED,int(response.status),self.clock(),None,{},True,explanation="oversized response after request transmission")
                 try:payload=json.loads(raw.decode("utf-8"))
-                except (UnicodeDecodeError,json.JSONDecodeError) as exc:raise ValueError("paper response is malformed JSON") from exc
-                if not isinstance(payload,dict):raise ValueError("paper response must be a JSON object")
+                except (UnicodeDecodeError,json.JSONDecodeError):return TransportResult(value.request_id,TransportResultType.UNKNOWN if ambiguous else TransportResultType.MALFORMED,int(response.status),self.clock(),hashlib.sha256(raw).hexdigest(),{},True,explanation="malformed response after request transmission")
+                if not isinstance(payload,dict):return TransportResult(value.request_id,TransportResultType.UNKNOWN if ambiguous else TransportResultType.MALFORMED,int(response.status),self.clock(),hashlib.sha256(raw).hexdigest(),{},True,explanation="non-object response after request transmission")
                 result=TransportResultType.SUCCEEDED if str(payload.get("code","0"))=="0" else TransportResultType.REJECTED
                 return TransportResult(value.request_id,result,int(response.status),self.clock(),hashlib.sha256(raw).hexdigest(),redact(payload),False,explanation="OKX demo response")
         except error.HTTPError as exc:
-            status=int(exc.code); kind=TransportResultType.RATE_LIMITED if status==429 else TransportResultType.AUTHENTICATION_FAILED if status in (401,403) else TransportResultType.REJECTED
+            status=int(exc.code); ambiguous=value.request_type.value in ("submit","cancel") and status in (408,429,500,502,503,504)
+            kind=TransportResultType.UNKNOWN if ambiguous else TransportResultType.RATE_LIMITED if status==429 else TransportResultType.AUTHENTICATION_FAILED if status in (401,403) else TransportResultType.REJECTED
             return TransportResult(value.request_id,kind,status,self.clock(),None,{},status in (429,500,502,503,504),Decimal(str(exc.headers.get("Retry-After"))) if status==429 and exc.headers.get("Retry-After") else None,"bounded OKX demo HTTP failure")
-        except (TimeoutError,socket.timeout):
-            kind=TransportResultType.UNKNOWN if value.request_type.value=="submit" else TransportResultType.TIMEOUT
+        except (TimeoutError,socket.timeout,error.URLError,ConnectionError,ConnectionResetError,EOFError,OSError):
+            kind=TransportResultType.UNKNOWN if value.request_type.value in ("submit","cancel") else TransportResultType.TIMEOUT
             return TransportResult(value.request_id,kind,None,self.clock(),None,{},True,explanation="bounded transport timeout")
         finally:
             del material,api_key,secret,passphrase

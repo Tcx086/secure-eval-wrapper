@@ -1150,8 +1150,26 @@ ALLOWED_DATA_MIGRATIONS = {
         r"\bUPDATE\s+OR\s+DELETE\s+ON\s+monitoring\.fix_session_events\b.*?;",
         r"\bUPDATE\s+OR\s+DELETE\s+ON\s+monitoring\.fix_session_events\b.*?;",
     ),
-}
+    "0017_phase7_durable_paper_recovery.sql": (
+        r"\bINSERT\s+INTO\s+execution\.paper_configuration_snapshots\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.paper_run_manifests\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.paper_configuration_snapshots\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.paper_approvals\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.paper_order_submissions\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.paper_dispatch_outbox\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.paper_reservations\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.paper_cancel_outbox\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.paper_runtime_risk_decisions\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.paper_approval_state_events\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.paper_reservation_events\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.paper_dispatch_events\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.paper_orders\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.paper_fills\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.paper_runs\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.paper_kill_switches\b.*?;",
+    ),
 
+}
 
 class CatalogClient(Protocol):
     def query(self, sql: str) -> list[tuple[object, ...]]:

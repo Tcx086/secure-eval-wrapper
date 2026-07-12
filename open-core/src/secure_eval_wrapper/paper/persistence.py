@@ -6,7 +6,7 @@ from secure_eval_wrapper.data_collection.hashing import sha256_payload
 from secure_eval_wrapper.storage.postgres.alpha_signal_base import _PostgresRepositoryBase,_json_param
 
 class Phase7ConflictError(RuntimeError):pass
-class PostgresPaperRepository(_PostgresRepositoryBase):
+class _Phase7BaseRepository(_PostgresRepositoryBase):
     def _execute(self,sql,params=()):
         cursor=self.connection.cursor()
         try:cursor.execute(sql,tuple(params))
@@ -142,5 +142,8 @@ class PostgresPaperRepository(_PostgresRepositoryBase):
     def get_active_run(self,paper_run_id):return self._fetchone("SELECT * FROM execution.paper_runs WHERE paper_run_id=%s AND state IN ('approved','running','paused','killed')",(paper_run_id,))
     def get_manifest(self,paper_run_id):return self._fetchone("SELECT * FROM execution.paper_run_manifests WHERE paper_run_id=%s",(paper_run_id,))
     def get_kill_switch(self,paper_run_id):return self._fetchone("SELECT * FROM execution.paper_kill_switches WHERE paper_run_id=%s",(paper_run_id,))
-    def list_unresolved_submissions(self,paper_run_id):return self._fetchall("SELECT * FROM execution.paper_order_submissions WHERE paper_run_id=%s AND state IN ('submitted','pending_ack','submission_unknown','pending_recovery','cancel_pending') ORDER BY submitted_at_utc,submission_id",(paper_run_id,))
+    def list_unresolved_submissions(self,paper_run_id):return self._fetchall("SELECT * FROM execution.paper_order_submissions WHERE paper_run_id=%s AND state IN ('prepared','dispatch_claimed','submitted','pending_ack','submission_unknown','pending_recovery','cancel_requested','cancel_pending','cancel_unknown') ORDER BY submitted_at_utc,submission_id",(paper_run_id,))
     def list_lifecycle(self,paper_run_id,start_utc,end_utc):return self._fetchall("SELECT * FROM execution.paper_lifecycle_events WHERE paper_run_id=%s AND occurred_at_utc>=%s AND occurred_at_utc<%s ORDER BY occurred_at_utc,deterministic_sequence",(paper_run_id,start_utc,end_utc))
+
+# Compatibility-only row repository; operational CLIs use DurablePostgresPaperRepository.
+PostgresPaperRepository = _Phase7BaseRepository

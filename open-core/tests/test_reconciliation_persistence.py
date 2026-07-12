@@ -256,7 +256,10 @@ class ReconciliationPersistenceTests(unittest.TestCase):
             REPO_ROOT / "open-core" / "db" / "migrations"
         )
         verifier.inspect_migrations(migrations)
-        self.assertEqual(migrations[-1].filename, "0016_phase7_safe_paper_trading.sql")
+        self.assertEqual(
+            migrations[-1].filename,
+            "0017_phase7_durable_paper_recovery.sql",
+        )
         self.assertIn("reconciliation_results", verifier.REQUIRED_TABLES["data_quality"])
         self.assertIn(
             "reconciliation_check_results",

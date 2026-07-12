@@ -7,7 +7,7 @@ from .models import PaperKillSwitch
 class PaperKillSwitchController:
     def __init__(self,initial:PaperKillSwitch,*,persist=None):self.current=initial; self.persist=persist; self.events=[]
     @property
-    def accepts_new_orders(self):return self.current.state in (KillSwitchState.ARMED,KillSwitchState.RESET)
+    def accepts_new_orders(self):return self.current.state is KillSwitchState.ARMED
     def _save(self,value,event):
         self.current=value; self.events.append(event)
         if self.persist:self.persist(value,event)
@@ -31,9 +31,6 @@ class PaperKillSwitchController:
         value=replace(self.current,state=KillSwitchState.KILLED,updated_at_utc=at_utc); return self._save(value,{"state":"killed","at_utc":at_utc,"positions_unchanged":True})
     def request_reset(self,*,at_utc):
         if self.current.state is not KillSwitchState.KILLED:raise ValueError("only killed switch may request reset")
-        return self._save(replace(self.current,state=KillSwitchState.RESET_PENDING,updated_at_utc=at_utc),{"state":"reset_pending","at_utc":at_utc})
+        return {"authorization":"new_run_required","killed_paper_run_id":str(self.current.paper_run_id),"authorized_at_utc":at_utc}
     def reset(self,*,at_utc,new_preflight,new_approval,fresh_snapshot,reconciliation):
-        if self.current.state is not KillSwitchState.RESET_PENDING:raise ValueError("reset must be pending")
-        if new_preflight.status is not PreflightStatus.PASSED or fresh_snapshot.status.value!="fresh" or reconciliation.status in (ReconciliationStatus.BLOCKED,ReconciliationStatus.UNKNOWN):raise ValueError("kill switch reset evidence is incomplete")
-        if new_approval.preflight_report_id!=new_preflight.report_id:raise ValueError("reset approval does not bind new preflight")
-        return self._save(PaperKillSwitch(self.current.paper_run_id,KillSwitchState.RESET,None,at_utc,kill_switch_id=self.current.kill_switch_id),{"state":"reset","at_utc":at_utc,"preflight_report_id":str(new_preflight.report_id),"approval_id":str(new_approval.approval_id)})
+        raise ValueError("killed paper runs are terminal; reset authorization must create a new run, preflight, approval, and manifest")

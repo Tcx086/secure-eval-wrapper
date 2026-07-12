@@ -48,9 +48,11 @@ The immutable manifest is created before submission and binds the run, environme
 
 ## Orders, unknown outcomes, and recovery
 
-Stable client order IDs and idempotency keys derive from the paper run and economic intent. Reusing the same ID with identical economics returns existing venue state; changed economics conflicts. Duplicate fills apply once. A submission timeout becomes `submission_unknown`, never rejection. Recovery queries the original client ID, fetches fills/open orders, and reconciles; it never resubmits with a new ID. Exceeding the configured unknown duration triggers the kill switch.
+Stable client order IDs and idempotency keys derive from the paper run and economic intent. Before any in-process or HTTP venue side effect, one PostgreSQL transaction stores the run/manifest/consumed-approval binding, intent, complete risk decision, economics, durable reservation, `prepared` submission, and dispatch outbox row. A worker must then commit a single-owner `dispatch_claimed` transition before calling the venue. The network call is never inside the database transaction. Reusing the same ID with identical economics returns existing venue state; changed economics conflicts, and concurrent workers cannot dispatch the same economics twice.
 
-Restart recovery loads the active run, manifest, unresolved submissions, and persisted kill switch from PostgreSQL. It queries by original client IDs, fetches fills/account state, reconciles, and resumes only when consistent. Restart never resets a kill switch or blindly resubmits pending economics.
+A crash after claim or an ambiguous transport result becomes unknown. Timeout, connection reset, EOF, wrapped URL failures, truncated or oversized responses, HTTP 408/429/5xx, and response loss never become rejection or release a reservation without explicit venue rejection evidence. Recovery queries the original client ID, recent orders, and fills; it never creates a new client ID or economic resubmission. Submit and cancel attempts, unknown states, and recovery evidence are persisted.
+
+Restart reconstruction creates a new repository, broker, accounting object, venue adapter, and engine from PostgreSQL. It validates and loads the complete configuration snapshot, preflight, consumed approval, immutable manifest, kill state, submissions, latest orders, applied fill identities, projections, balances, positions, realized PnL, reservations, risk budget, rate/failure evidence, lifecycle sequence, and unresolved submit/cancel states. The internal venue is hydrated from those records rather than an earlier Python object. The official demo adapter can query a persisted client/instrument identity without an entry in its process-local order cache.
 
 ## Accounting and reconciliation
 
@@ -64,11 +66,13 @@ Phase 6 monitoring accepts explicit `paper_internal` and `paper_exchange_sandbox
 
 Per-operation rate limits use an injected clock and explicit bounded retry schedules. Idempotency keys remain stable. Authentication and validation errors are not blindly retried. Unknown submission enters recovery, and cancellation retries remain bounded and audited.
 
-The persisted kill switch states are armed, triggered, cancelling, killed, reset-pending, and reset. Triggers stop new submissions immediately, persist evidence, record cancellation intent before external attempts, reconcile outcomes, and continue applying late confirmed fills. Cancellation success is never assumed. Default behavior cancels open orders and monitors positions; it does not flatten. Automatic flattening is not implemented. Reset needs a fresh preflight, explicit approval, fresh snapshot, resolved reconciliation, and a new persisted reset record.
+The persisted kill switch states are armed, triggered, cancelling, killed, reset-pending, and reset. Triggers stop new submissions immediately, persist evidence, record cancellation intent before external attempts, reconcile outcomes, and continue applying late confirmed fills. Cancellation success is never assumed. A killed run remains terminal: reset authorization can only support a new run with a fresh preflight, approval, and immutable manifest, and never re-enables the old run. Default behavior cancels open orders and monitors positions; it does not flatten. Automatic flattening is not implemented.
 
 ## PostgreSQL and CLIs
 
-Migration `0016_phase7_safe_paper_trading.sql` adds separate run, manifest, preflight, approval, order/fill, account, reconciliation, recovery, kill, rate-limit, transport, credential-reference, and lifecycle tables. Start-run, submission outcome, fill, reconciliation, and kill bundles use explicit transactions. There is no SQLite or file authority and no silent in-memory fallback when persistence is requested.
+Migration `0016_phase7_safe_paper_trading.sql` introduced the separate paper audit model. Append-only migration `0017_phase7_durable_paper_recovery.sql` adds immutable configuration snapshots, approval events, run risk state, immutable risk decisions, authoritative reservations, submit/cancel outboxes, append-only dispatch events, and balance/position projections. It also adds database triggers protecting manifests, configuration, approval bindings/transitions, submission and dispatch economics, reservations, cancels, risk decisions, events, fills, orders, terminal runs, and killed switches. Migrations `0001` through `0016` remain byte-for-byte unchanged from the audited baseline.
+
+Start-run, prepare/claim/outcome, confirmed fill/accounting, reconciliation, recovery, cancel, and kill bundles use explicit transactions and conflict hashes. PostgreSQL is the only local operational authority. There is no SQLite or file authority and no silent in-memory fallback when persistence is requested.
 
 Safe commands are:
 
@@ -81,7 +85,9 @@ secure-eval-paper-kill
 secure-eval-paper-reconcile
 ```
 
-Defaults are internal, credential-free, socket-free, and PostgreSQL-free. External demo mode requires exact provider/environment, manifest, approval, `--persist`, `ENABLE_PAPER_TRADING=true`, `ENABLE_POSTGRES_PERSISTENCE=true`, local demo credentials, and the immutable catalog. Preflight and run are separate; no interactive yes prompt is used. A real sandbox smoke is manual-only and additionally requires `ENABLE_REAL_SANDBOX_SMOKE=true`; public CI never uses credentials.
+Defaults are internal, credential-free, socket-free, and PostgreSQL-free. Preflight performs only preflight; approval creation is reported only after PostgreSQL persistence succeeds. Persistent internal mode uses the same durable prepare/claim/recovery path as operational paper trading. The run command validates a PostgreSQL manifest and approval but reports `unsupported`/`not_started` while no complete external order-stream runtime exists. Reconcile reconstructs persisted state, compares a venue observation, persists typed results, and blocks or kills on material differences.
+
+External demo mode requires exact provider/environment, manifest, approval, `--persist`, `ENABLE_PAPER_TRADING=true`, `ENABLE_POSTGRES_PERSISTENCE=true`, local demo credentials, and the immutable catalog. Preflight and run are separate; no interactive yes prompt is used. A real sandbox smoke is manual-only and additionally requires `ENABLE_REAL_SANDBOX_SMOKE=true`; public CI never uses credentials.
 
 ## Limitations and risk statement
 

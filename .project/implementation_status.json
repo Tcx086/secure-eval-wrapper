@@ -4,8 +4,8 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-11T20:32:15Z",
-  "current_phase": "phase_8_guarded_live_execution",
+  "updated_at_utc": "2026-07-12T00:00:00Z",
+  "current_phase": "phase_7_paper_trading",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
     "future_functional_prs_must_update_json_status": true,
@@ -323,7 +323,7 @@
     {
       "id": "phase_7_paper_trading",
       "title": "Phase 7: paper trading",
-      "status": "completed",
+      "status": "in_progress",
       "completed": [
         "Add provider-neutral PaperBroker contracts, bounded run configuration, preflight, explicit approval, immutable manifest, lifecycle, recovery, rate limiting, and safe CLI boundaries",
         "Add the deterministic asynchronous InternalPaperVenue with partial fills, idempotency, deterministic faults, recovery, accounting, reconciliation, monitoring, and persisted kill-switch behavior",
@@ -333,7 +333,9 @@
         "Pass all six jobs in GitHub Actions run 29162741634 on implementation main SHA 29222159e4ddac8ab3dd23c2334d3a2ab2236639, including PostgreSQL 16 clean and seeded migration plus transaction validation",
         "Pass all six jobs in GitHub Actions rollback-repair run 29163009702 on main SHA 3c0a7c2feb5be50baf9db5be4f89943c25bce1ec, including the expanded recovery-record and kill-event rollback matrix"
       ],
-      "todo": []
+      "todo": [
+        "Repair PostgreSQL-authoritative durable dispatch, restart recovery, approval consumption, runtime risk enforcement, accounting/reconciliation atomicity, and operational CLI semantics without adding Phase 8 runtime"
+      ]
     },
     {
       "id": "phase_8_guarded_live_execution",

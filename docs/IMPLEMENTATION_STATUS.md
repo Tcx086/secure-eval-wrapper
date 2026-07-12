@@ -9,7 +9,7 @@ Every future functional PR must update both files in the same change:
 
 Completed work must be listed under `Completed`. Everything not done must remain under `Todo`.
 
-Current phase: `phase_8_guarded_live_execution` (`todo`). Phase 8 remains entirely todo.
+Current phase: `phase_7_paper_trading` (`in_progress`). Phase 8 remains entirely todo.
 
 ## Non-Negotiable Constraints
 - PostgreSQL is the only authoritative storage layer.
@@ -281,7 +281,7 @@ Current phase: `phase_8_guarded_live_execution` (`todo`). Phase 8 remains entire
 - [x] Add migration `0015` without modifying migrations `0001` through `0014`.
 - [x] Pass all required local, PostgreSQL 16, packaging, boundary, and migration validation, plus all six jobs in GitHub Actions checkpoint run `29143906785` on `e92d4484e7b4847a7a5b5ee49ae1dc2d573c0186`.
 
-### Phase 7: safe paper trading (completed)
+### Phase 7: safe paper trading (in progress)
 
 - [x] Add provider-neutral PaperBroker contracts, bounded run configuration, preflight, explicit approval, immutable manifest, lifecycle, recovery, rate limiting, and safe CLI boundaries.
 - [x] Add the deterministic asynchronous InternalPaperVenue with partial fills, idempotency, deterministic faults, recovery, accounting, reconciliation, monitoring, and persisted kill-switch behavior.
@@ -291,6 +291,10 @@ Current phase: `phase_8_guarded_live_execution` (`todo`). Phase 8 remains entire
 - [x] Pass all six jobs in GitHub Actions run `29162741634` on implementation main SHA `29222159e4ddac8ab3dd23c2334d3a2ab2236639`, including PostgreSQL 16 clean/seeded migration and transaction validation.
 - [x] Pass all six jobs in GitHub Actions rollback-repair run `29163009702` on main SHA `3c0a7c2feb5be50baf9db5be4f89943c25bce1ec`, including the expanded recovery-record and kill-event rollback matrix.
 
+
+#### Phase 7 independent-audit repairs in progress
+
+- [ ] Repair PostgreSQL-authoritative durable dispatch, restart recovery, approval consumption, runtime risk enforcement, accounting/reconciliation atomicity, and operational CLI semantics without adding Phase 8 runtime.
 ## Todo
 
 ### Future provider enhancements

@@ -13,7 +13,7 @@ from secure_eval_wrapper.execution.models import AccountingMode,OrderSide,OrderT
 from ..endpoints import endpoint_spec,validate_endpoint_request
 from ..enums import AccountSnapshotStatus,PaperEnvironment,PaperProvider,TransportRequestType,TransportResultType,VenueOrderState
 from ..models import PaperAccountSnapshot,TransportRequest,VenueBalance,VenueFill,VenueOrder,VenuePosition
-from ..venue import EconomicConflictError,PaperVenue,UnknownSubmissionResult,VenueTimeout
+from ..venue import EconomicConflictError,ExplicitVenueRejection,PaperVenue,UnknownSubmissionResult,VenueTimeout
 
 _STATE={"live":VenueOrderState.ACKNOWLEDGED,"partially_filled":VenueOrderState.PARTIALLY_FILLED,"filled":VenueOrderState.FILLED,"canceled":VenueOrderState.CANCELLED,"mmp_canceled":VenueOrderState.CANCELLED,"effective":VenueOrderState.ACKNOWLEDGED}
 def _utc_ms(value,name):
@@ -22,14 +22,21 @@ def _utc_ms(value,name):
 class OkxDemoVenue(PaperVenue):
     def __init__(self,transport,*,account_reference="okx-demo-local-alias",clock):
         self.transport=transport; self.account_reference=account_reference; self.clock=clock; self.spec=endpoint_spec(PaperProvider.OKX_DEMO,PaperEnvironment.PAPER_EXCHANGE_SANDBOX); self._orders={}; self._fills={}; self._submissions={}; self._sequence=0
+    def register_persisted_submission(self,submission,order=None):
+        old=self._submissions.get(submission.client_order_id)
+        if old is not None and old.economics_sha256!=submission.economics_sha256:raise EconomicConflictError("persisted client order identity changed economics")
+        self._submissions[submission.client_order_id]=submission
+        if order is not None:self._orders[submission.client_order_id]=order
     def _request(self,kind,method,path,*,query=None,body=None,idempotency_key=None):
         query=tuple(sorted((query or {}).items())); suffix=("?"+urlencode(query)) if query else ""; raw=b"" if body is None else canonical_json_dumps(body).encode(); url=self.spec.rest_origin+path+suffix
         validate_endpoint_request(PaperProvider.OKX_DEMO,PaperEnvironment.PAPER_EXCHANGE_SANDBOX,method,url,{self.spec.required_header_name:self.spec.required_header_value})
         value=TransportRequest(kind,method,url,path+suffix,raw,idempotency_key,self.clock()); result=self.transport.execute(value)
         if result.result_type is TransportResultType.UNKNOWN:raise UnknownSubmissionResult("official sandbox submission result unknown")
         if result.result_type is TransportResultType.TIMEOUT:raise VenueTimeout("official sandbox request timed out")
-        if result.result_type is not TransportResultType.SUCCEEDED:raise RuntimeError("official sandbox request rejected: "+result.result_type.value)
-        if str(result.payload.get("code","0"))!="0":raise RuntimeError("official sandbox returned a non-zero public-safe result code")
+        if result.result_type in (TransportResultType.REJECTED,TransportResultType.AUTHENTICATION_FAILED):raise ExplicitVenueRejection("authenticated sandbox request explicitly rejected")
+        if result.result_type in (TransportResultType.RATE_LIMITED,TransportResultType.MALFORMED):raise UnknownSubmissionResult("sandbox request outcome is ambiguous")
+        if result.result_type is not TransportResultType.SUCCEEDED:raise RuntimeError("official sandbox request failed: "+result.result_type.value)
+        if str(result.payload.get("code","0"))!="0":raise ExplicitVenueRejection("authenticated sandbox response returned non-zero code")
         return result.payload
     def verify_credentials(self):return self._request(TransportRequestType.VERIFY_CREDENTIALS,"GET","/api/v5/account/config")
     def fetch_account_mode(self):
@@ -48,24 +55,29 @@ class OkxDemoVenue(PaperVenue):
         payload=self._request(TransportRequestType.SUBMIT,"POST","/api/v5/trade/order",body=body,idempotency_key=s.idempotency_key); data=payload.get("data",[])
         if not isinstance(data,list) or len(data)!=1:raise ValueError("OKX demo order acknowledgement must contain exactly one item")
         item=data[0]
-        if str(item.get("sCode","0"))!="0":raise RuntimeError("OKX demo order was rejected")
+        if str(item.get("sCode","0"))!="0":raise ExplicitVenueRejection("OKX demo order was explicitly rejected")
         venue_id=str(item.get("ordId","")).strip()
         if not venue_id:raise ValueError("OKX demo acknowledgement missing ordId")
         self._sequence+=1; order=VenueOrder(s.paper_run_id,s.submission_id,s.client_order_id,venue_id,s.series_identity,s.side,s.order_type,s.time_in_force,s.accounting_mode,s.quantity,Decimal(0),None,VenueOrderState.PENDING_ACK,s.submitted_at_utc,self.clock(),self._sequence,s.economics_sha256,s.limit_price,s.stop_price)
         self._submissions[s.client_order_id]=s; self._orders[s.client_order_id]=order; return order
-    def _parse_order(self,item,prior):
+    def _parse_order(self,item,prior,submission=None):
         state=_STATE.get(str(item.get("state")))
         if state is None:raise ValueError("unsupported OKX demo order state")
         created=_utc_ms(item.get("cTime"),"cTime"); updated=_utc_ms(item.get("uTime"),"uTime"); cumulative=Decimal(str(item.get("accFillSz","0"))); average=Decimal(str(item["avgPx"])) if item.get("avgPx") else None
         if prior and cumulative<prior.cumulative_filled_quantity:raise ValueError("OKX cumulative filled quantity decreased")
         self._sequence+=1
-        return VenueOrder(prior.paper_run_id,prior.submission_id,prior.client_order_id,str(item.get("ordId")),prior.series_identity,prior.side,prior.order_type,prior.time_in_force,prior.accounting_mode,prior.quantity,cumulative,average,state,created,updated,self._sequence,prior.economics_sha256,prior.limit_price,prior.stop_price)
+        source=prior or submission
+        if source is None:raise ValueError("persisted submission identity is required to parse order")
+        quantity=source.quantity
+        return VenueOrder(source.paper_run_id,source.submission_id,source.client_order_id,str(item.get("ordId")),source.series_identity,source.side,source.order_type,source.time_in_force,source.accounting_mode,quantity,cumulative,average,state,created,updated,self._sequence,source.economics_sha256,source.limit_price,source.stop_price)
     def query_order(self,client_order_id):
         prior=self._orders.get(client_order_id)
-        if prior is None:return None
-        data=self._request(TransportRequestType.QUERY_ORDER,"GET","/api/v5/trade/order",query={"clOrdId":client_order_id,"instId":prior.series_identity.provider_instrument_id}).get("data",[])
+        submission=self._submissions.get(client_order_id)
+        if prior is None and submission is None:return None
+        identity=(prior or submission).series_identity
+        data=self._request(TransportRequestType.QUERY_ORDER,"GET","/api/v5/trade/order",query={"clOrdId":client_order_id,"instId":identity.provider_instrument_id}).get("data",[])
         if not data:return None
-        order=self._parse_order(data[0],prior); self._orders[client_order_id]=order; return order
+        order=self._parse_order(data[0],prior,submission); self._orders[client_order_id]=order; return order
     def cancel_order(self,client_order_id,at_utc):
         prior=self._orders[client_order_id]; self._request(TransportRequestType.CANCEL,"POST","/api/v5/trade/cancel-order",body={"instId":prior.series_identity.provider_instrument_id,"clOrdId":client_order_id},idempotency_key=client_order_id+":cancel"); order=VenueOrder(**{**prior.__dict__,"state":VenueOrderState.CANCEL_PENDING,"updated_at_utc":at_utc,"venue_sequence":prior.venue_sequence+1}); self._orders[client_order_id]=order; return order
     def list_open_orders(self):return tuple(o for o in self._orders.values() if o.state not in (VenueOrderState.FILLED,VenueOrderState.CANCELLED,VenueOrderState.REJECTED,VenueOrderState.EXPIRED))
