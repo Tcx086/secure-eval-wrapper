@@ -4,7 +4,7 @@ from .models import PaperReconciliation,PaperReconciliationDifference
 
 _TERMINAL={VenueOrderState.FILLED,VenueOrderState.CANCELLED,VenueOrderState.REJECTED,VenueOrderState.EXPIRED}
 class PaperReconciliationEngine:
-    def reconcile(self,*,paper_run_id,local_snapshot,venue_snapshot,local_orders,venue_orders,local_fills,venue_fills,at_utc,maximum_snapshot_age_seconds=None):
+    def reconcile(self,*,paper_run_id,local_snapshot,venue_snapshot,local_orders,venue_orders,local_fills,venue_fills,at_utc,maximum_snapshot_age_seconds=None,authority_checks=()):
         provisional=PaperReconciliation(paper_run_id,local_snapshot.snapshot_id,venue_snapshot.snapshot_id,at_utc,ReconciliationStatus.RECONCILED,local_snapshot.venue_sequence,venue_snapshot.venue_sequence,0,0); raw=[]
         def diff(kind,identity,local,venue,explanation,material=True):raw.append((kind,material,identity,local,venue,explanation))
         lorders={o.client_order_id:o for o in local_orders}; vorders={o.client_order_id:o for o in venue_orders}
@@ -47,6 +47,7 @@ class PaperReconciliationEngine:
         if local_snapshot.venue_sequence is not None and venue_snapshot.venue_sequence is not None and venue_snapshot.venue_sequence<local_snapshot.venue_sequence:diff(D.SEQUENCE_GAP,"venue_sequence",local_snapshot.venue_sequence,venue_snapshot.venue_sequence,"venue sequence moved backward")
         if any(getattr(o,"state",None) in (PaperOrderState.SUBMISSION_UNKNOWN,PaperOrderState.PENDING_RECOVERY) for o in local_orders):diff(D.UNKNOWN_SUBMISSION,"submission",None,None,"submission remains unknown")
         if any(getattr(o,"state",None) in (PaperOrderState.CANCEL_REQUESTED,PaperOrderState.CANCEL_PENDING,PaperOrderState.CANCEL_UNKNOWN,VenueOrderState.CANCEL_PENDING) for o in local_orders):diff(D.CANCEL_PENDING,"cancel",None,None,"cancellation remains unconfirmed")
+        for item in authority_checks:diff(D(item["type"]),str(item["identity"]),item.get("local"),item.get("venue"),str(item["explanation"]))
         material=sum(1 for _,m,*_ in raw if m); status=ReconciliationStatus.UNKNOWN if any(x[0] in (D.UNKNOWN_SUBMISSION,D.CANCEL_PENDING) for x in raw) else ReconciliationStatus.BLOCKED if material else ReconciliationStatus.WARNING if raw else ReconciliationStatus.RECONCILED
         result=PaperReconciliation(paper_run_id,local_snapshot.snapshot_id,venue_snapshot.snapshot_id,at_utc,status,local_snapshot.venue_sequence,venue_snapshot.venue_sequence,len(raw),material,reconciliation_id=provisional.reconciliation_id)
         differences=tuple(PaperReconciliationDifference(result.reconciliation_id,*row) for row in raw); return result,differences

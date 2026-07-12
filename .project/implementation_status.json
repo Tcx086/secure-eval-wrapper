@@ -323,7 +323,7 @@
     {
       "id": "phase_7_paper_trading",
       "title": "Phase 7: paper trading",
-      "status": "completed",
+      "status": "in_progress",
       "completed": [
         "Add provider-neutral PaperBroker contracts, bounded run configuration, preflight, explicit approval, immutable manifest, lifecycle, recovery, rate limiting, and safe CLI boundaries",
         "Add the deterministic asynchronous InternalPaperVenue with partial fills, idempotency, deterministic faults, recovery, accounting, reconciliation, monitoring, and persisted kill-switch behavior",
@@ -343,7 +343,14 @@
         "Make InternalPaperVenue.fill candidate-validated and exception-atomic with fee and slippage reservation coverage",
         "Add migration 0018, expanded offline and PostgreSQL regressions, clean and seeded validation, and six-job CI checkpoint run 29201729953 on ae245f26ed21b13e9a32b723ff0112ae6bd3c82b"
       ],
-      "todo": []
+      "todo": [
+        "Persist asynchronous venue-state observations as PostgreSQL authority",
+        "Apply terminal recovery fills and accounting atomically before closing reservations and order budgets",
+        "Make persistent-mode InternalPaperVenue operational events crash-safe and PostgreSQL-rebuildable",
+        "Unify durable runtime, paper accounting, and internal venue reservation authority and calculations",
+        "Persist expiry and rejection command and state transitions without terminal-state bypasses",
+        "Route expired dispatch and cancel claims automatically through generation-safe recovery claims"
+      ]
     },
     {
       "id": "phase_8_guarded_live_execution",

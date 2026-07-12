@@ -1178,7 +1178,13 @@ ALLOWED_DATA_MIGRATIONS = {
         r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.paper_market_data_evidence\b.*?;",
         r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.paper_reconciliation_bundles\b.*?;",
     ),
-}
+    "0019_phase7_venue_event_and_accounting_integrity.sql": (
+        r"\bUPDATE\s+execution\.paper_reservations\s+SET\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.paper_reservations\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.paper_order_projections\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.paper_expiry_outbox\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.%I\b.*?;",
+    ),}
 
 class CatalogClient(Protocol):
     def query(self, sql: str) -> list[tuple[object, ...]]:

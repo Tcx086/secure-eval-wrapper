@@ -5,6 +5,7 @@ from decimal import Decimal
 from .enums import AccountSnapshotStatus
 from .models import PaperAccountSnapshot,VenueBalance,VenueFill,VenuePosition
 from secure_eval_wrapper.execution.models import AccountingMode,OrderSide
+from .reservations import calculate_reservation,reduce_reservation
 
 @dataclass
 class Reservation:
@@ -21,11 +22,9 @@ class PaperAccounting:
     def available(self,currency):return self.balances.get(currency.upper(),Decimal(0))-self.reserved(currency)
     def reserve(self,submission):
         if submission.client_order_id in self.reservations:return self.reservations[submission.client_order_id]
-        base,quote=self._assets(submission.series_identity)
-        if submission.side is OrderSide.BUY:currency=quote; reserve_price=max(x for x in (submission.reference_price*Decimal("1.02"),submission.limit_price,submission.stop_price) if x is not None);amount=submission.quantity*reserve_price*(Decimal(1)+self.fee_bps/Decimal(10000))
-        else:currency=base; amount=submission.quantity
-        if self.available(currency)<amount:raise ValueError("paper reservation exceeds available balance or inventory")
-        row=Reservation(currency,amount,submission.quantity,submission.quantity); self.reservations[submission.client_order_id]=row; return row
+        required=calculate_reservation(submission,maximum_fee_bps=self.fee_bps)
+        if self.available(required.currency)<required.amount:raise ValueError("paper reservation exceeds available balance or inventory")
+        row=Reservation(required.currency,required.amount,submission.quantity,submission.quantity); self.reservations[submission.client_order_id]=row; return row
     def release(self,client_order_id):return self.reservations.pop(client_order_id,None)
     def apply_fill(self,fill:VenueFill):
         if fill.fill_id in self.applied_fill_ids:return False
@@ -47,9 +46,9 @@ class PaperAccounting:
             self.balances[fill.fee_currency]-=fill.fee_amount
         reservation=self.reservations.get(fill.client_order_id)
         if reservation:
-            used=min(fill.quantity,reservation.remaining_quantity); remaining=reservation.remaining_quantity-used; amount=max(Decimal(0),reservation.amount-(fill.quantity*fill.price+fill.fee_amount if fill.side is OrderSide.BUY and fill.accounting_mode is AccountingMode.SPOT else reservation.amount*used/reservation.remaining_quantity))
-            if remaining==0:self.release(fill.client_order_id)
-            else:self.reservations[fill.client_order_id]=Reservation(reservation.currency,amount,reservation.original_quantity,remaining)
+            reduced=reduce_reservation(current_amount=reservation.amount,current_quantity=reservation.remaining_quantity,fill_quantity=fill.quantity,fill_price=fill.price,fill_fee=fill.fee_amount,fee_currency=fill.fee_currency,reservation_currency=reservation.currency,side=fill.side,accounting_mode=fill.accounting_mode)
+            if reduced.quantity==0:self.release(fill.client_order_id)
+            else:self.reservations[fill.client_order_id]=Reservation(reservation.currency,reduced.amount,reservation.original_quantity,reduced.quantity)
         self.total_fees+=fill.fee_amount; self.applied_fill_ids.add(fill.fill_id); return True
     def snapshot(self,*,at_utc,venue_sequence,source="local_paper_accounting"):
         balances=tuple(VenueBalance(k,v,self.available(k),self.reserved(k)) for k,v in sorted(self.balances.items()))

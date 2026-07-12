@@ -9,7 +9,7 @@ Every future functional PR must update both files in the same change:
 
 Completed work must be listed under `Completed`. Everything not done must remain under `Todo`.
 
-Current phase: `phase_7_paper_trading` (`completed`). Phase 7 third-round independent audit repairs are complete; Phase 8 remains entirely todo and has not started.
+Current phase: `phase_7_paper_trading` (`in_progress`). Phase 7 fourth-round independent audit repairs are in progress; Phase 8 remains entirely todo and has not started.
 
 ## Non-Negotiable Constraints
 - PostgreSQL is the only authoritative storage layer.
@@ -281,7 +281,7 @@ Current phase: `phase_7_paper_trading` (`completed`). Phase 7 third-round indepe
 - [x] Add migration `0015` without modifying migrations `0001` through `0014`.
 - [x] Pass all required local, PostgreSQL 16, packaging, boundary, and migration validation, plus all six jobs in GitHub Actions checkpoint run `29143906785` on `e92d4484e7b4847a7a5b5ee49ae1dc2d573c0186`.
 
-### Phase 7: safe paper trading (completed)
+### Phase 7: safe paper trading (in progress)
 
 - [x] Add provider-neutral PaperBroker contracts, bounded run configuration, preflight, explicit approval, immutable manifest, lifecycle, recovery, rate limiting, and safe CLI boundaries.
 - [x] Add the deterministic asynchronous InternalPaperVenue with partial fills, idempotency, deterministic faults, recovery, accounting, reconciliation, monitoring, and persisted kill-switch behavior.
@@ -302,6 +302,15 @@ Current phase: `phase_7_paper_trading` (`completed`). Phase 7 third-round indepe
 - [x] Add migration `0018`, expanded offline/PostgreSQL regressions, clean/seeded validation, and six-job CI checkpoint run `29201729953` on `ae245f26ed21b13e9a32b723ff0112ae6bd3c82b`.
 
 ## Todo
+
+### Phase 7 fourth independent audit repairs
+
+- [ ] Persist asynchronous venue-state observations as PostgreSQL authority.
+- [ ] Apply terminal recovery fills and accounting atomically before closing reservations and order budgets.
+- [ ] Make persistent-mode `InternalPaperVenue` operational events crash-safe and PostgreSQL-rebuildable.
+- [ ] Unify durable runtime, paper accounting, and internal venue reservation authority and calculations.
+- [ ] Persist expiry and rejection command/state transitions without terminal-state bypasses.
+- [ ] Route expired dispatch and cancel claims automatically through generation-safe recovery claims.
 
 
 ### Future provider enhancements

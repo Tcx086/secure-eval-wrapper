@@ -191,6 +191,25 @@ class VenueFill:
     def record_sha256(self):return _paper_hash({n:getattr(self,n) for n in self.__dataclass_fields__ if n!="fill_id"})
 
 @dataclass(frozen=True)
+class PaperRecoveryObservationBundle:
+    """Complete immutable venue evidence captured by one recovery query."""
+    paper_run_id:UUID; submission_id:UUID; client_order_id:str; queried_order:VenueOrder|None; recent_orders:tuple[VenueOrder,...]; open_orders:tuple[VenueOrder,...]; fills:tuple[VenueFill,...]; balances:tuple[VenueBalance,...]; positions:tuple[VenuePosition,...]; account_snapshot:PaperAccountSnapshot; query_started_at_utc:datetime; query_completed_at_utc:datetime; fill_evidence_complete:bool; incompleteness_reason:str|None=None; query_id:UUID|None=None; bundle_id:UUID|None=None
+    def __post_init__(self):
+        object.__setattr__(self,"client_order_id",_text(self.client_order_id,"client_order_id"));_utc(self.query_started_at_utc,"query_started_at_utc");_utc(self.query_completed_at_utc,"query_completed_at_utc")
+        if self.query_completed_at_utc<self.query_started_at_utc:raise ValueError("recovery query completed before it started")
+        expected_query=deterministic_paper_uuid("recovery-observation-query",{"run":self.paper_run_id,"submission":self.submission_id,"started":self.query_started_at_utc,"queried_order":None if self.queried_order is None else self.queried_order.record_sha256,"fills":tuple(f.record_sha256 for f in self.fills),"account_snapshot":self.account_snapshot.record_sha256})
+        if self.query_id is not None and self.query_id!=expected_query:raise ValueError("query_id mismatch")
+        object.__setattr__(self,"query_id",expected_query);expected_bundle=deterministic_paper_uuid("recovery-observation-bundle",{"query":expected_query})
+        if self.bundle_id is not None and self.bundle_id!=expected_bundle:raise ValueError("bundle_id mismatch")
+        object.__setattr__(self,"bundle_id",expected_bundle)
+        if not self.fill_evidence_complete and not self.incompleteness_reason:raise ValueError("incomplete fill evidence requires a reason")
+    @property
+    def observation_hashes(self):
+        return MappingProxyType({"queried_order":None if self.queried_order is None else self.queried_order.record_sha256,"recent_orders":tuple(o.record_sha256 for o in self.recent_orders),"open_orders":tuple(o.record_sha256 for o in self.open_orders),"fills":tuple(f.record_sha256 for f in self.fills),"balances":tuple(_paper_hash(b) for b in self.balances),"positions":tuple(_paper_hash(p) for p in self.positions),"account_snapshot":self.account_snapshot.record_sha256})
+    @property
+    def record_sha256(self):return _paper_hash({"run":self.paper_run_id,"submission":self.submission_id,"client_order_id":self.client_order_id,"query":self.query_id,"started":self.query_started_at_utc,"completed":self.query_completed_at_utc,"complete":self.fill_evidence_complete,"reason":self.incompleteness_reason,"hashes":self.observation_hashes})
+
+@dataclass(frozen=True)
 class PaperReconciliation:
     paper_run_id:UUID; local_snapshot_id:UUID; venue_snapshot_id:UUID; reconciled_at_utc:datetime; status:ReconciliationStatus; local_sequence:int|None; venue_sequence:int|None; difference_count:int; material_difference_count:int; reconciliation_id:UUID|None=None
     def __post_init__(self):
