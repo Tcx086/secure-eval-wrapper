@@ -1168,7 +1168,16 @@ ALLOWED_DATA_MIGRATIONS = {
         r"\bUPDATE\s+ON\s+execution\.paper_runs\b.*?;",
         r"\bUPDATE\s+ON\s+execution\.paper_kill_switches\b.*?;",
     ),
-
+    "0018_phase7_recovery_state_machine_integrity.sql": (
+        r"\bUPDATE\s+execution\.paper_order_submissions\s+SET\b.*?;",
+        r"\bUPDATE\s+execution\.paper_dispatch_outbox\s+SET\b.*?;",
+        r"\bUPDATE\s+execution\.paper_cancel_outbox\s+SET\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.paper_dispatch_outbox\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.paper_cancel_outbox\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.paper_order_budget_events\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.paper_market_data_evidence\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.paper_reconciliation_bundles\b.*?;",
+    ),
 }
 
 class CatalogClient(Protocol):

@@ -16,7 +16,7 @@ from .engine import PaperTradingEngine
 from .enums import KillSwitchReason,KillSwitchState,PaperProvider,PaperRunState
 from .kill_switch import PaperKillSwitchController
 from .manifests import create_manifest
-from .models import CredentialReference,PaperKillSwitch,deterministic_paper_uuid
+from .models import CredentialReference,PaperKillSwitch,PaperMarketDataEvidence,deterministic_paper_uuid
 from .preflight import PaperPreflightEngine,PaperPreflightEvidence
 from .reconciliation import PaperReconciliationEngine
 from .recovery import PaperRecoveryEngine
@@ -46,6 +46,8 @@ def run_internal_demo(*,persist_repository=None):
     approvals=ApprovalController(); approval=approvals.create(report=report,configuration=config,snapshot=initial,credential_reference=credential,created_at_utc=clock(),ttl_seconds=300,actor="deterministic-fixture",nonce="phase7-offline-demo",maximum_total_notional=Decimal("1000")); manifest=create_manifest(configuration=config,report=report,approval=approval,snapshot=initial,credential_reference=credential,implementation_sha256=implementation,repository_commit_sha="phase7-public",strategy_run_reference="public-fixture-signals",start_at_utc=clock())
     accounting=PaperAccounting(paper_run_id=run_id,account_reference=config.account_reference,balances={b.currency:b.total for b in initial.balances}); kill=PaperKillSwitch(run_id,KillSwitchState.ARMED,None,clock()); persist_kill=(lambda value,event:persist_repository.persist_kill_event(value,event)) if persist_repository else None; kill_controller=PaperKillSwitchController(kill,persist=persist_kill)
     broker=PaperBroker(configuration=config,manifest=manifest,approval=approval,venue=venue,accounting=accounting,kill_switch=kill_controller,clock=clock,repository=persist_repository if durable else None,fixture_mode=not durable); reconciliation_engine=PaperReconciliationEngine(); engine=PaperTradingEngine(configuration=config,broker=broker,reconciliation_engine=reconciliation_engine,kill_switch=kill_controller,repository=persist_repository,clock=clock); engine.start(report=report,approval=approval,snapshot=initial,credential_reference=credential,approval_controller=approvals)
+    if durable:
+        market_evidence=PaperMarketDataEvidence(identity,"internal","BTC-USDT","bar_close","demo-bar-1",clock(),clock(),True,"accepted",sha256_payload("phase7-demo-market-source"),sha256_payload({"bar":"demo-bar-1","at":clock()}));persist_repository.record_market_data_evidence(run_id,market_evidence,recorded_at_utc=clock())
     persisted_fills=[]
     def persist_submission(intent,risk):
         if not persist_repository:return

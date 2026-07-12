@@ -13,7 +13,7 @@ from secure_eval_wrapper.paper.models import CredentialReference,PaperKillSwitch
 from secure_eval_wrapper.paper.durable_repository import DurablePostgresPaperRepository as PostgresPaperRepository
 from secure_eval_wrapper.paper.preflight import PaperPreflightEngine,PaperPreflightEvidence
 from secure_eval_wrapper.paper.venues.internal import InternalPaperVenue
-from phase7_test_support import H,T0,intent,risk
+from phase7_test_support import H,T0,intent,market_evidence,risk
 RUN=os.environ.get("RUN_POSTGRES_INTEGRATION","").lower()=="true"
 @unittest.skipUnless(RUN,"requires real PostgreSQL 16")
 class Phase7PostgresTests(unittest.TestCase):
@@ -43,7 +43,7 @@ class Phase7PostgresTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):self.repo.persist_start_run(**bundle,fail_at=fail)
                 self.assertEqual(self.counts()["paper_runs"],0)
     def test_submission_rollback_matrix(self):
-        bundle=self.bundle("dispatch");self.repo.persist_start_run(**bundle);i=intent(run=bundle["run"].paper_run_id);s,replay=self.repo.prepare_submission(configuration=bundle["configuration"],approval=bundle["approval"],manifest=bundle["manifest"],intent=i,risk_decision=risk(i),now=T0)
+        bundle=self.bundle("dispatch");self.repo.persist_start_run(**bundle);self.repo.record_market_data_evidence(bundle["run"].paper_run_id,market_evidence(),recorded_at_utc=T0);i=intent(run=bundle["run"].paper_run_id);s,replay=self.repo.prepare_submission(configuration=bundle["configuration"],approval=bundle["approval"],manifest=bundle["manifest"],intent=i,risk_decision=risk(i),now=T0)
         self.assertFalse(replay);state=self.repo.load_state_bundle(bundle["run"].paper_run_id);self.assertEqual(state["dispatches"][0]["state"],"prepared");self.assertEqual(state["reservations"][0]["state"],"open")
         token=self.repo.claim_dispatch(s,worker_id="crash-worker",at_utc=T0);self.assertIsNotNone(token);state=self.repo.load_state_bundle(bundle["run"].paper_run_id);self.assertEqual(state["dispatches"][0]["state"],"dispatch_claimed");self.assertEqual(state["submissions"][0]["client_order_id"],s.client_order_id)
     def test_fill_rollback_matrix(self):

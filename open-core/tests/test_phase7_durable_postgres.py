@@ -1,6 +1,6 @@
-import dataclasses,os,unittest
+import dataclasses,json,os,subprocess,sys,unittest
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime,timedelta,timezone
 from decimal import Decimal
 from secure_eval_wrapper.data_collection.hashing import sha256_payload
 from secure_eval_wrapper.alpha.identity import SeriesIdentity
@@ -10,9 +10,9 @@ from secure_eval_wrapper.paper.accounting import PaperAccounting
 from secure_eval_wrapper.paper.approval import ApprovalController
 from secure_eval_wrapper.paper.broker import PaperBroker
 from secure_eval_wrapper.paper.configuration import internal_demo_configuration
-from secure_eval_wrapper.paper.durable_repository import DurablePostgresPaperRepository,DispatchNotClaimable
+from secure_eval_wrapper.paper.durable_repository import DurablePostgresPaperRepository,DispatchNotClaimable,RuntimeRiskBlocked
 from secure_eval_wrapper.paper.engine import PaperTradingEngine
-from secure_eval_wrapper.paper.enums import CredentialSourceType,InternalPaperFaultType,KillSwitchReason,KillSwitchState,PaperProvider,PaperRunState
+from secure_eval_wrapper.paper.enums import CredentialSourceType,InternalPaperFaultType,KillSwitchReason,KillSwitchState,PaperProvider,PaperRunState,VenueOrderState
 from secure_eval_wrapper.paper.kill_switch import PaperKillSwitchController
 from secure_eval_wrapper.paper.manifests import create_manifest
 from secure_eval_wrapper.paper.models import CredentialReference,PaperKillSwitch,PaperRun,deterministic_paper_uuid
@@ -21,7 +21,7 @@ from secure_eval_wrapper.paper.reconciliation import PaperReconciliationEngine
 from secure_eval_wrapper.paper.restart import reconstruct_internal_paper_runtime
 from secure_eval_wrapper.paper.venue import UnknownSubmissionResult
 from secure_eval_wrapper.paper.venues.internal import InternalFault,InternalPaperVenue
-from phase7_test_support import H,T0,intent,risk
+from phase7_test_support import H,ID,T0,intent,market_evidence,risk
 RUN=os.environ.get("RUN_POSTGRES_INTEGRATION","").lower()=="true"
 class Clock:
     def __init__(self):self.value=T0
@@ -39,8 +39,10 @@ class DurablePhase7PostgresTests(unittest.TestCase):
     def setUp(self):
         with self.connection.cursor() as c:c.execute("TRUNCATE execution.paper_runs,execution.paper_configuration_snapshots,execution.paper_credential_references CASCADE")
         self.connection.commit();self.repo=DurablePostgresPaperRepository(self.connection)
-    def runtime(self,label="runtime",faults=(),crash_hook=None):
-        clock=Clock();c=dataclasses.replace(internal_demo_configuration(persistence_required=True),account_reference="audit-"+label);run_id=deterministic_paper_uuid("durable-test-run",{"label":label,"config":c.config_sha256});venue=InternalPaperVenue(account_reference=c.account_reference,initial_balances={"USDT":Decimal("10000")},faults=faults);snapshot=venue.fetch_account_snapshot(run_id,clock());credential=CredentialReference(PaperProvider.INTERNAL,"none-"+label,CredentialSourceType.INJECTED_TEST,sha256_payload(label)[:16]);report=PaperPreflightEngine().evaluate(paper_run_id=run_id,configuration=c,account_snapshot=snapshot,credential_reference=credential,evidence=PaperPreflightEvidence.verified_internal(clock(),postgresql_required=True),evaluated_at_utc=clock(),implementation_sha256=H);approval=ApprovalController().create(report=report,configuration=c,snapshot=snapshot,credential_reference=credential,created_at_utc=clock(),ttl_seconds=600,actor="audit",nonce=label,maximum_total_notional=Decimal("1000"));manifest=create_manifest(configuration=c,report=report,approval=approval,snapshot=snapshot,credential_reference=credential,implementation_sha256=H,repository_commit_sha="audit",strategy_run_reference="public-test",start_at_utc=clock());kill=PaperKillSwitch(run_id,KillSwitchState.ARMED,None,clock());controller=PaperKillSwitchController(kill,persist=lambda value,event:self.repo.persist_kill_event(value,event));accounting=PaperAccounting(paper_run_id=run_id,account_reference=c.account_reference,balances={b.currency:b.total for b in snapshot.balances});broker=PaperBroker(configuration=c,manifest=manifest,approval=approval,venue=venue,accounting=accounting,kill_switch=controller,clock=clock,repository=self.repo,worker_id=label,crash_hook=crash_hook);engine=PaperTradingEngine(configuration=c,broker=broker,reconciliation_engine=PaperReconciliationEngine(),kill_switch=controller,repository=self.repo,clock=clock);engine.start(report=report,approval=approval,snapshot=snapshot,credential_reference=credential,approval_controller=ApprovalController());return engine,venue,clock,approval,report,snapshot,credential
+    def runtime(self,label="runtime",faults=(),crash_hook=None,record_market=True):
+        clock=Clock();c=dataclasses.replace(internal_demo_configuration(persistence_required=True),account_reference="audit-"+label);run_id=deterministic_paper_uuid("durable-test-run",{"label":label,"config":c.config_sha256});venue=InternalPaperVenue(account_reference=c.account_reference,initial_balances={"USDT":Decimal("10000")},faults=faults);snapshot=venue.fetch_account_snapshot(run_id,clock());credential=CredentialReference(PaperProvider.INTERNAL,"none-"+label,CredentialSourceType.INJECTED_TEST,sha256_payload(label)[:16]);report=PaperPreflightEngine().evaluate(paper_run_id=run_id,configuration=c,account_snapshot=snapshot,credential_reference=credential,evidence=PaperPreflightEvidence.verified_internal(clock(),postgresql_required=True),evaluated_at_utc=clock(),implementation_sha256=H);approval=ApprovalController().create(report=report,configuration=c,snapshot=snapshot,credential_reference=credential,created_at_utc=clock(),ttl_seconds=600,actor="audit",nonce=label,maximum_total_notional=Decimal("1000"));manifest=create_manifest(configuration=c,report=report,approval=approval,snapshot=snapshot,credential_reference=credential,implementation_sha256=H,repository_commit_sha="audit",strategy_run_reference="public-test",start_at_utc=clock());kill=PaperKillSwitch(run_id,KillSwitchState.ARMED,None,clock());controller=PaperKillSwitchController(kill,persist=lambda value,event:self.repo.persist_kill_event(value,event));accounting=PaperAccounting(paper_run_id=run_id,account_reference=c.account_reference,balances={b.currency:b.total for b in snapshot.balances});broker=PaperBroker(configuration=c,manifest=manifest,approval=approval,venue=venue,accounting=accounting,kill_switch=controller,clock=clock,repository=self.repo,worker_id=label,crash_hook=crash_hook);engine=PaperTradingEngine(configuration=c,broker=broker,reconciliation_engine=PaperReconciliationEngine(),kill_switch=controller,repository=self.repo,clock=clock);engine.start(report=report,approval=approval,snapshot=snapshot,credential_reference=credential,approval_controller=ApprovalController());
+        if record_market:self.repo.record_market_data_evidence(run_id,market_evidence(at=clock()),recorded_at_utc=clock())
+        return engine,venue,clock,approval,report,snapshot,credential
     def state(self,engine):return self.repo.load_state_bundle(engine.broker.manifest.paper_run_id)
     def test_durable_dispatch_crash_before_claim_and_after_claim(self):
         for point,expected,calls in (("after_durable_intent_before_claim","prepared",0),("after_dispatch_claim_before_venue","dispatch_claimed",0)):
@@ -210,8 +212,65 @@ class DurablePhase7PostgresTests(unittest.TestCase):
     def test_missing_stale_evidence_expired_approval_and_cancel_rate_fail_closed(self):
         engine,venue,clock,*_=self.runtime("fail-closed");i=intent(run=engine.run.paper_run_id,signal="missing-evidence")
         with self.assertRaises(Exception):self.repo.prepare_submission(configuration=engine.configuration,approval=engine.broker.approval,manifest=engine.broker.manifest,intent=i,risk_decision=risk(i),now=clock(),evidence={"market_data_at_utc":None,"account_snapshot_at_utc":None,"reconciliation_at_utc":None,"reconciliation_status":None,"clock_skew_seconds":None})
-        blocked=self.repo._fetchone("SELECT reason_codes_jsonb FROM execution.paper_runtime_risk_decisions WHERE order_intent_id=%s",(i.order_intent_id,));self.assertIn("market_data_evidence",blocked["reason_codes_jsonb"]);self.assertIn("reconciliation_evidence",blocked["reason_codes_jsonb"])
+        blocked=self.repo._fetchone("SELECT reason_codes_jsonb FROM execution.paper_runtime_risk_decisions WHERE order_intent_id=%s",(i.order_intent_id,));self.assertNotIn("market_data_evidence",blocked["reason_codes_jsonb"]);self.assertIn("reconciliation_evidence",blocked["reason_codes_jsonb"])
         self.setUp();engine,venue,clock,*_=self.runtime("expired");clock.advance(601);fresh=reconstruct_internal_paper_runtime(repository=self.repo,paper_run_id=engine.run.paper_run_id,clock=clock);expired=intent(run=engine.run.paper_run_id,at=clock(),signal="expired")
         with self.assertRaises(PermissionError):fresh.submit(expired,risk(expired,clock()))
         self.setUp();engine,venue,clock,*_=self.runtime("cancel-limit");active=intent(run=engine.run.paper_run_id,signal="cancel-limit");engine.submit(active,risk(active));client=engine.broker.submissions[0].client_order_id;venue.acknowledge(client,clock());engine.broker.query_order(client);self.repo._execute("UPDATE execution.paper_run_risk_state SET cancellations_in_current_minute=%s WHERE paper_run_id=%s",(engine.configuration.maximum_cancellations_per_minute,engine.run.paper_run_id))
         with self.assertRaises(Exception):engine.broker.cancel_paper_order(client,at_utc=clock(),reason="limit")
+    def test_restart_worker_resumes_prepared_once_with_original_identity(self):
+        def crash(point):
+            if point=="after_durable_intent_before_claim":raise Crash(point)
+        engine,venue,clock,*_=self.runtime("third-prepared",crash_hook=crash);value=intent(run=engine.run.paper_run_id,signal="third-prepared")
+        with self.assertRaises(Crash):engine.submit(value,risk(value))
+        client=engine.broker.submissions[0].client_order_id;run=engine.run.paper_run_id;del engine,venue
+        fresh=reconstruct_internal_paper_runtime(repository=DurablePostgresPaperRepository(self.connection),paper_run_id=run,clock=clock);self.assertEqual(fresh.broker.venue.submit_call_count,0);result=fresh.recover_unresolved();self.assertTrue(result);self.assertEqual(fresh.broker.venue.submit_call_count,1);state=self.repo.load_state_bundle(run);self.assertEqual(state["dispatches"][0]["state"],"acknowledged");self.assertEqual(state["submissions"][0]["client_order_id"],client);self.assertEqual(state["risk_state"]["open_order_count"],1);fresh.recover_unresolved();self.assertEqual(fresh.broker.venue.submit_call_count,1);self.assertEqual(len(state["reservations"]),1)
+    def test_restart_worker_resumes_cancel_requested_once(self):
+        marker={"enabled":False}
+        def crash(point):
+            if marker["enabled"] and point=="after_cancel_intent_before_claim":raise Crash(point)
+        engine,venue,clock,*_=self.runtime("third-cancel",crash_hook=crash);value=intent(run=engine.run.paper_run_id,signal="third-cancel");engine.submit(value,risk(value));client=engine.broker.submissions[0].client_order_id;venue.acknowledge(client,clock.advance());engine.broker.query_order(client);marker["enabled"]=True
+        with self.assertRaises(Crash):engine.broker.cancel_paper_order(client,at_utc=clock(),reason="restart")
+        run=engine.run.paper_run_id;del engine
+        fresh=reconstruct_internal_paper_runtime(repository=DurablePostgresPaperRepository(self.connection),paper_run_id=run,clock=clock);fresh.recover_unresolved();self.assertEqual(fresh.broker.venue.cancel_call_count,1);state=self.repo.load_state_bundle(run);self.assertEqual(state["cancellations"][0]["state"],"cancel_unknown");self.assertEqual(state["reservations"][0]["state"],"open");fresh.recover_unresolved();self.assertEqual(fresh.broker.venue.cancel_call_count,1)
+    def test_claim_tokens_leases_and_recovery_claim_are_strict(self):
+        engine,venue,clock,*_=self.runtime("third-claims");value=intent(run=engine.run.paper_run_id,signal="third-claims");submission,_=self.repo.prepare_submission(configuration=engine.configuration,approval=engine.broker.approval,manifest=engine.broker.manifest,intent=value,risk_decision=risk(value),now=clock());token=self.repo.claim_dispatch(submission,worker_id="worker-a",at_utc=clock())
+        for invalid in (None,deterministic_paper_uuid("wrong-token",{"submission":submission.submission_id})):
+            with self.assertRaises(DispatchNotClaimable):self.repo.complete_dispatch(submission,claim_token=invalid,outcome="unknown",at_utc=clock(),worker_id="worker-a")
+        clock.advance(31)
+        with self.assertRaises(DispatchNotClaimable):self.repo.complete_dispatch(submission,claim_token=token,outcome="unknown",at_utc=clock(),worker_id="worker-a")
+        recovery_token=self.repo.claim_dispatch_recovery(submission,worker_id="recovery-a",at_utc=clock())
+        with self.assertRaises(DispatchNotClaimable):self.repo.claim_dispatch_recovery(submission,worker_id="recovery-b",at_utc=clock())
+        self.assertFalse(self.repo.complete_dispatch_recovery(submission,recovery_claim_token=recovery_token,at_utc=clock(),order=None,evidence_sha256=H));self.assertFalse(self.repo.complete_dispatch_recovery(submission,recovery_claim_token=recovery_token,at_utc=clock(),order=None,evidence_sha256=H))
+        self.setUp();engine,venue,clock,*_=self.runtime("third-cancel-claims");value=intent(run=engine.run.paper_run_id,signal="third-cancel-claims");engine.submit(value,risk(value));submission=engine.broker.submissions[0];venue.acknowledge(submission.client_order_id,clock());engine.broker.query_order(submission.client_order_id);self.repo.prepare_cancel(submission,at_utc=clock(),maximum_cancellations_per_minute=engine.configuration.maximum_cancellations_per_minute);token=self.repo.claim_cancel(submission,worker_id="worker-a",at_utc=clock())
+        for invalid in (None,deterministic_paper_uuid("wrong-cancel-token",{"submission":submission.submission_id})):
+            with self.assertRaises(DispatchNotClaimable):self.repo.complete_cancel(submission,claim_token=invalid,confirmed=False,at_utc=clock(),worker_id="worker-a")
+        clock.advance(31)
+        with self.assertRaises(DispatchNotClaimable):self.repo.complete_cancel(submission,claim_token=token,confirmed=False,at_utc=clock(),worker_id="worker-a")
+        recovery_token=self.repo.claim_cancel_recovery(submission,worker_id="recovery-a",at_utc=clock())
+        with self.assertRaises(DispatchNotClaimable):self.repo.claim_cancel_recovery(submission,worker_id="recovery-b",at_utc=clock())
+        self.assertFalse(self.repo.complete_cancel_recovery(submission,recovery_claim_token=recovery_token,at_utc=clock(),order=venue.query_order(submission.client_order_id),evidence_sha256=H));self.assertFalse(self.repo.complete_cancel_recovery(submission,recovery_claim_token=recovery_token,at_utc=clock(),order=venue.query_order(submission.client_order_id),evidence_sha256=H))
+    def test_operational_submission_uses_only_authoritative_market_evidence(self):
+        engine,venue,clock,*_=self.runtime("third-market-missing",record_market=False);value=intent(run=engine.run.paper_run_id,signal="missing",at=clock())
+        with self.assertRaises(RuntimeRiskBlocked) as caught:engine.submit(value,risk(value))
+        self.assertIn("market_data_missing",caught.exception.reasons);self.assertEqual(venue.submit_call_count,0)
+        self.setUp();engine,venue,clock,*_=self.runtime("third-market");bad=(dataclasses.replace(market_evidence(observation="non-final"),is_final=False,evidence_id=None),dataclasses.replace(market_evidence(observation="quarantined"),validation_status="quarantined",evidence_id=None),dataclasses.replace(market_evidence(observation="future"),observed_at_utc=T0+timedelta(seconds=1),available_at_utc=T0+timedelta(seconds=1),evidence_id=None),dataclasses.replace(market_evidence(observation="stale"),observed_at_utc=T0-timedelta(seconds=61),available_at_utc=T0-timedelta(seconds=61),evidence_id=None))
+        wrong_identity=SeriesIdentity("internal","internal-paper","ETH-USDT","ETH-USDT",InstrumentType.SPOT,"paper","USDT");bad=(*bad,market_evidence(identity=wrong_identity,observation="wrong-series"));expected=("market_data_non_final","market_data_quarantined","market_data_future","market_data_stale","market_data_identity_mismatch")
+        for n,(evidence,reason_code) in enumerate(zip(bad,expected)):
+            value=intent(run=engine.run.paper_run_id,signal="bad-market-"+str(n),at=clock())
+            with self.assertRaises(RuntimeRiskBlocked) as caught:engine.submit(value,risk(value),market_evidence=evidence)
+            self.assertIn(reason_code,caught.exception.reasons)
+        self.setUp();engine,venue,clock,*_=self.runtime("market-boundary");clock.advance(60);boundary=intent(run=engine.run.paper_run_id,signal="market-boundary",at=clock());engine.submit(boundary,risk(boundary,clock()));self.assertEqual(venue.submit_call_count,1)
+        self.setUp();engine,venue,clock,*_=self.runtime("market-one-over");clock.advance(61);one_over=intent(run=engine.run.paper_run_id,signal="market-one-over",at=clock())
+        with self.assertRaises(RuntimeRiskBlocked) as caught:engine.submit(one_over,risk(one_over,clock()))
+        self.assertIn("market_data_stale",caught.exception.reasons);self.assertEqual(self.state(engine)["risk_state"]["latest_market_data_at_utc"],T0)
+    def test_persisted_preflight_created_run_transitions_to_running(self):
+        env=os.environ.copy();env["ENABLE_POSTGRES_PERSISTENCE"]="true";completed=subprocess.run([sys.executable,"open-core/scripts/run_paper_preflight.py","--create-approval","--persist"],cwd=os.getcwd(),env=env,text=True,capture_output=True);self.assertEqual(completed.returncode,0,completed.stdout+completed.stderr);payload=json.loads(completed.stdout);run_id=__import__("uuid").UUID(payload["paper_run_id"]);self.assertTrue(payload["approval_created"]);self.assertTrue(payload["manifest_eligible"]);self.assertEqual(self.repo.load_state_bundle(run_id)["run"]["state"],"created")
+        from secure_eval_wrapper.paper.restart import start_persisted_internal_preflight
+        now=datetime.now(timezone.utc);engine=start_persisted_internal_preflight(repository=self.repo,paper_run_id=run_id,clock=lambda:now,repository_commit_sha="audit",strategy_run_reference="cli-created-preflight");state=self.repo.load_state_bundle(run_id);self.assertEqual(state["run"]["state"],"running");self.assertEqual(state["approval"]["state"],"consumed");self.repo.record_market_data_evidence(run_id,market_evidence(at=now),recorded_at_utc=now);value=intent(run=run_id,signal="created-start-order",at=now);engine.submit(value,risk(value,now));fresh=reconstruct_internal_paper_runtime(repository=self.repo,paper_run_id=run_id,clock=lambda:now);self.assertEqual(fresh.run.state,PaperRunState.RUNNING);self.assertEqual(len(fresh.broker.submissions),1)
+    def test_advancing_clock_reconciliation_and_operational_cli_persist_exact_bundle(self):
+        engine,venue,clock,*_=self.runtime("third-reconcile");before=len(self.state(engine)["reconciliation_bundles"]);bundle=engine.reconcile();state=self.state(engine);self.assertEqual(len(state["reconciliation_bundles"]),before+1);row=state["reconciliation_bundles"][-1];self.assertEqual(row["local_snapshot_id"],bundle.local_snapshot.snapshot_id);self.assertEqual(row["venue_snapshot_id"],bundle.venue_snapshot.snapshot_id);env=os.environ.copy();env["ENABLE_POSTGRES_PERSISTENCE"]="true";completed=subprocess.run([sys.executable,"open-core/scripts/run_paper_reconcile.py","--run-id",str(engine.run.paper_run_id),"--persist"],cwd=os.getcwd(),env=env,text=True,capture_output=True);self.assertEqual(completed.returncode,0,completed.stdout+completed.stderr);self.assertIn('"postgresql_connected":true',completed.stdout);self.assertEqual(len(self.state(engine)["reconciliation_bundles"]),before+2)
+    def test_cancel_confirmed_late_fill_closes_open_budget_only_once(self):
+        engine,venue,clock,*_=self.runtime("third-open-count");a=intent(run=engine.run.paper_run_id,quantity="0.1",target="0.1",signal="open-a");b=intent(run=engine.run.paper_run_id,quantity="0.1",target="0.1",signal="open-b");engine.submit(a,risk(a));engine.submit(b,risk(b));clients=[s.client_order_id for s in engine.broker.submissions]
+        for client in clients:venue.acknowledge(client,clock.advance());engine.broker.query_order(client)
+        self.assertEqual(self.state(engine)["risk_state"]["open_order_count"],2);engine.broker.cancel_paper_order(clients[0],at_utc=clock.advance(),reason="test");venue.complete_cancel(clients[0],clock.advance());engine.broker.query_order(clients[0]);self.assertEqual(self.state(engine)["risk_state"]["open_order_count"],1)
+        cancelled=venue._orders[clients[0]];venue._orders[clients[0]]=dataclasses.replace(cancelled,state=VenueOrderState.ACKNOWLEDGED,cumulative_filled_quantity=Decimal(0),average_fill_price=None);venue._reservations[clients[0]]={"currency":"USDT","amount":Decimal("10.2102"),"original_quantity":Decimal("0.1"),"remaining_quantity":Decimal("0.1")};venue.fill(clients[0],Decimal("0.1"),Decimal("100"),clock.advance(),venue_fill_id="late-after-cancel");self.assertEqual(len(engine.poll()),1);state=self.state(engine);self.assertEqual(state["risk_state"]["open_order_count"],1);self.assertFalse(next(x for x in state["submissions"] if x["client_order_id"]==clients[0])["counted_open"]);self.assertTrue(next(x for x in state["submissions"] if x["client_order_id"]==clients[1])["counted_open"]);a_submission=next(x for x in state["submissions"] if x["client_order_id"]==clients[0]);self.assertEqual(sum(1 for x in state["order_budget_events"] if x["event_type"]=="order_budget_closed" and x["submission_id"]==a_submission["submission_id"]),1)

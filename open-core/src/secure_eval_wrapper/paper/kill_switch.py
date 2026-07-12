@@ -8,15 +8,15 @@ class PaperKillSwitchController:
     def __init__(self,initial:PaperKillSwitch,*,persist=None):self.current=initial; self.persist=persist; self.events=[]
     @property
     def accepts_new_orders(self):return self.current.state is KillSwitchState.ARMED
-    def _save(self,value,event):
+    def _save(self,value,event,*,persist=True):
         self.current=value; self.events.append(event)
-        if self.persist:self.persist(value,event)
+        if persist and self.persist:self.persist(value,event)
         return value
-    def trigger(self,reason,*,at_utc,evidence,incident_id=None):
+    def trigger(self,reason,*,at_utc,evidence,incident_id=None,persist=True):
         reason=KillSwitchReason(reason)
         if self.current.state in (KillSwitchState.TRIGGERED,KillSwitchState.CANCELLING,KillSwitchState.KILLED):return self.current
         digest=sha256_payload(evidence); value=PaperKillSwitch(self.current.paper_run_id,KillSwitchState.TRIGGERED,reason,at_utc,at_utc,digest,incident_id,self.current.kill_switch_id)
-        return self._save(value,{"state":"triggered","reason":reason.value,"at_utc":at_utc,"evidence_sha256":digest})
+        return self._save(value,{"state":"triggered","reason":reason.value,"at_utc":at_utc,"evidence_sha256":digest},persist=persist)
     def cancel_open_orders(self,broker,*,at_utc,durable_cancel_intent):
         if self.current.state is not KillSwitchState.TRIGGERED:raise ValueError("kill switch must be triggered before cancellation")
         value=replace(self.current,state=KillSwitchState.CANCELLING,updated_at_utc=at_utc); self._save(value,{"state":"cancelling","at_utc":at_utc})

@@ -7,7 +7,7 @@ from secure_eval_wrapper.data_collection.models import InstrumentType
 from secure_eval_wrapper.execution.models import AccountingMode,OrderIntent,OrderSide,OrderType,RiskDecision,RiskDecisionStatus,RiskStage,TimeInForce
 from secure_eval_wrapper.paper.configuration import internal_demo_configuration
 from secure_eval_wrapper.paper.enums import CredentialSourceType,PaperProvider
-from secure_eval_wrapper.paper.models import CredentialReference,deterministic_paper_uuid
+from secure_eval_wrapper.paper.models import CredentialReference,PaperMarketDataEvidence,deterministic_paper_uuid
 T0=datetime(2026,1,1,tzinfo=timezone.utc); H=sha256_payload("phase7-test"); ID=SeriesIdentity("internal","internal-paper","BTC-USDT","BTC-USDT",InstrumentType.SPOT,"paper","USDT")
 def config(persist=False):return internal_demo_configuration(persistence_required=persist)
 def run_id(c=None):return deterministic_paper_uuid("test-run",{"config":(c or config()).config_sha256})
@@ -16,3 +16,5 @@ def intent(*,run=None,side=OrderSide.BUY,quantity="1",current="0",target="1",kin
     run=run or run_id(); q=Decimal(quantity); delta=q*side.sign
     return OrderIntent(run,uuid5(NAMESPACE_URL,signal),ID,at,side,kind,q,Decimal(target),Decimal(current),delta,Decimal("100"),AccountingMode.SPOT,TimeInForce.GTC,H,H,H,"test",None if limit is None else Decimal(limit),None if stop is None else Decimal(stop))
 def risk(i,at=T0):return RiskDecision(i.run_id,i.order_intent_id,i.series_identity,at,RiskStage.PRE_SUBMIT,RiskDecisionStatus.ACCEPTED,"accepted","accepted paper test risk",H)
+def market_evidence(*,identity=ID,at=T0,final=True,status="accepted",observation="bar-1"):
+    return PaperMarketDataEvidence(identity,"internal",identity.provider_instrument_id,"bar_close",observation,at,at,final,status,sha256_payload("market-source"),sha256_payload({"observation":observation,"at":at}))

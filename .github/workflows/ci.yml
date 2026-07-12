@@ -118,7 +118,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -e "./open-core[postgres,test]"
-      - name: Clean migration install 0001 through 0017
+      - name: Clean migration install 0001 through 0018
         run: python open-core/scripts/apply_postgres_migrations.py
       - name: Migration hashes and Phase 5/6/7 catalog
         run: |
@@ -155,11 +155,13 @@ jobs:
           RUN_POSTGRES_INTEGRATION: "true"
           ENABLE_POSTGRES_PERSISTENCE: "true"
         run: python -m unittest discover -s open-core/tests -p "test_phase7_postgres_integration.py" -v
-      - name: Phase 7 durable dispatch crash matrix, real restart, approval, full risk, accounting, reconciliation, kill, cancel, and late-fill races
+      - name: Phase 7 durable crash matrix plus third-audit prepared/cancel restart, claim ownership, exact reconciliation, market evidence, created-run start, one-time closure, and venue atomicity
         env:
           RUN_POSTGRES_INTEGRATION: "true"
-        run: python -m unittest discover -s open-core/tests -p "test_phase7_durable_postgres.py" -v
-      - name: Seeded 0013 through 0017 upgrade with existing Phase 5, Phase 6, and Phase 7 rows
+        run: |
+          python -m unittest discover -s open-core/tests -p "test_phase7_durable_postgres.py" -v
+          python -m unittest discover -s open-core/tests -p "test_phase7_third_audit_repairs.py" -v
+      - name: Seeded 0013 through 0018 upgrade with existing Phase 5, Phase 6, and Phase 7 rows
         run: |
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --create-database --through 0009 --seed-phase5
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0010 --through 0011
@@ -169,7 +171,8 @@ jobs:
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0015 --through 0015
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0016 --through 0016
           POSTGRES_DB=secure_eval_upgrade python open-core/scripts/seed_phase7_upgrade.py
-          python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0017
+          python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0017 --through 0017
+          python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0018
           POSTGRES_DB=secure_eval_upgrade python open-core/scripts/verify_postgres_schema.py
           POSTGRES_DB=secure_eval_upgrade python open-core/scripts/verify_phase5_postgres_schema.py
           POSTGRES_DB=secure_eval_upgrade python open-core/scripts/verify_phase7_postgres_schema.py

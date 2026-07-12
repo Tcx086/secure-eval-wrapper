@@ -48,7 +48,7 @@ class _Phase7BaseRepository(_PostgresRepositoryBase):
         finally:
             close=getattr(cursor,"close",None)
             if close:close()
-    def persist_start_run(self,*,run,configuration,credential_reference,snapshot,report,approval,manifest,kill_switch,fail_at=None):
+    def persist_start_run(self,*,run,configuration,credential_reference,snapshot,report,approval,manifest,kill_switch,lifecycle_event=None,fail_at=None):
         existing=self.get_active_run(run.paper_run_id)
         if existing is not None:
             stored=self.get_manifest(run.paper_run_id)
@@ -69,6 +69,7 @@ class _Phase7BaseRepository(_PostgresRepositoryBase):
             if fail_at=="manifest":raise RuntimeError("injected manifest failure")
             self.record_kill_switch(kill_switch)
             if fail_at=="kill_switch":raise RuntimeError("injected kill switch failure")
+            if lifecycle_event is not None:self.record_lifecycle(lifecycle_event)
     def record_submission_intent(self,submission,pre_submit_risk_sha256):
         existing=self._fetchone("SELECT economics_sha256 FROM execution.paper_order_submissions WHERE submission_id=%s",(submission.submission_id,))
         if existing is not None:
@@ -122,12 +123,15 @@ class _Phase7BaseRepository(_PostgresRepositoryBase):
             if fail_at in {"reconciliation","difference"}:raise RuntimeError("injected reconciliation failure")
             self.record_lifecycle(lifecycle_event)
             if fail_at=="lifecycle":raise RuntimeError("injected lifecycle failure")
-    def persist_reconciliation_bundle(self,*,local_snapshot,venue_snapshot,reconciliation,differences,kill_switch=None,fail_at=None):
+    def persist_reconciliation_bundle(self,*,bundle=None,local_snapshot=None,venue_snapshot=None,reconciliation=None,differences=(),kill_switch=None,kill_event=None,lifecycle_event=None,fail_at=None):
+        if bundle is not None:local_snapshot=bundle.local_snapshot;venue_snapshot=bundle.venue_snapshot;reconciliation=bundle.reconciliation;differences=bundle.differences
         with self.transaction():
-            self.record_snapshot(local_snapshot); self.record_snapshot(venue_snapshot); self.record_reconciliation(reconciliation,differences)
+            self.record_snapshot(local_snapshot);self.record_snapshot(venue_snapshot);self.record_reconciliation(reconciliation,differences)
             if fail_at=="difference":raise RuntimeError("injected reconciliation difference failure")
             if kill_switch is not None:self.record_kill_switch(kill_switch)
+            if lifecycle_event is not None:self.record_lifecycle(lifecycle_event)
             if fail_at=="kill_switch":raise RuntimeError("injected kill switch failure")
+        return bundle
     def record_recovery(self,value,fail_at=None):
         with self.transaction():
             self._strict("execution.paper_recovery_records","recovery_id",value.recovery_id,("paper_run_id","submission_id","started_at_utc","completed_at_utc","status","action","explanation","parent_ids"),(value.paper_run_id,value.submission_id,value.started_at_utc,value.completed_at_utc,value.status.value,value.action,value.explanation,list(value.parent_ids)),value.record_sha256)

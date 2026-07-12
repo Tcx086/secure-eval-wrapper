@@ -5,7 +5,7 @@
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
   "updated_at_utc": "2026-07-12T00:00:00Z",
-  "current_phase": "phase_8_guarded_live_execution",
+  "current_phase": "phase_7_paper_trading",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
     "future_functional_prs_must_update_json_status": true,
@@ -323,7 +323,7 @@
     {
       "id": "phase_7_paper_trading",
       "title": "Phase 7: paper trading",
-      "status": "completed",
+      "status": "in_progress",
       "completed": [
         "Add provider-neutral PaperBroker contracts, bounded run configuration, preflight, explicit approval, immutable manifest, lifecycle, recovery, rate limiting, and safe CLI boundaries",
         "Add the deterministic asynchronous InternalPaperVenue with partial fills, idempotency, deterministic faults, recovery, accounting, reconciliation, monitoring, and persisted kill-switch behavior",
@@ -336,7 +336,15 @@
         "Add real PostgreSQL 16 crash-window, HTTP ambiguity, cancel, restart, late-fill, approval, concurrency, per-limit, immutability, clean/seeded/idempotency, rollback, conflict, and boundary regression coverage",
         "Pass all six jobs in GitHub Actions durable-audit checkpoint run 29181658332 on main SHA 99ff61c287052918598bf41518e9ed3ac5eac521 without adding Phase 8 runtime"
       ],
-      "todo": []
+      "todo": [
+        "Complete prepared/cancel outbox restart recovery",
+        "Persist the exact reconciliation snapshot bundle",
+        "Make market-data evidence authoritative",
+        "Repair the created approval-to-running transition",
+        "Make open-order terminal accounting one-time and transition-based",
+        "Make InternalPaperVenue.fill atomic on every exception path",
+        "Enforce strict claim-token authority and recovery ownership"
+      ]
     },
     {
       "id": "phase_8_guarded_live_execution",

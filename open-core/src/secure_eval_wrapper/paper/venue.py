@@ -9,6 +9,7 @@ class PaperVenue(ABC):
     def query_order(self,client_order_id):raise NotImplementedError
     @abstractmethod
     def list_open_orders(self):raise NotImplementedError
+    def list_recent_orders(self):return self.list_open_orders()
     @abstractmethod
     def fetch_balances(self):raise NotImplementedError
     @abstractmethod

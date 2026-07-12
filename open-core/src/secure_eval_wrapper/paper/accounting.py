@@ -11,8 +11,8 @@ class Reservation:
     currency:str; amount:Decimal; original_quantity:Decimal; remaining_quantity:Decimal
 
 class PaperAccounting:
-    def __init__(self,*,paper_run_id,account_reference,balances):
-        self.paper_run_id=paper_run_id; self.account_reference=account_reference; self.balances={k.upper():Decimal(v) for k,v in balances.items()}; self.positions={}; self.reservations={}; self.applied_fill_ids=set(); self.total_fees=Decimal(0)
+    def __init__(self,*,paper_run_id,account_reference,balances,fee_bps=Decimal("10")):
+        self.paper_run_id=paper_run_id; self.account_reference=account_reference; self.fee_bps=Decimal(fee_bps); self.balances={k.upper():Decimal(v) for k,v in balances.items()}; self.positions={}; self.reservations={}; self.applied_fill_ids=set(); self.total_fees=Decimal(0)
     def _assets(self,identity):
         parts=identity.canonical_symbol.replace("/","-").split("-")
         if len(parts)<2:raise ValueError("Spot symbol must provide base and quote assets")
@@ -22,7 +22,7 @@ class PaperAccounting:
     def reserve(self,submission):
         if submission.client_order_id in self.reservations:return self.reservations[submission.client_order_id]
         base,quote=self._assets(submission.series_identity)
-        if submission.side is OrderSide.BUY:currency=quote; amount=submission.quantity*submission.reference_price
+        if submission.side is OrderSide.BUY:currency=quote; reserve_price=max(x for x in (submission.reference_price*Decimal("1.02"),submission.limit_price,submission.stop_price) if x is not None);amount=submission.quantity*reserve_price*(Decimal(1)+self.fee_bps/Decimal(10000))
         else:currency=base; amount=submission.quantity
         if self.available(currency)<amount:raise ValueError("paper reservation exceeds available balance or inventory")
         row=Reservation(currency,amount,submission.quantity,submission.quantity); self.reservations[submission.client_order_id]=row; return row
@@ -47,7 +47,7 @@ class PaperAccounting:
             self.balances[fill.fee_currency]-=fill.fee_amount
         reservation=self.reservations.get(fill.client_order_id)
         if reservation:
-            used=min(fill.quantity,reservation.remaining_quantity); remaining=reservation.remaining_quantity-used; amount=reservation.amount*(remaining/reservation.original_quantity)
+            used=min(fill.quantity,reservation.remaining_quantity); remaining=reservation.remaining_quantity-used; amount=max(Decimal(0),reservation.amount-(fill.quantity*fill.price+fill.fee_amount if fill.side is OrderSide.BUY and fill.accounting_mode is AccountingMode.SPOT else reservation.amount*used/reservation.remaining_quantity))
             if remaining==0:self.release(fill.client_order_id)
             else:self.reservations[fill.client_order_id]=Reservation(reservation.currency,amount,reservation.original_quantity,remaining)
         self.total_fees+=fill.fee_amount; self.applied_fill_ids.add(fill.fill_id); return True

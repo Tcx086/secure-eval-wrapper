@@ -44,7 +44,7 @@ def preflight_main(argv=None):
     """Run only preflight; approval success is reported only after PostgreSQL persistence."""
     p=argparse.ArgumentParser(prog="secure-eval-paper-preflight");p.add_argument("--provider",choices=("internal","okx_demo"),default="internal");p.add_argument("--environment",choices=("paper_internal","paper_exchange_sandbox"),default="paper_internal");p.add_argument("--create-approval",action="store_true");p.add_argument("--persist",action="store_true");args=p.parse_args(argv)
     if args.provider=="okx_demo":
-        _print({"provider":"okx_demo","environment":args.environment,"preflight_status":"not_started","reason":"authenticated external preflight is separately gated","approval_created":False,"report_id":None,"approval_id":None,"manifest_eligible":False,"credentials_loaded":False,"network_attempted":False,"live_mode":False});return 2 if args.create_approval else 0
+        _print({"provider":"okx_demo","environment":args.environment,"preflight_status":"not_started","reason":"authenticated external preflight is separately gated","approval_created":False,"report_id":None,"approval_id":None,"manifest_eligible":bool(created and report.status.value=="passed"),"credentials_loaded":False,"network_attempted":False,"live_mode":False});return 2 if args.create_approval else 0
     if args.environment!="paper_internal":raise SystemExit("internal provider requires paper_internal")
     from secure_eval_wrapper.data_collection.hashing import sha256_payload
     from .approval import ApprovalController

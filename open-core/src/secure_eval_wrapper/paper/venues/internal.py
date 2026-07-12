@@ -1,6 +1,7 @@
 """Deterministic in-process paper venue; it is not an exchange emulator."""
 from __future__ import annotations
 from dataclasses import dataclass,replace
+import copy
 from datetime import timedelta
 from decimal import Decimal
 from secure_eval_wrapper.data_collection.hashing import sha256_payload
@@ -32,7 +33,7 @@ class InternalPaperVenue(PaperVenue):
     @property
     def sequence(self):return self._sequence
     def _reserve(self,s):
-        base,quote=self._assets(s);currency=quote if s.side is OrderSide.BUY else base;amount=s.quantity*s.reference_price if s.side is OrderSide.BUY else s.quantity;reserved=sum((r["amount"] for r in self._reservations.values() if r["currency"]==currency),Decimal(0))
+        base,quote=self._assets(s);currency=quote if s.side is OrderSide.BUY else base;reserve_price=max(x for x in (s.reference_price*Decimal("1.02"),s.limit_price,s.stop_price) if x is not None);amount=s.quantity*reserve_price*(Decimal(1)+self.fee_bps/Decimal(10000)) if s.side is OrderSide.BUY else s.quantity;reserved=sum((r["amount"] for r in self._reservations.values() if r["currency"]==currency),Decimal(0))
         if self._balances.get(currency,Decimal(0))-reserved<amount:raise ValueError("internal venue reservation exceeds balance")
         self._reservations[s.client_order_id]={"currency":currency,"amount":amount,"original_quantity":s.quantity,"remaining_quantity":s.quantity}
     def _reduce_reservation(self,client,quantity):
@@ -85,27 +86,52 @@ class InternalPaperVenue(PaperVenue):
             self._balances[base]=base_before-quantity; self._balances[quote]=quote_before+notional-fee
             realized=old.realized_pnl+quantity*(price-(old.average_entry_price or price)); new_qty=old.quantity-quantity; avg=None if new_qty==0 else old.average_entry_price
         self._positions[key]=VenuePosition(order.series_identity,AccountingMode.SPOT,new_qty,avg,realized)
-    def fill(self,client,quantity,price,at,*,venue_fill_id=None):
-        order=self._orders[client]
-        if order.state not in (VenueOrderState.ACKNOWLEDGED,VenueOrderState.PARTIALLY_FILLED):raise ValueError("only acknowledged active order may fill")
-        quantity=Decimal(quantity); price=Decimal(price)
-        if quantity<=0 or quantity>order.remaining_quantity:raise ValueError("invalid partial fill quantity")
-        venue_fill_id=venue_fill_id or f"{order.venue_order_id}:{len([f for f in self._fills.values() if f.venue_order_id==order.venue_order_id])+1}"
-        if venue_fill_id in self._fills:
-            existing=self._fills[venue_fill_id]
-            if existing.quantity!=quantity or existing.price!=price:raise EconomicConflictError("duplicate fill ID changed economics")
-            self._event("duplicate_fill",client,{"venue_fill_id":venue_fill_id}); return order,existing,False
-        if self._fault(InternalPaperFaultType.DELAYED_FILL,client):self._event("fill_delayed",client,{"venue_fill_id":venue_fill_id}); return order,None,False
-        fee=quantity*price*self.fee_bps/Decimal(10000); self._event("fill",client,{"venue_fill_id":venue_fill_id,"quantity":str(quantity),"price":str(price)})
-        fill=VenueFill(order.paper_run_id,order.submission_id,client,order.venue_order_id,venue_fill_id,order.series_identity,order.side,order.accounting_mode,quantity,price,fee,"USDT",at,self._sequence,PaperEnvironment.PAPER_INTERNAL)
-        self._fills[venue_fill_id]=fill
-        self._reduce_reservation(client,quantity)
-        if order.accounting_mode is AccountingMode.SPOT:self._apply_spot_fill(order,quantity,price,fee)
-        else:
-            key=order.series_identity.series_identity_sha256; old=self._positions.get(key,VenuePosition(order.series_identity,AccountingMode.LINEAR_PERPETUAL,Decimal(0),None)); signed=quantity*order.side.sign; new=old.quantity+signed; avg=price if old.quantity==0 or old.quantity*new<0 else ((abs(old.quantity)*(old.average_entry_price or price)+quantity*price)/(abs(old.quantity)+quantity) if abs(new)>abs(old.quantity) else old.average_entry_price); self._positions[key]=VenuePosition(order.series_identity,AccountingMode.LINEAR_PERPETUAL,new,None if new==0 else avg,old.realized_pnl)
-        cumulative=order.cumulative_filled_quantity+quantity; avg_price=((order.cumulative_filled_quantity*(order.average_fill_price or Decimal(0)))+quantity*price)/cumulative; state=VenueOrderState.FILLED if cumulative==order.quantity else VenueOrderState.PARTIALLY_FILLED; order=replace(order,cumulative_filled_quantity=cumulative,average_fill_price=avg_price,state=state,updated_at_utc=at,venue_sequence=self._sequence); self._orders[client]=order
-        if self._fault(InternalPaperFaultType.DUPLICATE_FILL,client):self._event("duplicate_fill",client,{"venue_fill_id":venue_fill_id})
-        return order,fill,True
+    def fill(self,client,quantity,price,at,*,venue_fill_id=None,fee_currency=None):
+        before=(self._sequence,copy.deepcopy(self._events),copy.deepcopy(self._fills),copy.deepcopy(self._orders),copy.deepcopy(self._balances),copy.deepcopy(self._positions),copy.deepcopy(self._reservations),copy.deepcopy(self._activated))
+        try:
+            order=self._orders[client]
+            if order.state not in (VenueOrderState.ACKNOWLEDGED,VenueOrderState.PARTIALLY_FILLED):raise ValueError("only acknowledged active order may fill")
+            quantity=Decimal(quantity);price=Decimal(price)
+            if quantity<=0 or quantity>order.remaining_quantity:raise ValueError("invalid partial fill quantity")
+            venue_fill_id=venue_fill_id or f"{order.venue_order_id}:{len([f for f in self._fills.values() if f.venue_order_id==order.venue_order_id])+1}"
+            if venue_fill_id in self._fills:
+                existing=self._fills[venue_fill_id]
+                expected_fee=quantity*price*self.fee_bps/Decimal(10000)
+                if existing.quantity!=quantity or existing.price!=price or existing.fee_amount!=expected_fee:raise EconomicConflictError("duplicate fill ID changed economics")
+                self._event("duplicate_fill",client,{"venue_fill_id":venue_fill_id});return order,existing,False
+            if self._fault(InternalPaperFaultType.DELAYED_FILL,client):self._event("fill_delayed",client,{"venue_fill_id":venue_fill_id});return order,None,False
+            fee=quantity*price*self.fee_bps/Decimal(10000);base,quote=self._assets(order);expected_fee_currency=quote if order.accounting_mode is AccountingMode.SPOT else order.series_identity.settlement_asset.upper();fee_currency=(fee_currency or expected_fee_currency).upper()
+            if fee_currency!=expected_fee_currency:raise ValueError("internal paper fill fee currency does not match settlement authority")
+            reservation=self._reservations.get(client)
+            if reservation is None:raise ValueError("internal paper fill lacks reservation coverage")
+            required=quantity*price+fee if order.side is OrderSide.BUY else quantity
+            coverage=reservation["amount"] if order.side is OrderSide.BUY else reservation["remaining_quantity"]
+            if coverage<required:raise ValueError("internal paper reservation does not cover fill and fee")
+            balances=dict(self._balances);positions=dict(self._positions);reservations=copy.deepcopy(self._reservations);key=order.series_identity.series_identity_sha256;old=positions.get(key,VenuePosition(order.series_identity,order.accounting_mode,Decimal(0),None));notional=quantity*price
+            if order.accounting_mode is AccountingMode.SPOT:
+                base_before=balances.get(base,Decimal(0));quote_before=balances.get(quote,Decimal(0))
+                if order.side is OrderSide.BUY:
+                    if quote_before<notional+fee:raise ValueError("internal paper venue insufficient quote balance")
+                    balances[quote]=quote_before-notional-fee;balances[base]=base_before+quantity;new_qty=old.quantity+quantity;avg=(old.quantity*(old.average_entry_price or Decimal(0))+quantity*price)/new_qty;realized=old.realized_pnl
+                else:
+                    if base_before<quantity or old.quantity<quantity:raise ValueError("internal paper venue negative Spot inventory prohibited")
+                    balances[base]=base_before-quantity;balances[quote]=quote_before+notional-fee;realized=old.realized_pnl+quantity*(price-(old.average_entry_price or price));new_qty=old.quantity-quantity;avg=None if new_qty==0 else old.average_entry_price
+                if balances[base]<0 or balances[quote]<0 or new_qty<0:raise ValueError("internal paper candidate state would be negative")
+                positions[key]=VenuePosition(order.series_identity,AccountingMode.SPOT,new_qty,avg,realized)
+            else:
+                signed=quantity*order.side.sign;new_qty=old.quantity+signed;avg=price if old.quantity==0 or old.quantity*new_qty<0 else ((abs(old.quantity)*(old.average_entry_price or price)+quantity*price)/(abs(old.quantity)+quantity) if abs(new_qty)>abs(old.quantity) else old.average_entry_price);positions[key]=VenuePosition(order.series_identity,AccountingMode.LINEAR_PERPETUAL,new_qty,None if new_qty==0 else avg,old.realized_pnl)
+            remaining=max(Decimal(0),reservation["remaining_quantity"]-quantity)
+            if remaining==0:reservations.pop(client,None)
+            else:reservations[client]={**reservation,"remaining_quantity":remaining,"amount":reservation["amount"]-required if order.side is OrderSide.BUY else reservation["amount"]*remaining/reservation["original_quantity"]}
+            cumulative=order.cumulative_filled_quantity+quantity;avg_price=((order.cumulative_filled_quantity*(order.average_fill_price or Decimal(0)))+quantity*price)/cumulative;state=VenueOrderState.FILLED if cumulative==order.quantity else VenueOrderState.PARTIALLY_FILLED
+            self._event("fill",client,{"venue_fill_id":venue_fill_id,"quantity":str(quantity),"price":str(price),"fee":str(fee),"fee_currency":fee_currency})
+            fill=VenueFill(order.paper_run_id,order.submission_id,client,order.venue_order_id,venue_fill_id,order.series_identity,order.side,order.accounting_mode,quantity,price,fee,fee_currency,at,self._sequence,PaperEnvironment.PAPER_INTERNAL);updated=replace(order,cumulative_filled_quantity=cumulative,average_fill_price=avg_price,state=state,updated_at_utc=at,venue_sequence=self._sequence)
+            self._balances=balances;self._positions=positions;self._reservations=reservations;self._fills[venue_fill_id]=fill;self._orders[client]=updated
+            if self._fault(InternalPaperFaultType.DUPLICATE_FILL,client):self._event("duplicate_fill",client,{"venue_fill_id":venue_fill_id})
+            return updated,fill,True
+        except Exception:
+            self._sequence,self._events,self._fills,self._orders,self._balances,self._positions,self._reservations,self._activated=before
+            raise
     def on_market_event(self,*,at_utc,prices):
         results=[]
         for order in list(self.list_open_orders()):
@@ -132,6 +158,7 @@ class InternalPaperVenue(PaperVenue):
     def query_order(self,client_order_id):
         self.query_call_count+=1
         return self._orders.get(client_order_id)
+    def list_recent_orders(self):return tuple(sorted(self._orders.values(),key=lambda o:(o.updated_at_utc,o.client_order_id)))
     def list_open_orders(self):
         active={VenueOrderState.PENDING_ACK,VenueOrderState.ACKNOWLEDGED,VenueOrderState.PARTIALLY_FILLED,VenueOrderState.CANCEL_PENDING,VenueOrderState.UNKNOWN_PENDING_RECOVERY}
         return tuple(sorted((o for o in self._orders.values() if o.state in active),key=lambda o:(o.created_at_utc,o.client_order_id)))

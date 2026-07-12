@@ -214,6 +214,55 @@ class PaperReconciliationDifference:
     def record_sha256(self):return _paper_hash({n:getattr(self,n) for n in self.__dataclass_fields__ if n!="difference_id"})
 
 @dataclass(frozen=True)
+class PaperMarketDataEvidence:
+    """Immutable public-safe authority for one validated market observation."""
+    series_identity:SeriesIdentity; provider:str; instrument:str; event_type:str; observation_id:str; observed_at_utc:datetime; available_at_utc:datetime; is_final:bool; validation_status:str; source_sha256:str; record_sha256:str; evidence_id:UUID|None=None
+    def __post_init__(self):
+        for name in ("provider","instrument","event_type","observation_id","validation_status"):object.__setattr__(self,name,_text(getattr(self,name),name))
+        _utc(self.observed_at_utc,"observed_at_utc");_utc(self.available_at_utc,"available_at_utc");_hash(self.source_sha256,"source_sha256");_hash(self.record_sha256,"record_sha256")
+        if self.available_at_utc<self.observed_at_utc:raise ValueError("market evidence cannot be available before it was observed")
+        if self.provider not in (self.series_identity.provider_name,self.series_identity.exchange):raise ValueError("market evidence provider does not match series identity")
+        if self.instrument not in (self.series_identity.provider_instrument_id,self.series_identity.canonical_symbol):raise ValueError("market evidence instrument does not match series identity")
+        expected=deterministic_paper_uuid("market-evidence",{"series":self.series_identity.series_identity_sha256,"provider":self.provider,"instrument":self.instrument,"event_type":self.event_type,"observation_id":self.observation_id,"observed":self.observed_at_utc,"available":self.available_at_utc,"final":self.is_final,"validation":self.validation_status,"source":self.source_sha256,"record":self.record_sha256})
+        if self.evidence_id is not None and self.evidence_id!=expected:raise ValueError("evidence_id mismatch")
+        object.__setattr__(self,"evidence_id",expected)
+    @property
+    def evidence_sha256(self):return _paper_hash({n:getattr(self,n) for n in self.__dataclass_fields__ if n!="evidence_id"})
+    def rejection_reasons(self,*,series_identity,at_utc,maximum_age_seconds):
+        _utc(at_utc,"at_utc");reasons=[]
+        if self.series_identity.series_identity_sha256!=series_identity.series_identity_sha256:reasons.append("market_data_identity_mismatch")
+        if self.provider not in (series_identity.provider_name,series_identity.exchange):reasons.append("market_data_provider_mismatch")
+        if self.instrument not in (series_identity.provider_instrument_id,series_identity.canonical_symbol):reasons.append("market_data_instrument_mismatch")
+        if not self.is_final:reasons.append("market_data_non_final")
+        if self.validation_status!="accepted":reasons.append("market_data_"+("quarantined" if self.validation_status=="quarantined" else "invalid"))
+        if self.available_at_utc>at_utc or self.observed_at_utc>at_utc:reasons.append("market_data_future")
+        age=Decimal(str((at_utc-self.observed_at_utc).total_seconds()))
+        if age<0 or age>Decimal(str(maximum_age_seconds)):reasons.append("market_data_stale")
+        return tuple(dict.fromkeys(reasons))
+
+MarketDataEvidence=PaperMarketDataEvidence
+
+@dataclass(frozen=True)
+class PaperReconciliationBundle:
+    """One indivisible set of exact observations and their reconciliation result."""
+    local_snapshot:PaperAccountSnapshot; venue_snapshot:PaperAccountSnapshot; local_orders:tuple[VenueOrder,...]; venue_orders:tuple[VenueOrder,...]; local_fills:tuple[VenueFill,...]; venue_fills:tuple[VenueFill,...]; reconciliation:PaperReconciliation; differences:tuple[PaperReconciliationDifference,...]; evaluated_at_utc:datetime; monitoring_evidence:Mapping[str,object]=field(default_factory=dict); kill_evidence:Mapping[str,object]=field(default_factory=dict); bundle_id:UUID|None=None
+    def __post_init__(self):
+        _utc(self.evaluated_at_utc,"evaluated_at_utc")
+        if self.local_snapshot.paper_run_id!=self.reconciliation.paper_run_id or self.venue_snapshot.paper_run_id!=self.reconciliation.paper_run_id:raise ValueError("reconciliation bundle run mismatch")
+        if self.local_snapshot.snapshot_id!=self.reconciliation.local_snapshot_id or self.venue_snapshot.snapshot_id!=self.reconciliation.venue_snapshot_id:raise ValueError("reconciliation bundle snapshot mismatch")
+        if self.evaluated_at_utc!=self.reconciliation.reconciled_at_utc:raise ValueError("reconciliation bundle evaluation time mismatch")
+        if any(d.reconciliation_id!=self.reconciliation.reconciliation_id for d in self.differences):raise ValueError("reconciliation bundle difference mismatch")
+        object.__setattr__(self,"local_orders",tuple(self.local_orders));object.__setattr__(self,"venue_orders",tuple(self.venue_orders));object.__setattr__(self,"local_fills",tuple(self.local_fills));object.__setattr__(self,"venue_fills",tuple(self.venue_fills));object.__setattr__(self,"differences",tuple(self.differences));object.__setattr__(self,"monitoring_evidence",_map(self.monitoring_evidence));object.__setattr__(self,"kill_evidence",_map(self.kill_evidence))
+        expected=deterministic_paper_uuid("reconciliation-bundle",{"reconciliation":self.reconciliation.reconciliation_id,"local_orders":[o.record_sha256 for o in self.local_orders],"venue_orders":[o.record_sha256 for o in self.venue_orders],"local_fills":[f.record_sha256 for f in self.local_fills],"venue_fills":[f.record_sha256 for f in self.venue_fills]})
+        if self.bundle_id is not None and self.bundle_id!=expected:raise ValueError("bundle_id mismatch")
+        object.__setattr__(self,"bundle_id",expected)
+    @property
+    def record_sha256(self):return _paper_hash({"bundle_id":self.bundle_id,"reconciliation":self.reconciliation.record_sha256,"monitoring":self.monitoring_evidence,"kill":self.kill_evidence})
+    def __iter__(self):
+        yield self.reconciliation
+        yield self.differences
+
+@dataclass(frozen=True)
 class PaperKillSwitch:
     paper_run_id:UUID; state:KillSwitchState; reason:KillSwitchReason|None; updated_at_utc:datetime; triggered_at_utc:datetime|None=None; evidence_sha256:str|None=None; incident_id:UUID|None=None; kill_switch_id:UUID|None=None
     def __post_init__(self):
