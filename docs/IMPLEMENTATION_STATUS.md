@@ -9,7 +9,7 @@ Every future functional PR must update both files in the same change:
 
 Completed work must be listed under `Completed`. Everything not done must remain under `Todo`.
 
-Current phase: `phase_7_paper_trading` (`in_progress`). Phase 8 remains entirely todo.
+Current phase: `phase_8_guarded_live_execution` (`todo`). Phase 7 is completed; Phase 8 remains entirely todo.
 
 ## Non-Negotiable Constraints
 - PostgreSQL is the only authoritative storage layer.
@@ -281,7 +281,7 @@ Current phase: `phase_7_paper_trading` (`in_progress`). Phase 8 remains entirely
 - [x] Add migration `0015` without modifying migrations `0001` through `0014`.
 - [x] Pass all required local, PostgreSQL 16, packaging, boundary, and migration validation, plus all six jobs in GitHub Actions checkpoint run `29143906785` on `e92d4484e7b4847a7a5b5ee49ae1dc2d573c0186`.
 
-### Phase 7: safe paper trading (in progress)
+### Phase 7: safe paper trading (completed)
 
 - [x] Add provider-neutral PaperBroker contracts, bounded run configuration, preflight, explicit approval, immutable manifest, lifecycle, recovery, rate limiting, and safe CLI boundaries.
 - [x] Add the deterministic asynchronous InternalPaperVenue with partial fills, idempotency, deterministic faults, recovery, accounting, reconciliation, monitoring, and persisted kill-switch behavior.
@@ -290,11 +290,9 @@ Current phase: `phase_7_paper_trading` (`in_progress`). Phase 8 remains entirely
 - [x] Add Phase 7 documentation, 57 focused tests, package/CLI integration, CI jobs, public/private boundary scans, and explicit no-live/no-transfer/no-withdrawal constraints.
 - [x] Pass all six jobs in GitHub Actions run `29162741634` on implementation main SHA `29222159e4ddac8ab3dd23c2334d3a2ab2236639`, including PostgreSQL 16 clean/seeded migration and transaction validation.
 - [x] Pass all six jobs in GitHub Actions rollback-repair run `29163009702` on main SHA `3c0a7c2feb5be50baf9db5be4f89943c25bce1ec`, including the expanded recovery-record and kill-event rollback matrix.
-
-
-#### Phase 7 independent-audit repairs in progress
-
-- [ ] Repair PostgreSQL-authoritative durable dispatch, restart recovery, approval consumption, runtime risk enforcement, accounting/reconciliation atomicity, and operational CLI semantics without adding Phase 8 runtime.
+- [x] Add append-only migration `0017`, PostgreSQL-authoritative prepare/claim/recovery and reservation state, complete restart reconstruction, atomic approval consumption, terminal kill semantics, full runtime risk enforcement, fill/accounting/reconciliation bundles, and truthful operational CLIs.
+- [x] Add real PostgreSQL 16 crash-window, HTTP ambiguity, cancel, restart, late-fill, approval, concurrency, per-limit, immutability, clean/seeded/idempotency, rollback, conflict, and boundary regression coverage.
+- [x] Pass all six jobs in GitHub Actions durable-audit checkpoint run `29181658332` on main SHA `99ff61c287052918598bf41518e9ed3ac5eac521` without adding Phase 8 runtime.
 ## Todo
 
 ### Future provider enhancements
