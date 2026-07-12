@@ -5,11 +5,11 @@
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
   "updated_at_utc": "2026-07-12T00:00:00Z",
-  "current_phase": "phase_7_paper_trading",
+  "current_phase": "phase_8_guarded_live_execution",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
     "future_functional_prs_must_update_json_status": true,
-    "runtime_features_allowed_in_current_phase": true
+    "runtime_features_allowed_in_current_phase": false
   },
   "storage": {
     "authoritative_storage": "PostgreSQL",
@@ -323,7 +323,7 @@
     {
       "id": "phase_7_paper_trading",
       "title": "Phase 7: paper trading",
-      "status": "in_progress",
+      "status": "completed",
       "completed": [
         "Add provider-neutral PaperBroker contracts, bounded run configuration, preflight, explicit approval, immutable manifest, lifecycle, recovery, rate limiting, and safe CLI boundaries",
         "Add the deterministic asynchronous InternalPaperVenue with partial fills, idempotency, deterministic faults, recovery, accounting, reconciliation, monitoring, and persisted kill-switch behavior",
@@ -341,16 +341,16 @@
         "Repair persisted created preflight reconstruction and atomic transition to running",
         "Make open-order terminal accounting transition-based and exactly once across late fills",
         "Make InternalPaperVenue.fill candidate-validated and exception-atomic with fee and slippage reservation coverage",
-        "Add migration 0018, expanded offline and PostgreSQL regressions, clean and seeded validation, and six-job CI checkpoint run 29201729953 on ae245f26ed21b13e9a32b723ff0112ae6bd3c82b"
-      ],
-      "todo": [
+        "Add migration 0018, expanded offline and PostgreSQL regressions, clean and seeded validation, and six-job CI checkpoint run 29201729953 on ae245f26ed21b13e9a32b723ff0112ae6bd3c82b",
         "Persist asynchronous venue-state observations as PostgreSQL authority",
         "Apply terminal recovery fills and accounting atomically before closing reservations and order budgets",
         "Make persistent-mode InternalPaperVenue operational events crash-safe and PostgreSQL-rebuildable",
         "Unify durable runtime, paper accounting, and internal venue reservation authority and calculations",
         "Persist expiry and rejection command and state transitions without terminal-state bypasses",
-        "Route expired dispatch and cancel claims automatically through generation-safe recovery claims"
-      ]
+        "Route expired dispatch and cancel claims automatically through generation-safe recovery claims",
+        "Add append-only migration 0019, real PostgreSQL fourth-audit regression coverage, clean and seeded idempotent migration validation, rollback and conflict coverage, and six-job CI checkpoint run 29207907662 on 438fd3dd822c25d8f2309d72316f84671a7614e2"
+      ],
+      "todo": []
     },
     {
       "id": "phase_8_guarded_live_execution",
