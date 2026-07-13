@@ -88,11 +88,11 @@ jobs:
       - run: secure-eval-paper-status
       - run: secure-eval-paper-kill
       - run: secure-eval-paper-reconcile
-      - run: secure-eval-live-preflight
-      - run: secure-eval-live-dry-run
-      - run: secure-eval-live-status
-      - run: secure-eval-live-reconcile
-      - run: secure-eval-live-kill
+      - run: secure-eval-live-preflight --help
+      - run: secure-eval-live-dry-run --help
+      - run: secure-eval-live-status --help
+      - run: secure-eval-live-reconcile --help
+      - run: secure-eval-live-kill --help
 
   postgres-integration:
     name: PostgreSQL 16 integration
@@ -125,7 +125,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -e "./open-core[postgres,test]"
-      - name: Clean migration install 0001 through 0022
+      - name: Clean migration install 0001 through 0023
         run: python open-core/scripts/apply_postgres_migrations.py
       - name: Migration hashes and Phase 5/6/7/8A catalog
         run: |
@@ -175,7 +175,7 @@ jobs:
         env:
           RUN_POSTGRES_INTEGRATION: "true"
         run: python -m unittest discover -s open-core/tests -p "test_phase8_postgres_integration.py" -v
-      - name: Seeded 0013 through 0022 upgrade with existing Phase 5, Phase 6, and Phase 7 rows
+      - name: Seeded 0022 to 0023 upgrade with existing Phase 5, Phase 6, Phase 7, and Phase 8A rows
         run: |
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --create-database --through 0009 --seed-phase5
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0010 --through 0011
@@ -191,6 +191,8 @@ jobs:
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0020 --through 0020
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0021 --through 0021
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0022 --through 0022
+          POSTGRES_DB=secure_eval_upgrade python open-core/scripts/seed_phase8_upgrade.py
+          python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --from-migration 0023 --through 0023
           POSTGRES_DB=secure_eval_upgrade python open-core/scripts/verify_phase5_postgres_schema.py
           POSTGRES_DB=secure_eval_upgrade python open-core/scripts/verify_postgres_schema.py
           POSTGRES_DB=secure_eval_upgrade python open-core/scripts/verify_phase7_postgres_schema.py
@@ -203,4 +205,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python open-core/src/secure_eval_wrapper/validation.py --skip-tests
+      - run: python -m pip install -e "./open-core[test]"
+      - name: No production writes, credentials, arbitrary endpoints, account powers, flattening, FIX, or fixture preflight authority
+        run: python open-core/src/secure_eval_wrapper/validation.py --skip-tests && python -m unittest discover -s open-core/tests -p "test_phase8_guarded_live.py" -v

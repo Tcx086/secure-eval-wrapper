@@ -23,7 +23,15 @@ def trigger_kill_switch(current: LiveKillSwitch, *, reason: str, at_utc, evidenc
 def reset_kill_switch(current: LiveKillSwitch, *, fresh_preflight, new_approval, at_utc) -> LiveKillSwitch:
     if current.state is not LiveKillState.STOPPED:
         raise ValueError("only a stopped kill switch can reset")
-    if fresh_preflight.status is not LivePreflightStatus.PASSED or new_approval.preflight_report_id != fresh_preflight.report_id or at_utc >= new_approval.expires_at_utc:
+    if (
+        fresh_preflight.status is not LivePreflightStatus.PASSED
+        or fresh_preflight.live_run_id != current.live_run_id
+        or fresh_preflight.evaluated_at_utc <= current.updated_at_utc
+        or new_approval.preflight_report_id != fresh_preflight.report_id
+        or new_approval.live_run_id != current.live_run_id
+        or new_approval.created_at_utc <= current.updated_at_utc
+        or at_utc >= new_approval.expires_at_utc
+    ):
         raise PermissionError("reset requires a fresh passed preflight and new valid approval")
     return LiveKillSwitch(current.live_run_id, LiveKillState.RESET, "manual", at_utc, sha256_payload({"preflight": fresh_preflight.record_hash, "approval": new_approval.record_hash}), True, True)
 

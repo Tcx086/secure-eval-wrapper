@@ -4,7 +4,7 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-13T04:02:03Z",
+  "updated_at_utc": "2026-07-13T19:21:35Z",
   "current_phase": "phase_8_guarded_live_execution",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
@@ -375,7 +375,9 @@
         "Reuse Phase 7 validated market evidence and conservative price authority for live risk notional, reservations, approval consumption, and summaries",
         "Implement truthful dry-run intent, exact OKX request planning, durable outbox claim and suppression, query-first recovery, reconciliation, kill switch, restart, and pre/post summaries",
         "Add append-only migration 0022 with 26 live audit tables, leases, recovery generations, monotonic projections, hard write-disabled constraints, transactional application, idempotency, and injected rollback proof",
-        "Add five safe socket-free CLIs, guarded-live threat model and operator runbooks, 23 offline tests, 9 PostgreSQL integration tests, and explicit CI coverage"
+        "Add five safe socket-free CLIs, guarded-live threat model and operator runbooks, 23 offline tests, 9 PostgreSQL integration tests, and explicit CI coverage",
+        "Repair Phase 8A authority integrity with typed evidence-producing preflight, same-run and configuration database bindings, transaction-locked PostgreSQL risk, operational kill freshness, incident-first recovery, and fee-aware Spot reservations",
+        "Add append-only migration 0023, real PostgreSQL-backed live CLIs, typed new-process reconstruction, exact OKX read and response validation, authoritative reconciliation, direct-SQL immutability guards, 21 dedicated offline regressions, 25 dedicated PostgreSQL regressions, and clean plus seeded migration verification while keeping production writes unreachable"
       ],
       "todo": [
         "Complete independent Phase 8A security, PostgreSQL concurrency, recovery, and public/private boundary audits",

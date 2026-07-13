@@ -1202,7 +1202,36 @@ ALLOWED_DATA_MIGRATIONS = {
         r"\bUPDATE\s+ON\s+execution\.live_dispatch_outbox\b.*?;",
         r"\bUPDATE\s+ON\s+execution\.live_reservations\b.*?;",
         r"\bUPDATE\s+ON\s+execution\.live_order_projections\b.*?;",
-    ),}
+    ),
+    "0023_phase8a_authority_recovery_and_cli_integrity.sql": (
+        r"\bUPDATE\s+execution\.live_preflight_checks\s+c\s+SET\b.*?;",
+        r"\bUPDATE\s+execution\.live_preflight_reports\s+r\s+SET\s+credential_reference_id\b.*?;",
+        r"\bUPDATE\s+execution\.live_preflight_reports\s+r\s+SET\s+account_snapshot_id\b.*?;",
+        r"\bUPDATE\s+execution\.live_run_manifests\s+m\s+SET\s+credential_reference_id\b.*?;",
+        r"\bUPDATE\s+execution\.live_preflight_checks\s+c\s+SET\s+live_run_id\b.*?;",
+        r"\bUPDATE\s+execution\.live_runtime_risk_decisions\s+d\s+SET\s+live_run_id\b.*?;",
+        r"\bUPDATE\s+execution\.live_reservations\s+r\s+SET\s+live_run_id\b.*?;",
+        r"\bUPDATE\s+execution\.live_dispatch_outbox\s+d\s+SET\s+live_run_id\b.*?;",
+        r"\bUPDATE\s+execution\.live_dispatch_events\s+e\s+SET\s+live_run_id\b.*?;",
+        r"\bUPDATE\s+execution\.live_reconciliation_differences\s+d\s+SET\s+live_run_id\b.*?;",
+        r"\bUPDATE\s+execution\.live_kill_events\s+e\s+SET\s+live_run_id\b.*?;",
+        r"\bUPDATE\s+execution\.live_reservations\s+r\s+SET\s+original_amount\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.live_preflight_reports\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.live_run_manifests\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.%I\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.live_approvals\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.live_order_intents\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.live_dispatch_outbox\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.live_cancel_outbox\b.*?;",
+        r"\bUPDATE\s+execution\.live_dispatch_outbox\s+SET\s+request_method\b.*?;",
+        r"\bUPDATE\s+execution\.live_cancel_outbox\s+SET\s+request_method\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.live_kill_switches\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.live_cancel_outbox\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.live_run_risk_state\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.live_recovery_records\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.live_runs\b.*?;",
+    ),
+}
 
 class CatalogClient(Protocol):
     def query(self, sql: str) -> list[tuple[object, ...]]:

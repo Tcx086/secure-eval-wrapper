@@ -55,6 +55,7 @@ class GuardedLiveConfiguration:
     maximum_unacknowledged_order_duration_seconds: int
     maximum_run_duration_seconds: int
     maximum_clock_skew_seconds: int
+    maximum_transport_failures: int
     maximum_fee_bps: Decimal
     maximum_adverse_slippage_bps: Decimal
     maximum_reference_price_deviation_bps: Decimal
@@ -114,7 +115,7 @@ class GuardedLiveConfiguration:
             "market_data_freshness_seconds", "account_snapshot_freshness_seconds",
             "reconciliation_freshness_seconds", "maximum_unknown_order_duration_seconds",
             "maximum_unacknowledged_order_duration_seconds", "maximum_run_duration_seconds",
-            "maximum_clock_skew_seconds",
+            "maximum_clock_skew_seconds", "maximum_transport_failures",
         )
         for name in integer_fields:
             _positive_int(getattr(self, name), name)
@@ -151,7 +152,7 @@ def phase8a_dry_run_configuration(*, endpoint_catalog_hash: str, provider_implem
         market_data_freshness_seconds=30, account_snapshot_freshness_seconds=30,
         reconciliation_freshness_seconds=30, maximum_unknown_order_duration_seconds=30,
         maximum_unacknowledged_order_duration_seconds=15, maximum_run_duration_seconds=900,
-        maximum_clock_skew_seconds=5, maximum_fee_bps=d("20"), maximum_adverse_slippage_bps=d("100"),
+        maximum_clock_skew_seconds=5, maximum_transport_failures=3, maximum_fee_bps=d("20"), maximum_adverse_slippage_bps=d("100"),
         maximum_reference_price_deviation_bps=d("500"), cancel_open_orders_on_kill=False,
         credential_source_policy=("environment",), endpoint_catalog_hash=endpoint_catalog_hash,
         provider_implementation_hash=provider_implementation_hash,

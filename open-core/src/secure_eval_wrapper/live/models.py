@@ -62,6 +62,8 @@ class LiveOrderState(str, Enum):
     DRY_RUN_BLOCKED = "dry_run_blocked"
     DRY_RUN_SUPPRESSED = "dry_run_suppressed"
     PENDING_RECOVERY = "pending_recovery"
+    UNEXPECTED_EXTERNAL_SIDE_EFFECT = "unexpected_external_side_effect"
+    INCIDENT_BLOCKED = "incident_blocked"
 
 
 class LiveKillState(str, Enum):
@@ -78,6 +80,14 @@ class LiveReconciliationStatus(str, Enum):
     RECONCILED = "reconciled"
     BLOCKED = "blocked"
     UNKNOWN = "unknown"
+
+class LiveRecoveryOutcome(str, Enum):
+    CONFIRMED_ABSENT = "confirmed_absent"
+    OBSERVED_EXTERNAL_ORDER = "observed_external_order"
+    OBSERVED_EXTERNAL_FILL = "observed_external_fill"
+    INCONCLUSIVE = "inconclusive"
+    PROVIDER_REJECTED = "provider_rejected"
+
 
 
 @dataclass(frozen=True)
@@ -154,13 +164,22 @@ class LivePreflightCheck:
     evidence_hash: str
     source_timestamp_utc: datetime | None = None
     check_id: UUID | None = None
+    source_ids: tuple[UUID, ...] = ()
+    source_hashes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "check_name", _text(self.check_name, "check_name")); object.__setattr__(self, "explanation", _text(self.explanation, "explanation"))
         _utc(self.evaluated_at_utc, "evaluated_at_utc"); _hash(self.evidence_hash, "evidence_hash")
         if self.source_timestamp_utc is not None:
             _utc(self.source_timestamp_utc, "source_timestamp_utc")
-        expected = live_uuid("preflight-check", {"name": self.check_name, "at": self.evaluated_at_utc, "evidence": self.evidence_hash})
+        object.__setattr__(self, "source_ids", tuple(self.source_ids))
+        object.__setattr__(self, "source_hashes", tuple(self.source_hashes))
+        if len(self.source_ids) != len(self.source_hashes):
+            raise ValueError("preflight check source IDs and hashes must align")
+        for digest in self.source_hashes:
+            _hash(digest, "source_hash")
+
+        expected = live_uuid("preflight-check", {"name": self.check_name, "at": self.evaluated_at_utc, "evidence": self.evidence_hash, "sources": self.source_ids})
         if self.check_id is not None and self.check_id != expected:
             raise ValueError("preflight check identity mismatch")
         object.__setattr__(self, "check_id", expected)
@@ -416,12 +435,18 @@ class LiveObservationBundle:
     fills: tuple[Mapping[str, object], ...]
     account_observation: Mapping[str, object]
     queried_at_utc: datetime
-    complete: bool
+    outcome: LiveRecoveryOutcome
     bundle_id: UUID | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "client_order_id", _text(self.client_order_id, "client_order_id")); _utc(self.queried_at_utc, "queried_at_utc")
+        object.__setattr__(self, "client_order_id", _text(self.client_order_id, "client_order_id"))
+        _utc(self.queried_at_utc, "queried_at_utc")
+        if self.queried_order is not None:
+            object.__setattr__(self, "queried_order", _map(self.queried_order))
+        for name in ("recent_orders", "open_orders", "fills"):
+            object.__setattr__(self, name, tuple(_map(row) for row in getattr(self, name)))
         object.__setattr__(self, "account_observation", _map(self.account_observation))
+        object.__setattr__(self, "outcome", LiveRecoveryOutcome(self.outcome))
         expected = live_uuid("observation-bundle", {"run": self.live_run_id, "client": self.client_order_id, "at": self.queried_at_utc, "hash": self.record_hash})
         if self.bundle_id is not None and self.bundle_id != expected:
             raise ValueError("observation bundle identity mismatch")
@@ -429,7 +454,7 @@ class LiveObservationBundle:
 
     @property
     def record_hash(self) -> str:
-        return sha256_payload({"run": self.live_run_id, "client": self.client_order_id, "queried_order": self.queried_order, "recent": self.recent_orders, "open": self.open_orders, "fills": self.fills, "account": dict(self.account_observation), "at": self.queried_at_utc, "complete": self.complete})
+        return sha256_payload({"run": self.live_run_id, "client": self.client_order_id, "queried_order": None if self.queried_order is None else dict(self.queried_order), "recent": tuple(dict(row) for row in self.recent_orders), "open": tuple(dict(row) for row in self.open_orders), "fills": tuple(dict(row) for row in self.fills), "account": dict(self.account_observation), "at": self.queried_at_utc, "outcome": self.outcome})
 
 
 @dataclass(frozen=True)
