@@ -12,7 +12,7 @@ TABLES.update({
 "paper_reservation_events":{"reservation_event_id","reservation_id","event_type"},
 "paper_dispatch_outbox":{"dispatch_id","submission_id","state","claim_token","claim_lease_expires_at_utc","recovery_claim_token","recovery_lease_expires_at_utc"},
 "paper_dispatch_events":{"dispatch_event_id","dispatch_id","event_type"},
-"paper_cancel_outbox":{"cancel_id","dispatch_id","state","claim_lease_expires_at_utc","recovery_claim_token","recovery_lease_expires_at_utc"},
+"paper_cancel_outbox":{"cancel_id","dispatch_id","state","claim_lease_expires_at_utc","recovery_claim_token","recovery_lease_expires_at_utc","terminal_evidence_sha256","terminal_order_observation_id","accounting_complete_at_confirmation"},
 "paper_account_balance_projection":{"paper_run_id","currency","total","version"},
 "paper_account_position_projection":{"paper_run_id","series_identity_sha256","series_identity_jsonb","quantity","version"},
 "paper_order_budget_events":{"order_budget_event_id","submission_id","event_type","prior_counted_open","next_counted_open"},

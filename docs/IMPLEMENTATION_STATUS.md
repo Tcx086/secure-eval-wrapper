@@ -314,6 +314,7 @@ Current phase: `phase_7_paper_trading` (`in_progress`). Phase 7 fifth-round inde
 - [x] Persist exact InternalPaperVenue economics and replay exact fee, reservation, balance, and position evidence after restart.
 - [x] Enforce closed-order-budget monotonicity and terminal projection monotonicity in PostgreSQL.
 - [x] Add append-only migration `0020`, fifth-audit regressions, clean 0001-to-0020 and seeded 0016-to-0020 validation, and migration immutability proof for `0001` through `0019`.
+- [x] Make cancellation confirmation evidence-aware, preserve pending recovery until fill/fee/accounting completeness, and add append-only migration `0021` plus active-claim and immediate-adapter PostgreSQL regressions.
 
 ## Todo
 

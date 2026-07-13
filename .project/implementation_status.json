@@ -355,7 +355,8 @@
         "Add explicit cancel supersession outcomes plus pending-fill and query-first expiry recovery with PostgreSQL leases",
         "Persist exact InternalPaperVenue economics and exact replay evidence across restart",
         "Enforce closed-order-budget and terminal projection monotonicity in PostgreSQL",
-        "Add migration 0020, fifth-audit regressions, clean and seeded validation, and 0001 through 0019 immutability proof"
+        "Add migration 0020, fifth-audit regressions, clean and seeded validation, and 0001 through 0019 immutability proof",
+        "Make cancellation confirmation evidence-aware, preserve pending recovery until fill, fee, and accounting completeness, and add migration 0021 plus active-claim and immediate-adapter PostgreSQL regressions"
       ],
       "todo": [
         "Obtain a final main SHA that passes the complete independent fifth-round review",

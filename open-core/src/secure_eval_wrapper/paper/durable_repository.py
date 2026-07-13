@@ -320,8 +320,11 @@ class DurablePostgresPaperRepository(_Phase7BaseRepository):
                 elif order.state is VenueOrderState.FILLED:self._release(s,at_utc,row["dispatch_id"],event="consumed")
                 self._close_open_once(s,at_utc,row["dispatch_id"],row["recovery_claimed_by"])
             recovery_status=RecoveryStatus.RECOVERED if fill_complete else RecoveryStatus.PAUSED;recovery=PaperRecoveryRecord(s.paper_run_id,s.submission_id,row["recovery_claimed_at_utc"],at_utc,recovery_status,"recover_dispatch_by_original_client_order_id","venue state recovered without economic resubmission" if fill_complete else "terminal venue state requires complete fill accounting",(row["dispatch_id"],));self.record_recovery(recovery);return fill_complete
-    def _fill_application_complete(self,submission_id,cumulative_quantity):
-        row=self._fetchone("SELECT COALESCE(sum(quantity),0) quantity,bool_and(accounting_applied) complete FROM execution.paper_fills WHERE submission_id=%s",(submission_id,));return Decimal(str(row["quantity"] or 0))==Decimal(cumulative_quantity) and bool(row["complete"] if row["complete"] is not None else Decimal(cumulative_quantity)==0)
+    def _fill_application_evidence(self,submission_id,cumulative_quantity):
+        row=self._fetchone("SELECT COALESCE(sum(f.quantity),0) quantity,bool_and(f.accounting_applied) accounting_complete,count(f.fill_id) fill_count,count(fe.fill_id) fee_count,bool_and(fe.fill_id IS NOT NULL AND fe.paper_run_id=f.paper_run_id AND fe.amount=f.fee_amount AND fe.currency=f.fee_currency) fee_complete,COALESCE(max(f.venue_sequence),0) latest_fill_sequence FROM execution.paper_fills f LEFT JOIN execution.paper_fee_entries fe ON fe.fill_id=f.fill_id WHERE f.submission_id=%s",(submission_id,))
+        cumulative=Decimal(cumulative_quantity);quantity=Decimal(str(row["quantity"] or 0));fill_count=int(row["fill_count"] or 0);fee_count=int(row["fee_count"] or 0);accounting_complete=bool(row["accounting_complete"] if row["accounting_complete"] is not None else cumulative==0);fee_complete=bool(row["fee_complete"] if row["fee_complete"] is not None else cumulative==0)
+        return {**row,"quantity":quantity,"fill_count":fill_count,"fee_count":fee_count,"complete":quantity==cumulative and accounting_complete and fill_count==fee_count and fee_complete}
+    def _fill_application_complete(self,submission_id,cumulative_quantity):return bool(self._fill_application_evidence(submission_id,cumulative_quantity)["complete"])
     def _release(self,s,at,cause,event="released"):
         row=self._fetchone("SELECT * FROM execution.paper_reservations WHERE submission_id=%s FOR UPDATE",(s.submission_id,))
         if not row or row["state"]!="open":return False
@@ -376,7 +379,8 @@ class DurablePostgresPaperRepository(_Phase7BaseRepository):
             if row["state"]=="cancel_claimed" and row.get("claim_lease_expires_at_utc") and row["claim_lease_expires_at_utc"]>at_utc:raise DispatchNotClaimable("original cancel claim lease is still active")
             if row.get("recovery_lease_expires_at_utc") and row["recovery_lease_expires_at_utc"]>at_utc:raise DispatchNotClaimable("cancel recovery already belongs to another worker")
             generation=int(row.get("recovery_generation") or 0)+1;token=deterministic_paper_uuid("cancel-recovery-claim",{"cancel":row["cancel_id"],"generation":generation,"worker":worker_id});lease=at_utc+timedelta(seconds=lease_seconds);self._execute("UPDATE execution.paper_cancel_outbox SET recovery_claim_token=%s,recovery_claimed_by=%s,recovery_claimed_at_utc=%s,recovery_lease_expires_at_utc=%s,recovery_generation=%s,updated_at_utc=%s,record_sha256=%s WHERE cancel_id=%s",(token,worker_id,at_utc,lease,generation,at_utc,sha256_payload({"cancel":row["cancel_id"],"recovery_claim":token}),row["cancel_id"]));recovery=PaperRecoveryRecord(s.paper_run_id,s.submission_id,at_utc,None,RecoveryStatus.STARTED,"recover_cancel_by_original_client_order_id","exclusive PostgreSQL cancel recovery claim acquired",(row["cancel_id"],));self.record_recovery(recovery);return token
-    def complete_cancel(self,s,*,claim_token,confirmed,at_utc,evidence_sha256=None,worker_id=None):
+    def complete_cancel(self,s,*,claim_token,confirmed,at_utc,order=None,evidence_sha256=None,worker_id=None):
+        if confirmed and (order is None or order.state is not VenueOrderState.CANCELLED):raise ValueError("confirmed cancellation requires exact CANCELLED venue order evidence")
         outcome="cancel_confirmed" if confirmed else "cancel_unknown"
         with self.transaction():
             row=self._fetchone("SELECT * FROM execution.paper_cancel_outbox WHERE submission_id=%s FOR UPDATE",(s.submission_id,))
@@ -386,11 +390,18 @@ class DurablePostgresPaperRepository(_Phase7BaseRepository):
             if row["state"] not in {"cancel_claimed","cancel_unknown"}:raise DispatchNotClaimable("cancel outcome has no active claim")
             if worker_id is not None and row.get("claimed_by")!=worker_id:raise DispatchNotClaimable("cancel belongs to another worker")
             if row.get("claim_lease_expires_at_utc") and at_utc>=row["claim_lease_expires_at_utc"]:raise DispatchNotClaimable("cancel claim lease expired")
-            self._execute("UPDATE execution.paper_cancel_outbox SET state=%s,updated_at_utc=%s,record_sha256=%s WHERE cancel_id=%s",(outcome,at_utc,sha256_payload({"cancel":row["cancel_id"],"outcome":outcome}),row["cancel_id"]));self._execute("UPDATE execution.paper_order_submissions SET state=%s,record_sha256=%s WHERE submission_id=%s",("cancelled" if confirmed else "cancel_unknown",sha256_payload({"submission":s.submission_id,"state":outcome}),s.submission_id));dispatch=self._fetchone("SELECT dispatch_id FROM execution.paper_dispatch_outbox WHERE submission_id=%s",(s.submission_id,));self._event(dispatch["dispatch_id"],s,outcome,at_utc,claim_token,row.get("claimed_by"),outcome,evidence_sha256)
+            projection=None
+            if confirmed:
+                evidence_sha256=evidence_sha256 or order.record_sha256
+                projection=self.persist_terminal_order_observation(s,order,observed_at_utc=at_utc,source="cancel_confirmed",evidence_sha256=evidence_sha256)
+                self._execute("UPDATE execution.paper_cancel_outbox SET state=%s,terminal_evidence_sha256=%s,terminal_order_observation_id=%s,accounting_complete_at_confirmation=%s,updated_at_utc=%s,record_sha256=%s WHERE cancel_id=%s",(outcome,evidence_sha256,projection["latest_observation_id"],bool(projection["fill_application_complete"]),at_utc,sha256_payload({"cancel":row["cancel_id"],"outcome":outcome,"evidence":evidence_sha256,"observation":projection["latest_observation_id"],"accounting_complete":bool(projection["fill_application_complete"])}),row["cancel_id"]))
+            else:
+                self._execute("UPDATE execution.paper_cancel_outbox SET state=%s,updated_at_utc=%s,record_sha256=%s WHERE cancel_id=%s",(outcome,at_utc,sha256_payload({"cancel":row["cancel_id"],"outcome":outcome}),row["cancel_id"]))
+                self._execute("UPDATE execution.paper_order_submissions SET state='cancel_unknown',record_sha256=%s WHERE submission_id=%s",(sha256_payload({"submission":s.submission_id,"state":outcome}),s.submission_id))
+            dispatch=self._fetchone("SELECT dispatch_id FROM execution.paper_dispatch_outbox WHERE submission_id=%s",(s.submission_id,));self._event(dispatch["dispatch_id"],s,outcome,at_utc,claim_token,row.get("claimed_by"),outcome,evidence_sha256)
             transport_token=deterministic_paper_uuid("cancel-recovery-query",{"claim":claim_token,"at":at_utc}) if confirmed and row["state"]=="cancel_unknown" else claim_token;self._transport(s,transport_token,"query_order" if confirmed and row["state"]=="cancel_unknown" else "cancel",at_utc,"succeeded" if confirmed else "unknown",evidence_sha256)
             if not confirmed:self._unknown_recovery(s,row["claimed_at_utc"],at_utc,"query_cancel_by_original_client_order_id",row["cancel_id"])
-            if confirmed:self._release(s,at_utc,row["cancel_id"]);self._close_open_once(s,at_utc,row["cancel_id"],row.get("claimed_by"));failures="0"
-            else:failures="consecutive_transport_failures+1"
+            failures="0" if confirmed else "consecutive_transport_failures+1"
             self._execute(f"UPDATE execution.paper_run_risk_state SET version=version+1,consecutive_transport_failures={failures},updated_at_utc=%s,record_sha256=%s WHERE paper_run_id=%s",(at_utc,sha256_payload({"run":s.paper_run_id,"cancel":outcome}),s.paper_run_id));return True
     def complete_cancel_superseded(self,s,*,claim_token,order,at_utc,evidence_sha256=None,worker_id=None):
         outcomes={VenueOrderState.FILLED:"cancel_superseded_by_fill",VenueOrderState.EXPIRED:"cancel_superseded_by_expiry",VenueOrderState.REJECTED:"cancel_superseded_by_rejection"}
@@ -401,8 +412,9 @@ class DurablePostgresPaperRepository(_Phase7BaseRepository):
             if not row or row.get("claim_token")!=claim_token:raise DispatchNotClaimable("cancel claim mismatch")
             if worker_id is not None and row.get("claimed_by")!=worker_id:raise DispatchNotClaimable("cancel belongs to another worker")
             if row.get("claim_lease_expires_at_utc") and at_utc>=row["claim_lease_expires_at_utc"]:raise DispatchNotClaimable("cancel claim lease expired")
-            self._execute("UPDATE execution.paper_cancel_outbox SET state=%s,updated_at_utc=%s,record_sha256=%s WHERE cancel_id=%s",(outcome,at_utc,sha256_payload({"cancel":row["cancel_id"],"outcome":outcome,"evidence":evidence_sha256}),row["cancel_id"]))
-            self.persist_order_observation(s,order,observed_at_utc=at_utc,source="cancel_superseded",evidence_sha256=evidence_sha256)
+            evidence_sha256=evidence_sha256 or order.record_sha256
+            projection=self.persist_terminal_order_observation(s,order,observed_at_utc=at_utc,source="cancel_superseded",evidence_sha256=evidence_sha256)
+            self._execute("UPDATE execution.paper_cancel_outbox SET state=%s,terminal_evidence_sha256=%s,terminal_order_observation_id=%s,accounting_complete_at_confirmation=%s,updated_at_utc=%s,record_sha256=%s WHERE cancel_id=%s",(outcome,evidence_sha256,projection["latest_observation_id"],bool(projection["fill_application_complete"]),at_utc,sha256_payload({"cancel":row["cancel_id"],"outcome":outcome,"evidence":evidence_sha256,"observation":projection["latest_observation_id"],"accounting_complete":bool(projection["fill_application_complete"])}),row["cancel_id"]))
             dispatch=self._fetchone("SELECT dispatch_id FROM execution.paper_dispatch_outbox WHERE submission_id=%s",(s.submission_id,));self._event(dispatch["dispatch_id"],s,outcome,at_utc,claim_token,row.get("claimed_by"),outcome,evidence_sha256);self._transport(s,claim_token,"query_order",at_utc,"succeeded",evidence_sha256)
             self._execute("UPDATE execution.paper_run_risk_state SET version=version+1,consecutive_transport_failures=0,updated_at_utc=%s,record_sha256=%s WHERE paper_run_id=%s",(at_utc,sha256_payload({"run":s.paper_run_id,"cancel":outcome}),s.paper_run_id));return outcome
 
@@ -416,10 +428,11 @@ class DurablePostgresPaperRepository(_Phase7BaseRepository):
             if terminal is None:
                 self._execute("UPDATE execution.paper_cancel_outbox SET state='cancel_unknown',updated_at_utc=%s,record_sha256=%s WHERE cancel_id=%s",(at_utc,sha256_payload({"cancel":row["cancel_id"],"recovery":"unknown","evidence":evidence_sha256}),row["cancel_id"]));self._execute("UPDATE execution.paper_order_submissions SET state='cancel_unknown',record_sha256=%s WHERE submission_id=%s",(sha256_payload({"submission":s.submission_id,"state":"cancel_unknown"}),s.submission_id));self._event(dispatch["dispatch_id"],s,"cancel_unknown",at_utc,recovery_claim_token,row["recovery_claimed_by"],"recovery_query",evidence_sha256);self._transport(s,recovery_claim_token,"query_order",at_utc,"unknown",evidence_sha256);self.record_recovery(PaperRecoveryRecord(s.paper_run_id,s.submission_id,row["recovery_claimed_at_utc"],at_utc,RecoveryStatus.PAUSED,"recover_cancel_by_original_client_order_id","venue query remains inconclusive; cancellation was not repeated",(row["cancel_id"],)));return False
             outcome={"cancelled":"cancel_confirmed","filled":"cancel_superseded_by_fill","expired":"cancel_superseded_by_expiry","rejected":"cancel_superseded_by_rejection"}[terminal]
-            self._execute("UPDATE execution.paper_cancel_outbox SET state=%s,updated_at_utc=%s,record_sha256=%s WHERE cancel_id=%s",(outcome,at_utc,sha256_payload({"cancel":row["cancel_id"],"outcome":outcome,"evidence":evidence_sha256}),row["cancel_id"]))
-            self.persist_order_observation(s,order,observed_at_utc=at_utc,source="cancel_recovery",evidence_sha256=evidence_sha256)
+            evidence_sha256=evidence_sha256 or order.record_sha256
+            projection=self.persist_terminal_order_observation(s,order,observed_at_utc=at_utc,source="cancel_recovery",evidence_sha256=evidence_sha256)
+            self._execute("UPDATE execution.paper_cancel_outbox SET state=%s,terminal_evidence_sha256=%s,terminal_order_observation_id=%s,accounting_complete_at_confirmation=%s,updated_at_utc=%s,record_sha256=%s WHERE cancel_id=%s",(outcome,evidence_sha256,projection["latest_observation_id"],bool(projection["fill_application_complete"]),at_utc,sha256_payload({"cancel":row["cancel_id"],"outcome":outcome,"evidence":evidence_sha256,"observation":projection["latest_observation_id"],"accounting_complete":bool(projection["fill_application_complete"])}),row["cancel_id"]))
             self._event(dispatch["dispatch_id"],s,outcome,at_utc,recovery_claim_token,row["recovery_claimed_by"],"recovery_query",evidence_sha256);self._transport(s,recovery_claim_token,"query_order",at_utc,"succeeded",evidence_sha256)
-            complete=self._fill_application_complete(s.submission_id,order.cumulative_filled_quantity)
+            complete=bool(projection["fill_application_complete"])
             status=RecoveryStatus.RECOVERED if complete else RecoveryStatus.PAUSED;explanation="terminal venue state recovered without repeating cancellation" if complete else "terminal disposition recovered; complete fill and fee accounting remains pending"
             self.record_recovery(PaperRecoveryRecord(s.paper_run_id,s.submission_id,row["recovery_claimed_at_utc"],at_utc,status,"recover_cancel_by_original_client_order_id",explanation,(row["cancel_id"],)));return complete
     def persist_fill_bundle(self,*,fill,order,local_snapshot,venue_snapshot,reconciliation,differences,lifecycle_event,recovery_observation_bundle_id=None,fail_at=None):
@@ -441,7 +454,9 @@ class DurablePostgresPaperRepository(_Phase7BaseRepository):
                 reduced=reduce_reservation(current_amount=Decimal(str(r["remaining_amount"])),current_quantity=Decimal(str(r["remaining_quantity"])),fill_quantity=fill.quantity,fill_price=fill.price,fill_fee=fill.fee_amount,fee_currency=fill.fee_currency,reservation_currency=str(r["currency"]),side=fill.side,accounting_mode=fill.accounting_mode);state="consumed" if reduced.quantity==0 else "open";spent=Decimal(str(r.get("spent_amount") or 0))+reduced.amount_consumed;self._execute("UPDATE execution.paper_reservations SET remaining_amount=%s,remaining_quantity=%s,spent_amount=%s,state=%s,updated_at_utc=%s,version=version+1,record_sha256=%s WHERE reservation_id=%s",(reduced.amount,reduced.quantity,spent,state,fill.filled_at_utc,sha256_payload({"reservation":r["reservation_id"],"fill":fill.fill_id,"remaining_amount":reduced.amount,"remaining_quantity":reduced.quantity,"spent":spent}),r["reservation_id"]));typed=self._submission_from_row(srow);self._reservation_event(r["reservation_id"],typed,"consumed" if reduced.quantity==0 else "reduced",-reduced.amount_consumed,-reduced.quantity_consumed,fill.filled_at_utc,fill.fill_id)
             after=self._fetchone("SELECT remaining_amount,remaining_quantity FROM execution.paper_reservations WHERE submission_id=%s",(fill.submission_id,));before_amount=Decimal(0) if r is None else Decimal(str(r["remaining_amount"]));before_quantity=Decimal(0) if r is None else Decimal(str(r["remaining_quantity"]));after_amount=Decimal(0) if after is None else Decimal(str(after["remaining_amount"]));after_quantity=Decimal(0) if after is None else Decimal(str(after["remaining_quantity"]));lineage_id=deterministic_paper_uuid("fill-recovery-lineage",{"fill":fill.fill_id});self._strict("execution.paper_fill_recovery_lineage","fill_recovery_lineage_id",lineage_id,("paper_run_id","submission_id","fill_id","recovery_observation_bundle_id","venue_order_observation_id","reservation_amount_before","reservation_amount_after","reservation_quantity_before","reservation_quantity_after","applied_at_utc"),(fill.paper_run_id,fill.submission_id,fill.fill_id,recovery_observation_bundle_id,None,before_amount,after_amount,before_quantity,after_quantity,fill.filled_at_utc),sha256_payload({"lineage":lineage_id,"fill":fill.fill_id,"recovery_bundle":recovery_observation_bundle_id,"before_amount":before_amount,"after_amount":after_amount,"before_quantity":before_quantity,"after_quantity":after_quantity}))
             if fail_at=="reservation":raise RuntimeError("injected reservation failure")
-            self.persist_order_observation(self._submission_from_row(srow),order,observed_at_utc=fill.filled_at_utc,source="fill_bundle",evidence_sha256=fill.record_sha256)
+            typed_submission=self._submission_from_row(srow)
+            if order.state in (VenueOrderState.FILLED,VenueOrderState.CANCELLED,VenueOrderState.REJECTED,VenueOrderState.EXPIRED):self.persist_terminal_order_observation(typed_submission,order,observed_at_utc=fill.filled_at_utc,source="fill_bundle",evidence_sha256=fill.record_sha256)
+            else:self.persist_order_observation(typed_submission,order,observed_at_utc=fill.filled_at_utc,source="fill_bundle",evidence_sha256=fill.record_sha256)
             if fail_at=="order":raise RuntimeError("injected order failure")
             self.record_snapshot(local_snapshot);self.record_snapshot(venue_snapshot)
             if fail_at=="snapshot":raise RuntimeError("injected snapshot failure")
@@ -523,7 +538,7 @@ class DurablePostgresPaperRepository(_Phase7BaseRepository):
             if prior is not None:
                 if str(prior["economics_sha256"])!=order.economics_sha256 or str(prior["venue_order_id"])!=order.venue_order_id:raise Phase7ConflictError("order projection immutable identity conflict")
                 if int(prior["venue_sequence"])>order.venue_sequence or Decimal(str(prior["cumulative_filled_quantity"]))>order.cumulative_filled_quantity:raise Phase7ConflictError("order observation regressed venue sequence or cumulative fill")
-            fill_row=self._fetchone("SELECT COALESCE(sum(quantity),0) applied_quantity,bool_and(accounting_applied) accounting_complete,COALESCE(max(venue_sequence),0) latest_fill_sequence FROM execution.paper_fills WHERE submission_id=%s",(submission.submission_id,));applied=Decimal(str(fill_row["applied_quantity"] or 0));fill_complete=applied==order.cumulative_filled_quantity and bool(fill_row["accounting_complete"] if fill_row["accounting_complete"] is not None else order.cumulative_filled_quantity==0)
+            fill_row=self._fill_application_evidence(submission.submission_id,order.cumulative_filled_quantity);fill_complete=bool(fill_row["complete"])
             prior_disposition="active" if prior is None else str(prior.get("terminal_disposition") or (prior["authority_state"] if prior["authority_state"] in terminal_states else "active"))
             disposition=prior_disposition if prior_disposition!="active" else (observed if observed in terminal_states else "active")
             terminal=disposition!="active"
@@ -548,6 +563,17 @@ class DurablePostgresPaperRepository(_Phase7BaseRepository):
                 else:self._release(submission,observed_at_utc,observation_id)
                 self._close_open_once(submission,observed_at_utc,observation_id)
         return True
+    def persist_terminal_order_observation(self,submission,order,*,observed_at_utc,source,query_id=None,evidence_sha256=None,internal_venue_event_id=None):
+        dispositions={VenueOrderState.FILLED:"filled",VenueOrderState.CANCELLED:"cancelled",VenueOrderState.REJECTED:"rejected",VenueOrderState.EXPIRED:"expired"}
+        observed_disposition=dispositions.get(order.state)
+        if observed_disposition is None:raise ValueError("terminal order observation requires FILLED, CANCELLED, REJECTED, or EXPIRED venue evidence")
+        with self.transaction():
+            prior=self._fetchone("SELECT terminal_disposition FROM execution.paper_order_projections WHERE submission_id=%s FOR UPDATE",(submission.submission_id,))
+            expected=observed_disposition if prior is None or str(prior["terminal_disposition"])=="active" else str(prior["terminal_disposition"])
+            self.persist_order_observation(submission,order,observed_at_utc=observed_at_utc,source=source,query_id=query_id,evidence_sha256=evidence_sha256,internal_venue_event_id=internal_venue_event_id)
+            projection=self._fetchone("SELECT * FROM execution.paper_order_projections WHERE submission_id=%s FOR UPDATE",(submission.submission_id,))
+            if projection is None or not bool(projection["terminal"]) or str(projection["terminal_disposition"])!=expected:raise Phase7ConflictError("terminal venue evidence did not preserve the locked terminal disposition")
+            return projection
     def record_recovery_observation_bundle(self,bundle:PaperRecoveryObservationBundle):
         hashes=bundle.observation_hashes
         with self.transaction():

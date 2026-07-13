@@ -129,5 +129,13 @@ class MigrationIntegrityTests(unittest.TestCase):
         self.assertEqual(len(hashlib.sha256(payload).hexdigest()), 64)
 
 
+class CancellationTerminalMigrationTests(unittest.TestCase):
+    def test_0021_separates_cancel_evidence_from_accounting_completion(self):
+        root = Path(__file__).resolve().parents[2]
+        text = (root / "open-core" / "db" / "migrations" / "0021_phase7_cancel_terminal_accounting_integrity.sql").read_text(encoding="utf-8-sig")
+        for required in ("terminal_evidence_sha256", "terminal_order_observation_id", "accounting_complete_at_confirmation", "does not imply fill accounting completeness"):
+            self.assertIn(required, text)
+
+
 if __name__ == "__main__":
     unittest.main()

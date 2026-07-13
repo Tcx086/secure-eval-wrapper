@@ -209,7 +209,7 @@ class PaperBroker(Broker):
         orders={o.client_order_id:o for o in self.repository.typed_orders(self.manifest.paper_run_id)};self._orders.update(orders);return BrokerResult((orders[submission.client_order_id],) if submission.client_order_id in orders else ())
     def _complete_active_cancel(self,submission,claim_token,order,at_utc,evidence_sha256):
         if order.state is VenueOrderState.CANCELLED:
-            self.repository.complete_cancel(submission,claim_token=claim_token,confirmed=True,at_utc=at_utc,evidence_sha256=evidence_sha256,worker_id=self.worker_id);return "cancel_confirmed"
+            self.repository.complete_cancel(submission,claim_token=claim_token,confirmed=True,order=order,at_utc=at_utc,evidence_sha256=evidence_sha256,worker_id=self.worker_id);return "cancel_confirmed"
         if order.state in (VenueOrderState.FILLED,VenueOrderState.EXPIRED,VenueOrderState.REJECTED):
             return self.repository.complete_cancel_superseded(submission,claim_token=claim_token,order=order,at_utc=at_utc,evidence_sha256=evidence_sha256,worker_id=self.worker_id)
         self.repository.complete_cancel(submission,claim_token=claim_token,confirmed=False,at_utc=at_utc,evidence_sha256=evidence_sha256,worker_id=self.worker_id);return "cancel_unknown"
@@ -247,7 +247,9 @@ class PaperBroker(Broker):
         if submission is None:raise ValueError("cancel has no persisted submission")
         self.repository.prepare_cancel(submission,at_utc=at_utc,maximum_cancellations_per_minute=self.configuration.maximum_cancellations_per_minute);self._crash("after_cancel_intent_before_claim");token=self.repository.claim_cancel(submission,worker_id=self.worker_id,at_utc=at_utc);self._crash("after_cancel_claim_before_venue")
         try:
-            order=self.venue.cancel_order(client_order_id,at_utc);self._crash("after_venue_cancel_before_outcome");self.repository.persist_order_observation(submission,order,observed_at_utc=self.clock(),source="cancel_response",evidence_sha256=order.record_sha256,internal_venue_event_id=getattr(self.venue,"_latest_internal_event_id",None));confirmed=order.state is VenueOrderState.CANCELLED;self._complete_active_cancel(submission,token,order,self.clock(),order.record_sha256);self._orders[client_order_id]=order
+            order=self.venue.cancel_order(client_order_id,at_utc);self._crash("after_venue_cancel_before_outcome");confirmed=order.state is VenueOrderState.CANCELLED
+            if order.state not in (VenueOrderState.CANCELLED,VenueOrderState.FILLED,VenueOrderState.EXPIRED,VenueOrderState.REJECTED):self.repository.persist_order_observation(submission,order,observed_at_utc=self.clock(),source="cancel_response",evidence_sha256=order.record_sha256,internal_venue_event_id=getattr(self.venue,"_latest_internal_event_id",None))
+            self._complete_active_cancel(submission,token,order,self.clock(),order.record_sha256);self._orders[client_order_id]=order
             if confirmed:self.accounting=self.repository.hydrate_accounting(self.manifest.paper_run_id)
             return order
         except Exception as exc:
