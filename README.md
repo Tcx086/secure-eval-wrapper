@@ -72,8 +72,8 @@ Signals are not fills. Phase 5 backtests create order intents, pass them through
 | 4 | Standardized Signal Generation | Completed; audit repair accepted |
 | 5 | Simulated Execution and Event-Driven Backtesting | Completed; PostgreSQL and CI validated |
 | 6 | Monitoring and strictly simulated FIX 4.4-compatible profile | Completed; first-independent-audit repairs accepted |
-| 7 | Paper Trading | Future |
-| 8 | Guarded Live Execution | Future; disabled by default |
+| 7 | Paper Trading | Completed through fifth independent audit |
+| 8 | Guarded Live Execution | Phase 8A in progress; dry-run/read-only, production writes disabled |
 | 9 | Reporting and Public Delivery | Future |
 
 The authoritative progress records are:
@@ -81,6 +81,7 @@ The authoritative progress records are:
 - [Simulated execution and backtesting](docs/SIMULATED_EXECUTION_AND_BACKTESTING.md)
 - [Monitoring and simulated FIX](docs/MONITORING_AND_SIMULATED_FIX.md)
 - [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md)
+- [Guarded live execution](docs/GUARDED_LIVE_EXECUTION.md)
 - [`.project/implementation_status.json`](.project/implementation_status.json)
 
 Completed and planned work must remain synchronized between these two files.
@@ -307,6 +308,7 @@ Some earlier evaluation-wrapper components remain in the repository for compatib
 - [Execution and FIX-Style Monitoring](docs/EXECUTION_AND_FIX_MONITORING.md)
 - [Safe Paper Trading](docs/SAFE_PAPER_TRADING.md)
 - [Live Trading Safety](docs/LIVE_TRADING_SAFETY.md)
+- [Guarded Live Execution](docs/GUARDED_LIVE_EXECUTION.md)
 - [Local Data Governance](docs/LOCAL_DATA_GOVERNANCE.md)
 - [Folder Structure](docs/FOLDER_STRUCTURE.md)
 - [Implementation Status](docs/IMPLEMENTATION_STATUS.md)
@@ -337,7 +339,7 @@ The intended principle is simple: **make the infrastructure inspectable without 
 
 Phases 3 and 4 are complete and auditable: public alphas produce continuous point-in-time `AlphaValue` records, and standardized signals apply deterministic ranking, thresholding, combination, conflict, and confidence rules with PostgreSQL lineage.
 
-Phase 5 simulated execution and backtesting is complete through its fourth independent audit. Phase 6 monitoring and the strictly simulated FIX API are completed after first-independent-audit repair and GitHub Actions validation. Phase 7 safe paper trading is in progress; the internal venue and official OKX demo boundary are implemented, while live trading remains unimplemented and unreachable.
+Phase 5 simulated execution and backtesting is complete through its fourth independent audit. Phase 6 monitoring and the strictly simulated FIX API are complete. Phase 7 safe paper trading is complete through its fifth independent audit. Phase 8A now provides a separate PostgreSQL-authoritative guarded-live dry-run/read-only foundation; production order and cancellation transport remains unconditionally disabled.
 
 ## Disclaimer
 
@@ -345,8 +347,12 @@ This repository is for software architecture, data engineering, testing, and res
 
 ## Phase 6 monitoring and simulated FIX
 
-The public framework now includes deterministic point-in-time monitoring and a strictly simulated, in-process FIX 4.4-compatible subset. Run `secure-eval-monitor` or `secure-eval-fix-sim` after installing `open-core`. Both demos are synthetic, socket-free, and persistence-free by default. See [Monitoring and Simulated FIX](docs/MONITORING_AND_SIMULATED_FIX.md). Phase 7 adds a separate safe PaperBroker and gated official demo adapter. No live broker or external production FIX connection is implemented.
+The public framework includes deterministic point-in-time monitoring and a strictly simulated, in-process FIX 4.4-compatible subset. Run `secure-eval-monitor` or `secure-eval-fix-sim` after installing `open-core`. Both demos are synthetic, socket-free, and persistence-free by default. See [Monitoring and Simulated FIX](docs/MONITORING_AND_SIMULATED_FIX.md). No production-write broker or external production FIX connection is implemented.
 
 ## Phase 7 safe paper trading
 
-`secure-eval-paper-internal` runs the complete deterministic, socket-free paper lifecycle with acknowledgement, partial fills, cancellation, timeout recovery, reconciliation, and kill handling. External OKX demo support is separately gated and uses only the immutable official-demo route/header contract. PostgreSQL remains the audit authority when persistence is requested. See [Safe Paper Trading](docs/SAFE_PAPER_TRADING.md). No production or live execution is implemented.
+`secure-eval-paper-internal` runs the complete deterministic, socket-free paper lifecycle with acknowledgement, partial fills, cancellation, timeout recovery, reconciliation, and kill handling. External OKX demo support is separately gated and uses only the immutable official-demo route/header contract. See [Safe Paper Trading](docs/SAFE_PAPER_TRADING.md). Paper authority remains separate from Phase 8 live records.
+
+## Phase 8A guarded live dry-run
+
+`secure-eval-live-preflight`, `secure-eval-live-dry-run`, `secure-eval-live-status`, `secure-eval-live-reconcile`, and `secure-eval-live-kill` are safe, socket-free defaults. The underlying architecture can persist exact production request plans and query read-only provider evidence, but Phase 8A always records the write as suppressed and never calls production submit or cancel. See [Guarded Live Execution](docs/GUARDED_LIVE_EXECUTION.md).

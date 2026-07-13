@@ -1,0 +1,113 @@
+# Guarded Live Execution (Phase 8A)
+
+## Status and safety boundary
+
+Phase 8A implements a PostgreSQL-authoritative, dry-run/read-only guarded-live foundation for OKX production Spot. Production order submission and production cancellation are unconditionally disabled. The implementation is not production-write enabled, not production proven, and does not claim that live trading is safe or profitable.
+
+The separate `secure_eval_wrapper.live` package does not change `PaperEnvironment`, `PaperBroker`, `PaperVenue`, simulated execution, or any migration from `0001` through `0021`. Live records use `execution.live_*` tables and never masquerade as paper or simulated records.
+
+## Provider and endpoint classification
+
+The provider scope is exactly OKX production SPOT with `tdMode=cash`, `ordType=limit`, side `buy` or `sell`, and GTC semantics. The adapter was verified on 2026-07-13 against the [official OKX V5 API guide](https://www.okx.com/docs-v5/en/).
+
+Public reads:
+
+- `GET /api/v5/public/time`
+- `GET /api/v5/public/instruments`
+- `GET /api/v5/market/ticker`
+
+Authenticated reads:
+
+- `GET /api/v5/account/config`
+- `GET /api/v5/account/instruments`
+- `GET /api/v5/account/balance`
+- `GET /api/v5/account/positions`
+- `GET /api/v5/trade/order`
+- `GET /api/v5/trade/orders-pending`
+- `GET /api/v5/trade/orders-history`
+- `GET /api/v5/trade/fills-history`
+
+Trading writes represented only for exact request planning and hashing:
+
+- `POST /api/v5/trade/order`
+- `POST /api/v5/trade/cancel-order`
+
+Phase 8A rejects both before transport. Asset, withdrawal, transfer, subaccount transfer, borrowing, repayment, leverage, margin administration, batch order, algorithmic order, cancel-all, WebSocket mutation, and arbitrary paths are classified as forbidden.
+
+OKX authenticated reads use the four official `OK-ACCESS-KEY`, `OK-ACCESS-SIGN`, `OK-ACCESS-TIMESTAMP`, and `OK-ACCESS-PASSPHRASE` headers. The signature is Base64-encoded HMAC-SHA256 of `timestamp + method + requestPath + body`. Secret material exists only in a local in-memory credential object and is never serialized, logged, or persisted.
+
+## Threat model
+
+The primary threats are accidental production writes, CI credential use, permissive or stale configuration, low reference-price manipulation, stale market/account evidence, endpoint confusion, ambiguous transport outcomes, duplicate dispatch, concurrent workers, unknown venue orders/fills, reconciliation drift, secret leakage, and operator attempts to bypass approval or preflight.
+
+Controls include:
+
+- immutable configuration with every risk limit required and positive;
+- `dry_run=true`, `read_only_preflight=true`, and `production_write_enabled=false` enforced in Python and PostgreSQL;
+- independent environment, CLI, and exact short-lived approval gates, plus an unconditional Phase 8A prohibition;
+- a CI hard block that requires fake transport and prohibits credential loading and production network mutation;
+- exact endpoint operation catalog without an arbitrary-path request method;
+- PostgreSQL-persisted preflight checks, approval, manifest, intent, risk, reservation, outbox, observations, reconciliation, kill switch, and summaries;
+- reuse of the Phase 7 validated market evidence and conservative risk-price calculation;
+- query-by-original-client-order-ID, recent orders, open orders, fills, and account state before any recovery decision;
+- no blind retry after timeout or connection loss;
+- monotonic database triggers that prevent suppressed outboxes/projections and closed reservations from regressing;
+- public-safe redaction and short account fingerprints.
+
+## Operator preflight checklist
+
+1. Confirm the checked-out commit is the intended reviewed commit and migrations `0001` through `0022` match the catalog.
+2. Confirm PostgreSQL 16 is reachable and all `execution.live_*` audit tables are writable.
+3. Use a local credential source; do not place credentials in repository files, PostgreSQL, shell history, or command arguments.
+4. Verify API permissions explicitly. Unknown permissions block preflight. Any withdrawal, transfer, borrow, margin/leverage administration, or unrelated account administration permission blocks preflight.
+5. Confirm the account fingerprint and optional subaccount fingerprint.
+6. Confirm account mode is Spot/cash, borrowing and margin are disabled, and no disallowed positions exist.
+7. Enumerate existing open orders, balances, available/reserved amounts, and positions.
+8. Verify venue time, validated PostgreSQL market evidence, price currency, instrument status, tick size, lot size, minimum size, and notional bounds.
+9. Require recent successful reconciliation and an armed PostgreSQL kill switch.
+10. Review the pre-run risk summary. A caller Boolean cannot replace a persisted passed preflight.
+
+## Dry-run runbook
+
+The default CLI commands are intentionally non-operational and socket-free:
+
+```text
+secure-eval-live-preflight
+secure-eval-live-dry-run
+secure-eval-live-status
+secure-eval-live-reconcile
+secure-eval-live-kill
+```
+
+A configured local operator integration must persist the start bundle before creating an intent. For each proposed order it normalizes price and quantity, evaluates shared risk authority, persists the exact intent/risk/reservation/outbox transaction, claims the outbox, and records `write_suppressed`. Dry-run output uses only `dry_run_prepared`, `dry_run_blocked`, `dry_run_suppressed`, or `pending_recovery`; it never claims an acknowledgement or fill.
+
+The low-reference/high-limit regression (`quantity=1`, `reference_price=100`, `limit_price=50000`, `maximum_order_notional=1000`) is blocked from transport planning because the persisted risk notional is `50000`.
+
+## Kill-switch runbook
+
+Trigger on stale evidence, blocked or unknown reconciliation, unexpected order/fill, position or balance mismatch, unknown/unacknowledged order age, transport failure, clock skew, daily loss, drawdown, risk breach, manifest mismatch, permission mismatch, endpoint violation, or a production-write attempt in CI.
+
+A trigger rejects new intents and suppresses transport. Phase 8A may persist a dry-run cancel outbox, but it never sends an exchange cancellation, flattens positions, or creates market orders. Reset requires a new passed preflight and new short-lived approval.
+
+## Ambiguous-order recovery runbook
+
+1. Acquire a PostgreSQL recovery generation, worker identity, claim token, and lease.
+2. Query the original client order ID.
+3. Query recent orders.
+4. Query open orders.
+5. Query fills.
+6. Query account configuration, balances, and positions.
+7. Persist one immutable observation bundle.
+8. Reconcile the exact bundle. Never mark rejected without explicit rejection evidence and never resend blindly.
+
+## Credential handling policy
+
+Allowed sources are process environment, operating-system credential store, or an explicitly injected local secret provider. Only the provider, alias, source type, short account fingerprint, loaded state, verification time, redacted permission summary, and record hash may be persisted. Full API keys, secrets, passphrases, signing keys, authorization headers, signed requests, environment dumps, secret-store payloads, private URLs, and full account identifiers are forbidden.
+
+## Known limitations
+
+- No production order or cancellation proof exists or is allowed in Phase 8A.
+- The public-safe CLIs do not implicitly load credentials or perform network reads.
+- Authenticated read-only preflight is optional and must be wired by a local operator integration.
+- No withdrawals, transfers, subaccount transfers, borrowing, leverage, margin, derivatives, perpetuals, futures, options, automatic flattening, or production FIX capability exists.
+- Phase 8 remains in progress. Later independent audits and a separate Phase 8B/8C checkpoint are required before any write enablement can be considered.

@@ -1197,6 +1197,11 @@ ALLOWED_DATA_MIGRATIONS = {
         r"\bUPDATE\s+ON\s+execution\.paper_order_projections\b.*?;",
         r"\bUPDATE\s+ON\s+execution\.paper_reservations\b.*?;",
         r"\bUPDATE\s+ON\s+execution\.paper_expiry_outbox\b.*?;",
+    ),
+    "0022_phase8_guarded_live_foundation.sql": (
+        r"\bUPDATE\s+ON\s+execution\.live_dispatch_outbox\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.live_reservations\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.live_order_projections\b.*?;",
     ),}
 
 class CatalogClient(Protocol):

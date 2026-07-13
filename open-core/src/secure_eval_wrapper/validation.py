@@ -35,8 +35,10 @@ def validate_status() -> None:
         raise RuntimeError("Phase 6 must be in progress or completed during the Phase 6 milestone")
     if phases["phase_7_paper_trading"]["status"] not in {"in_progress", "completed"}:
         raise RuntimeError("Phase 7 must be in progress or completed during the paper milestone")
-    if phases["phase_8_guarded_live_execution"]["status"] != "todo" or phases["phase_8_guarded_live_execution"]["completed"]:
-        raise RuntimeError("Phase 8 and guarded live execution must remain entirely todo")
+    if phases["phase_8_guarded_live_execution"]["status"] != "in_progress":
+        raise RuntimeError("Phase 8A must remain in progress")
+    if status["current_phase"] != "phase_8_guarded_live_execution" or status["rules"]["runtime_features_allowed_in_current_phase"] is not True:
+        raise RuntimeError("Phase 8A runtime status fields are not synchronized")
     print("OK: implementation status JSON structure and fixed boundaries")
 
 
@@ -82,7 +84,10 @@ def content_boundary_findings(path: Path, text: str) -> list[str]:
             if _non_placeholder(value):
                 findings.append("non-placeholder exchange credential assignment")
                 break
-        approved_paper_contract = path.as_posix().endswith(("paper/endpoints.py", "paper/venues/official_sandbox.py"))
+        approved_paper_contract = path.as_posix().endswith((
+            "paper/endpoints.py", "paper/venues/official_sandbox.py",
+            "live/endpoints.py", "live/venues/okx_live.py", "live/broker.py",
+        ))
         if "tests" not in {part.lower() for part in path.parts} and not approved_paper_contract and _AUTHENTICATED_ENDPOINT.search(text):
             findings.append("authenticated exchange account/order endpoint")
     return findings
@@ -160,6 +165,11 @@ def main(argv=None) -> int:
     _run(python, str(OPEN_CORE / "scripts" / "run_paper_status.py"))
     _run(python, str(OPEN_CORE / "scripts" / "run_paper_kill.py"))
     _run(python, str(OPEN_CORE / "scripts" / "run_paper_reconcile.py"))
+    _run(python, str(OPEN_CORE / "scripts" / "run_live_preflight.py"))
+    _run(python, str(OPEN_CORE / "scripts" / "run_live_dry_run.py"))
+    _run(python, str(OPEN_CORE / "scripts" / "run_live_status.py"))
+    _run(python, str(OPEN_CORE / "scripts" / "run_live_reconcile.py"))
+    _run(python, str(OPEN_CORE / "scripts" / "run_live_kill.py"))
     _run(python, str(OPEN_CORE / "scripts" / "verify_postgres_schema.py"), "--migration-only")
     validate_status()
     boundary_scan()
