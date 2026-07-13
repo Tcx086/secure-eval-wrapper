@@ -94,3 +94,13 @@ External demo mode requires exact provider/environment, manifest, approval, `--p
 ## Limitations and risk statement
 
 Paper trading can lose sandbox funds or create unintended sandbox positions. Sandbox behavior may differ from production, and paper results do not prove live profitability. Credentials remain local and public CI is credential-free. No production/live execution, withdrawal, transfer, external production FIX, leverage engine, liquidation engine, or automatic flattening is implemented. Phase 8 requires a new independent design, implementation, review, and approval.
+
+## Fifth-round price and terminal integrity repair
+
+Migration `0020_phase7_price_terminal_and_expiry_integrity.sql` keeps migrations `0001` through `0019` immutable and adds the Phase 7 fifth-audit controls. Operational market evidence now binds a validated PostgreSQL source row, report, series identity, point-in-time availability, finality, price, currency, source hash, normalized hash, and evidence hash. Explicit fixture evidence remains available only to the internal paper fixture path and is rejected for external sandbox operation.
+
+Every accepted submission persists `market_evidence_price`, `risk_reference_price`, `worst_case_order_price`, `risk_notional`, `reservation_notional`, `price_deviation_bps`, `price_source_sha256`, and the calculator version. Order, position, gross/net exposure, daily submitted, approval, and reservation checks all consume that persisted conservative calculation; caller-provided reference price is no longer the risk authority.
+
+Terminal disposition is stored separately from cumulative fill quantity and fill-accounting completeness. Cancelled, expired, and rejected orders with missing fills remain terminal but pending reconciliation; reservations and open-order budget remain open until all venue-reported fills and fees are applied atomically. Late fills cannot rewrite a cancelled or expired order to filled. Cancellation races persist explicit supersession outcomes, and expiry recovery is generation-, token-, and lease-owned and always queries before repeating an ambiguous side effect.
+
+InternalPaperVenue fee/slippage and policy configuration is immutable per run. Restart uses the persisted configuration and exact fill-event economics; a legacy run without that evidence fails closed. PostgreSQL triggers prevent closed order budgets from reopening and prevent terminal projection disposition from changing or regressing.

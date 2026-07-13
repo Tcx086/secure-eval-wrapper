@@ -51,6 +51,8 @@ class PaperRunConfiguration:
     automatic_flatten_on_kill: bool
     maximum_run_duration_seconds: int
     external_sandbox_enabled: bool = False
+    maximum_adverse_slippage_bps: Decimal = Decimal("200")
+    maximum_reference_price_deviation_bps: Decimal = Decimal("1000")
 
     def __post_init__(self) -> None:
         object.__setattr__(self,"provider",PaperProvider(self.provider)); object.__setattr__(self,"environment",PaperEnvironment(self.environment))
@@ -65,7 +67,7 @@ class PaperRunConfiguration:
             object.__setattr__(self,name,values)
         if not isinstance(self.base_currency,str) or not self.base_currency.strip(): raise ValueError("base_currency must be non-empty")
         object.__setattr__(self,"base_currency",self.base_currency.strip().upper())
-        for name in ("maximum_order_notional","maximum_position_notional_per_instrument","maximum_gross_exposure","maximum_net_exposure","maximum_daily_submitted_notional","maximum_daily_realized_loss","maximum_current_drawdown"):
+        for name in ("maximum_order_notional","maximum_position_notional_per_instrument","maximum_gross_exposure","maximum_net_exposure","maximum_daily_submitted_notional","maximum_daily_realized_loss","maximum_current_drawdown","maximum_adverse_slippage_bps","maximum_reference_price_deviation_bps"):
             _positive_decimal(getattr(self,name),name)
         for name in ("maximum_open_order_count","maximum_orders_per_minute","maximum_cancellations_per_minute","stale_market_data_threshold_seconds","stale_account_snapshot_threshold_seconds","maximum_reconciliation_age_seconds","maximum_unknown_order_duration_seconds","maximum_unacknowledged_order_duration_seconds","maximum_consecutive_transport_failures","maximum_clock_skew_seconds","maximum_run_duration_seconds"):
             _positive_int(getattr(self,name),name)

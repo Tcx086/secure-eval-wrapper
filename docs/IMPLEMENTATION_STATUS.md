@@ -9,7 +9,7 @@ Every future functional PR must update both files in the same change:
 
 Completed work must be listed under `Completed`. Everything not done must remain under `Todo`.
 
-Current phase: `phase_8_guarded_live_execution` (`todo`). Phase 7 fourth-round independent audit repairs are complete; Phase 8 remains entirely todo and has not started.
+Current phase: `phase_7_paper_trading` (`in_progress`). Phase 7 fifth-round independent audit repairs are in progress; Phase 8 remains entirely todo and has not started.
 
 ## Non-Negotiable Constraints
 - PostgreSQL is the only authoritative storage layer.
@@ -281,7 +281,7 @@ Current phase: `phase_8_guarded_live_execution` (`todo`). Phase 7 fourth-round i
 - [x] Add migration `0015` without modifying migrations `0001` through `0014`.
 - [x] Pass all required local, PostgreSQL 16, packaging, boundary, and migration validation, plus all six jobs in GitHub Actions checkpoint run `29143906785` on `e92d4484e7b4847a7a5b5ee49ae1dc2d573c0186`.
 
-### Phase 7: safe paper trading (completed)
+### Phase 7: safe paper trading (completed through the fourth independent audit)
 
 - [x] Add provider-neutral PaperBroker contracts, bounded run configuration, preflight, explicit approval, immutable manifest, lifecycle, recovery, rate limiting, and safe CLI boundaries.
 - [x] Add the deterministic asynchronous InternalPaperVenue with partial fills, idempotency, deterministic faults, recovery, accounting, reconciliation, monitoring, and persisted kill-switch behavior.
@@ -307,9 +307,20 @@ Current phase: `phase_8_guarded_live_execution` (`todo`). Phase 7 fourth-round i
 - [x] Persist expiry and rejection command/state transitions without terminal-state bypasses.
 - [x] Route expired dispatch and cancel claims automatically through generation-safe recovery claims.
 - [x] Add append-only migration `0019`, real PostgreSQL fourth-audit regression coverage, clean/seeded/idempotent migration validation, rollback/conflict coverage, and six-job CI checkpoint run `29207907662` on `438fd3dd822c25d8f2309d72316f84671a7614e2`.
+- [x] Add authoritative PostgreSQL-backed market price/source evidence with explicit internal-fixture isolation.
+- [x] Persist one conservative risk-price and risk-notional calculation across order, position, exposure, daily, approval, reservation, and audit limits.
+- [x] Make terminal fill completeness state-independent while preserving cancelled/expired/rejected dispositions across late fills.
+- [x] Add explicit cancel supersession outcomes plus pending-fill and query-first expiry recovery with PostgreSQL leases.
+- [x] Persist exact InternalPaperVenue economics and replay exact fee, reservation, balance, and position evidence after restart.
+- [x] Enforce closed-order-budget monotonicity and terminal projection monotonicity in PostgreSQL.
+- [x] Add append-only migration `0020`, fifth-audit regressions, clean 0001-to-0020 and seeded 0016-to-0020 validation, and migration immutability proof for `0001` through `0019`.
 
 ## Todo
 
+### Phase 7: fifth-round independent audit repairs (in progress)
+
+- [ ] Obtain a final main SHA that passes the complete independent fifth-round review.
+- [ ] Pass all six required GitHub Actions jobs before returning Phase 7 to completed.
 ### Future provider enhancements
 
 - [ ] Consider additional public OHLCV/trade/funding/instrument adapters after Phase 2; Bybit and Coinbase are not currently implemented.

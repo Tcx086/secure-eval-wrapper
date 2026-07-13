@@ -20,6 +20,7 @@ class PaperBroker(Broker):
         self.repository=repository;self.fixture_mode=fixture_mode;self.worker_id=worker_id;self.crash_hook=crash_hook
         self.configuration=configuration; self.manifest=manifest; self.approval=approval; self.venue=venue; self.accounting=accounting; self.kill_switch=kill_switch; self.clock=clock; self.audit_callback=audit_callback; self._submissions={}; self._orders={}; self._fills={}; self.daily_submitted_notional=Decimal(0); self.rate_limiter=PaperRateLimiter(orders_per_minute=configuration.maximum_orders_per_minute,cancellations_per_minute=configuration.maximum_cancellations_per_minute,clock=clock)
         if repository is not None and hasattr(venue,"bind_persistence"):venue.bind_persistence(repository,manifest.paper_run_id)
+        if hasattr(venue,"maximum_adverse_slippage_bps"):venue.maximum_adverse_slippage_bps=configuration.maximum_adverse_slippage_bps
     def _audit(self,kind,value):
         if self.audit_callback:self.audit_callback(kind,value)
     def _prepare(self,intent):
@@ -96,7 +97,7 @@ class PaperBroker(Broker):
         cancel=self.repository._fetchone("SELECT * FROM execution.paper_cancel_outbox WHERE submission_id=%s",(submission.submission_id,))
         if cancel and cancel["state"] in ("cancel_claimed","cancel_unknown"):
             active=cancel["state"]=="cancel_claimed" and cancel.get("claim_lease_expires_at_utc") and cancel["claim_lease_expires_at_utc"]>bundle.query_completed_at_utc and cancel.get("claimed_by")==self.worker_id
-            if active and order.state in (VenueOrderState.CANCELLED,VenueOrderState.FILLED,VenueOrderState.EXPIRED,VenueOrderState.REJECTED):self.repository.complete_cancel(submission,claim_token=cancel.get("claim_token"),confirmed=order.state is VenueOrderState.CANCELLED,at_utc=bundle.query_completed_at_utc,evidence_sha256=bundle.record_sha256,worker_id=self.worker_id)
+            if active and order.state in (VenueOrderState.CANCELLED,VenueOrderState.FILLED,VenueOrderState.EXPIRED,VenueOrderState.REJECTED):self._complete_active_cancel(submission,cancel.get("claim_token"),order,bundle.query_completed_at_utc,bundle.record_sha256)
             elif not active:
                 try:token=self.repository.claim_cancel_recovery(submission,worker_id=self.worker_id,at_utc=bundle.query_completed_at_utc)
                 except DispatchNotClaimable:self._audit("cancel_recovery_deferred",{"submission_id":submission.submission_id});token=None
@@ -174,6 +175,7 @@ class PaperBroker(Broker):
     def _crash(self,point):
         if self.crash_hook:self.crash_hook(point)
     def _durable_submit(self,intent,risk_decision,*,market_evidence=None):
+        if hasattr(self.repository,"bind_internal_venue_economics") and hasattr(self.venue,"implementation_sha256"):self.repository.bind_internal_venue_economics(self.venue,self.manifest.paper_run_id,at_utc=self.clock())
         submission,replay=self.repository.prepare_submission(configuration=self.configuration,approval=self.approval,manifest=self.manifest,intent=intent,risk_decision=risk_decision,now=self.clock(),market_evidence=market_evidence,evidence={"maximum_fee_bps":getattr(self.venue,"fee_bps",Decimal("10"))})
         self._submissions[submission.client_order_id]=submission;self.accounting=self.repository.hydrate_accounting(self.manifest.paper_run_id)
         if replay:
@@ -189,7 +191,7 @@ class PaperBroker(Broker):
     def _recovery_evidence(self,client_order_id,*,queried_order=None,query_started_at_utc=None):
         started=query_started_at_utc or self.clock();order=queried_order if queried_order is not None else self.venue.query_order(client_order_id);recent=tuple(self.venue.list_recent_orders()) if hasattr(self.venue,"list_recent_orders") else tuple(self.venue._orders.values()) if hasattr(self.venue,"_orders") else tuple(self.venue.list_open_orders());fills=tuple(sorted((f for f in self.venue.fetch_fills() if f.client_order_id==client_order_id),key=lambda f:(f.venue_sequence,f.filled_at_utc,f.venue_fill_id)));open_orders=tuple(o for o in self.venue.list_open_orders() if o.client_order_id==client_order_id);balances=tuple(self.venue.fetch_balances());positions=tuple(self.venue.fetch_positions());completed=self.clock();snapshot=self.venue.fetch_account_snapshot(self.manifest.paper_run_id,completed);submission=next((s for s in self.repository.typed_submissions(self.manifest.paper_run_id) if s.client_order_id==client_order_id),None)
         if submission is None:raise ValueError("recovery evidence has no durable submission")
-        observed=Decimal(0) if order is None else order.cumulative_filled_quantity;fill_quantity=sum((f.quantity for f in fills),Decimal(0));complete=order is None or order.state not in (VenueOrderState.PARTIALLY_FILLED,VenueOrderState.FILLED) or fill_quantity==observed;reason=None if complete else f"venue cumulative fill {observed} differs from complete fill evidence {fill_quantity}"
+        observed=Decimal(0) if order is None else order.cumulative_filled_quantity;fill_quantity=sum((f.quantity for f in fills),Decimal(0));complete=order is None or fill_quantity==observed;reason=None if complete else f"venue cumulative fill {observed} differs from complete fill evidence {fill_quantity}"
         return PaperRecoveryObservationBundle(self.manifest.paper_run_id,submission.submission_id,client_order_id,order,recent,open_orders,fills,balances,positions,snapshot,started,completed,complete,reason)
     def resume_submission(self,submission):
         dispatch=self.repository._fetchone("SELECT * FROM execution.paper_dispatch_outbox WHERE submission_id=%s",(submission.submission_id,))
@@ -205,26 +207,47 @@ class PaperBroker(Broker):
         if dispatch["state"] in ("dispatch_claimed","unknown"):
             order=self.query_order(submission.client_order_id);return BrokerResult((order,) if order is not None else ())
         orders={o.client_order_id:o for o in self.repository.typed_orders(self.manifest.paper_run_id)};self._orders.update(orders);return BrokerResult((orders[submission.client_order_id],) if submission.client_order_id in orders else ())
+    def _complete_active_cancel(self,submission,claim_token,order,at_utc,evidence_sha256):
+        if order.state is VenueOrderState.CANCELLED:
+            self.repository.complete_cancel(submission,claim_token=claim_token,confirmed=True,at_utc=at_utc,evidence_sha256=evidence_sha256,worker_id=self.worker_id);return "cancel_confirmed"
+        if order.state in (VenueOrderState.FILLED,VenueOrderState.EXPIRED,VenueOrderState.REJECTED):
+            return self.repository.complete_cancel_superseded(submission,claim_token=claim_token,order=order,at_utc=at_utc,evidence_sha256=evidence_sha256,worker_id=self.worker_id)
+        self.repository.complete_cancel(submission,claim_token=claim_token,confirmed=False,at_utc=at_utc,evidence_sha256=evidence_sha256,worker_id=self.worker_id);return "cancel_unknown"
     def recover_unresolved(self):
-        results=[]
+        results=[];now=self.clock()
         for submission in self.repository.typed_submissions(self.manifest.paper_run_id):
-            dispatch=self.repository._fetchone("SELECT * FROM execution.paper_dispatch_outbox WHERE submission_id=%s",(submission.submission_id,));cancel=self.repository._fetchone("SELECT * FROM execution.paper_cancel_outbox WHERE submission_id=%s",(submission.submission_id,))
+            dispatch=self.repository._fetchone("SELECT * FROM execution.paper_dispatch_outbox WHERE submission_id=%s",(submission.submission_id,));cancel=self.repository._fetchone("SELECT * FROM execution.paper_cancel_outbox WHERE submission_id=%s",(submission.submission_id,));expiry=self.repository._fetchone("SELECT * FROM execution.paper_expiry_outbox WHERE submission_id=%s",(submission.submission_id,));projection=self.repository._fetchone("SELECT * FROM execution.paper_order_projections WHERE submission_id=%s",(submission.submission_id,))
             try:
+                if expiry and expiry["state"]=="expiry_requested":
+                    token=self.repository.claim_expiry(submission,worker_id=self.worker_id,at_utc=now);observed=self.venue.expire(submission.client_order_id,now);self.repository.complete_expiry(submission,claim_token=token,confirmed=True,at_utc=self.clock(),order=observed,evidence_sha256=observed.record_sha256);results.append((submission.submission_id,"expiry_confirmed"));continue
+                if expiry and expiry["state"] in ("expiry_claimed","expiry_unknown"):
+                    try:token=self.repository.claim_expiry_recovery(submission,worker_id=self.worker_id,at_utc=now)
+                    except DispatchNotClaimable:results.append((submission.submission_id,"expiry_recovery_deferred"));continue
+                    bundle=self._recovery_evidence(submission.client_order_id,query_started_at_utc=now)
+                    if bundle.fill_evidence_complete:self._durable_sync_fills(recovery_bundle=bundle)
+                    else:self.repository.record_recovery_observation_bundle(bundle)
+                    complete=self.repository.complete_expiry_recovery(submission,recovery_claim_token=token,at_utc=bundle.query_completed_at_utc,order=bundle.queried_order,evidence_sha256=bundle.record_sha256);results.append((submission.submission_id,"expiry_recovered" if complete else "expiry_unknown"));continue
                 if cancel and cancel["state"]=="cancel_requested":
-                    token=self.repository.claim_cancel(submission,worker_id=self.worker_id,at_utc=self.clock());order=self.venue.cancel_order(submission.client_order_id,self.clock());confirmed=order.state is VenueOrderState.CANCELLED;self.repository.complete_cancel(submission,claim_token=token,confirmed=confirmed,at_utc=self.clock(),evidence_sha256=order.record_sha256,worker_id=self.worker_id);results.append((submission.submission_id,"cancel_confirmed" if confirmed else "cancel_unknown"));continue
+                    token=self.repository.claim_cancel(submission,worker_id=self.worker_id,at_utc=now);order=self.venue.cancel_order(submission.client_order_id,self.clock());outcome=self._complete_active_cancel(submission,token,order,self.clock(),order.record_sha256);results.append((submission.submission_id,outcome));continue
                 if cancel and cancel["state"] in ("cancel_claimed","cancel_unknown"):
                     order=self.query_order(submission.client_order_id);confirmed=order is not None and order.state in (VenueOrderState.CANCELLED,VenueOrderState.FILLED,VenueOrderState.EXPIRED,VenueOrderState.REJECTED);results.append((submission.submission_id,"cancel_recovered" if confirmed else "cancel_unknown"));continue
+                incomplete=projection is not None and not bool(projection["fill_application_complete"])
+                if incomplete or submission.state is PaperOrderState.PENDING_RECOVERY or (dispatch and dispatch["state"]=="acknowledged" and incomplete):
+                    order=self.query_order(submission.client_order_id);results.append((submission.submission_id,"fill_accounting_complete" if order is not None and self.repository._fill_application_complete(submission.submission_id,order.cumulative_filled_quantity) else "pending_fill_recovery"));continue
                 if dispatch and dispatch["state"] in ("prepared","dispatch_claimed","unknown"):
                     self.resume_submission(submission);results.append((submission.submission_id,"dispatch_"+str(dispatch["state"])))
             except Exception as exc:
                 results.append((submission.submission_id,"deferred:"+type(exc).__name__))
+            age=Decimal(str((self.clock()-submission.submitted_at_utc).total_seconds()))
+            if age>=self.configuration.maximum_unknown_order_duration_seconds and (submission.state is PaperOrderState.PENDING_RECOVERY or (projection is not None and not bool(projection["fill_application_complete"]))):
+                self.kill_switch.trigger("unresolved_unknown_order",at_utc=self.clock(),evidence={"submission_id":str(submission.submission_id),"age_seconds":str(age),"reason":"terminal_fill_accounting_timeout"})
         self.hydrate_from_postgres();return tuple(results)
     def _durable_cancel(self,client_order_id,*,at_utc,reason):
         submission=self._submissions.get(client_order_id) or next((s for s in self.repository.typed_submissions(self.manifest.paper_run_id) if s.client_order_id==client_order_id),None)
         if submission is None:raise ValueError("cancel has no persisted submission")
         self.repository.prepare_cancel(submission,at_utc=at_utc,maximum_cancellations_per_minute=self.configuration.maximum_cancellations_per_minute);self._crash("after_cancel_intent_before_claim");token=self.repository.claim_cancel(submission,worker_id=self.worker_id,at_utc=at_utc);self._crash("after_cancel_claim_before_venue")
         try:
-            order=self.venue.cancel_order(client_order_id,at_utc);self._crash("after_venue_cancel_before_outcome");self.repository.persist_order_observation(submission,order,observed_at_utc=self.clock(),source="cancel_response",evidence_sha256=order.record_sha256,internal_venue_event_id=getattr(self.venue,"_latest_internal_event_id",None));confirmed=order.state is VenueOrderState.CANCELLED;self.repository.complete_cancel(submission,claim_token=token,confirmed=confirmed,at_utc=self.clock(),evidence_sha256=order.record_sha256,worker_id=self.worker_id);self._orders[client_order_id]=order
+            order=self.venue.cancel_order(client_order_id,at_utc);self._crash("after_venue_cancel_before_outcome");self.repository.persist_order_observation(submission,order,observed_at_utc=self.clock(),source="cancel_response",evidence_sha256=order.record_sha256,internal_venue_event_id=getattr(self.venue,"_latest_internal_event_id",None));confirmed=order.state is VenueOrderState.CANCELLED;self._complete_active_cancel(submission,token,order,self.clock(),order.record_sha256);self._orders[client_order_id]=order
             if confirmed:self.accounting=self.repository.hydrate_accounting(self.manifest.paper_run_id)
             return order
         except Exception as exc:
@@ -251,9 +274,11 @@ class PaperBroker(Broker):
             if not candidate.apply_fill(fill):continue
             venue_order=(recovery_bundle.queried_order if recovery_bundle is not None and recovery_bundle.queried_order is not None and recovery_bundle.queried_order.client_order_id==fill.client_order_id else self.venue.query_order(fill.client_order_id))
             if venue_order is None:continue
-            prior_quantity,prior_notional=applied_economics.get(fill.client_order_id,(Decimal(0),Decimal(0)));cumulative=prior_quantity+fill.quantity;average=(prior_notional+fill.quantity*fill.price)/cumulative;state=VenueOrderState.FILLED if cumulative==venue_order.quantity else VenueOrderState.PARTIALLY_FILLED;order=replace(venue_order,cumulative_filled_quantity=cumulative,average_fill_price=average,state=state,updated_at_utc=fill.filled_at_utc,venue_sequence=fill.venue_sequence)
+            prior_quantity,prior_notional=applied_economics.get(fill.client_order_id,(Decimal(0),Decimal(0)));cumulative=prior_quantity+fill.quantity;average=(prior_notional+fill.quantity*fill.price)/cumulative;state=venue_order.state if venue_order.state in (VenueOrderState.CANCELLED,VenueOrderState.EXPIRED,VenueOrderState.REJECTED) else VenueOrderState.FILLED if cumulative==venue_order.quantity else VenueOrderState.PARTIALLY_FILLED;order=replace(venue_order,cumulative_filled_quantity=cumulative,average_fill_price=average,state=state,updated_at_utc=max(fill.filled_at_utc,venue_order.updated_at_utc),venue_sequence=max(fill.venue_sequence,venue_order.venue_sequence))
             candidate_snapshot=candidate.snapshot(at_utc=self.clock(),venue_sequence=order.venue_sequence);venue_snapshot=recovery_bundle.account_snapshot if recovery_bundle is not None else self.venue.fetch_account_snapshot(self.manifest.paper_run_id,self.clock());local_orders=tuple({**persisted,fill.client_order_id:order}.values());venue_orders=recovery_bundle.recent_orders if recovery_bundle is not None else tuple(self.venue._orders.values()) if hasattr(self.venue,"_orders") else self.venue.list_open_orders();reconciliation,differences=PaperReconciliationEngine().reconcile(paper_run_id=self.manifest.paper_run_id,local_snapshot=candidate_snapshot,venue_snapshot=venue_snapshot,local_orders=local_orders,venue_orders=venue_orders,local_fills=tuple((*self._fills.values(),fill)),venue_fills=fills,at_utc=self.clock());state_bundle=self.repository.load_state_bundle(self.manifest.paper_run_id);sequence=int(state_bundle["risk_state"]["lifecycle_sequence"])+1;event=PaperLifecycleEvent(self.manifest.paper_run_id,"confirmed_fill_applied",self.clock(),sequence,{"fill_id":str(fill.fill_id),"venue_fill_id":fill.venue_fill_id,"recovery_observation_bundle_id":None if recovery_bundle is None else str(recovery_bundle.bundle_id)},(fill.fill_id,))
-            if self.repository.persist_fill_bundle(fill=fill,order=order,local_snapshot=candidate_snapshot,venue_snapshot=venue_snapshot,reconciliation=reconciliation,differences=differences,lifecycle_event=event,recovery_observation_bundle_id=None if recovery_bundle is None else recovery_bundle.bundle_id):self.accounting=candidate;self._fills[fill.venue_fill_id]=fill;self._orders[fill.client_order_id]=order;persisted[fill.client_order_id]=order;applied_economics[fill.client_order_id]=(cumulative,prior_notional+fill.quantity*fill.price);applied.append(fill)
+            if self.repository.persist_fill_bundle(fill=fill,order=order,local_snapshot=candidate_snapshot,venue_snapshot=venue_snapshot,reconciliation=reconciliation,differences=differences,lifecycle_event=event,recovery_observation_bundle_id=None if recovery_bundle is None else recovery_bundle.bundle_id):
+                if order.state in (VenueOrderState.CANCELLED,VenueOrderState.EXPIRED,VenueOrderState.REJECTED):candidate.release(fill.client_order_id)
+                self.accounting=candidate;self._fills[fill.venue_fill_id]=fill;self._orders[fill.client_order_id]=order;persisted[fill.client_order_id]=order;applied_economics[fill.client_order_id]=(cumulative,prior_notional+fill.quantity*fill.price);applied.append(fill)
         for submission in self.repository.typed_submissions(self.manifest.paper_run_id):
             if submission.client_order_id not in {f.client_order_id for f in fills}:continue
             accounting_reservation=self.accounting.reservations.get(submission.client_order_id);accounting_amount=Decimal(0) if accounting_reservation is None else accounting_reservation.amount;venue_reservation=getattr(self.venue,"_reservations",{}).get(submission.client_order_id);venue_amount=Decimal(0) if venue_reservation is None else Decimal(venue_reservation["amount"]);self.repository.assert_reservation_consistency(submission.submission_id,accounting_amount=accounting_amount,venue_amount=venue_amount)
