@@ -4,12 +4,12 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-12T00:00:00Z",
-  "current_phase": "phase_7_paper_trading",
+  "updated_at_utc": "2026-07-13T03:14:42Z",
+  "current_phase": "phase_8_guarded_live_execution",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
     "future_functional_prs_must_update_json_status": true,
-    "runtime_features_allowed_in_current_phase": true
+    "runtime_features_allowed_in_current_phase": false
   },
   "storage": {
     "authoritative_storage": "PostgreSQL",
@@ -323,7 +323,7 @@
     {
       "id": "phase_7_paper_trading",
       "title": "Phase 7: paper trading",
-      "status": "in_progress",
+      "status": "completed",
       "completed": [
         "Add provider-neutral PaperBroker contracts, bounded run configuration, preflight, explicit approval, immutable manifest, lifecycle, recovery, rate limiting, and safe CLI boundaries",
         "Add the deterministic asynchronous InternalPaperVenue with partial fills, idempotency, deterministic faults, recovery, accounting, reconciliation, monitoring, and persisted kill-switch behavior",
@@ -356,12 +356,11 @@
         "Persist exact InternalPaperVenue economics and exact replay evidence across restart",
         "Enforce closed-order-budget and terminal projection monotonicity in PostgreSQL",
         "Add migration 0020, fifth-audit regressions, clean and seeded validation, and 0001 through 0019 immutability proof",
-        "Make cancellation confirmation evidence-aware, preserve pending recovery until fill, fee, and accounting completeness, and add migration 0021 plus active-claim and immediate-adapter PostgreSQL regressions"
+        "Make cancellation confirmation evidence-aware, preserve pending recovery until fill, fee, and accounting completeness, and add migration 0021 plus active-claim and immediate-adapter PostgreSQL regressions",
+        "Complete Phase 7 at final implementation SHA ce832e537c765f55f7435ae288e199fc8ffec3d6 after merged-main GitHub Actions run 29221216369 passed all six jobs: Ubuntu Python 3.11 job 86726532443, Ubuntu Python 3.12 job 86726532445, Ubuntu Python 3.13 job 86726532447, Windows Python 3.12 job 86726532444, PostgreSQL 16 integration job 86726532449, and public/private and runtime boundary job 86726532440",
+        "Verify migrations 0001 through 0021, including the active-cancel hidden-fill and immediate-CANCELLED adapter regressions, and close Phase 7 without starting any Phase 8 runtime"
       ],
-      "todo": [
-        "Obtain a final main SHA that passes the complete independent fifth-round review",
-        "Pass all six required GitHub Actions jobs before returning Phase 7 to completed"
-      ]
+      "todo": []
     },
     {
       "id": "phase_8_guarded_live_execution",
