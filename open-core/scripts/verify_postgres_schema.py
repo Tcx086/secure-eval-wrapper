@@ -1184,6 +1184,19 @@ ALLOWED_DATA_MIGRATIONS = {
         r"\bUPDATE\s+ON\s+execution\.paper_order_projections\b.*?;",
         r"\bUPDATE\s+ON\s+execution\.paper_expiry_outbox\b.*?;",
         r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.%I\b.*?;",
+    ),
+    "0020_phase7_price_terminal_and_expiry_integrity.sql": (
+        r"\bUPDATE\s+execution\.paper_market_data_evidence\b.*?;",
+        r"\bUPDATE\s+execution\.paper_order_submissions\b.*?;",
+        r"\bUPDATE\s+execution\.paper_runtime_risk_decisions\b.*?;",
+        r"\bUPDATE\s+execution\.paper_reservations\b.*?;",
+        r"\bUPDATE\s+execution\.paper_order_projections\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.paper_internal_venue_economics\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.paper_expiry_recovery_records\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.paper_order_submissions\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.paper_order_projections\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.paper_reservations\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.paper_expiry_outbox\b.*?;",
     ),}
 
 class CatalogClient(Protocol):

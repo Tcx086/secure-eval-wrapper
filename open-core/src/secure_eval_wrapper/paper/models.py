@@ -144,12 +144,25 @@ class PaperRun:
 
 @dataclass(frozen=True)
 class PaperOrderSubmission:
-    paper_run_id:UUID; manifest_id:UUID; approval_id:UUID; order_intent_id:UUID; client_order_id:str; idempotency_key:str; series_identity:SeriesIdentity; side:OrderSide; order_type:OrderType; time_in_force:TimeInForce; accounting_mode:AccountingMode; quantity:Decimal; reference_price:Decimal; submitted_notional:Decimal; submitted_at_utc:datetime; economics_sha256:str; state:PaperOrderState=PaperOrderState.SUBMITTED; limit_price:Decimal|None=None; stop_price:Decimal|None=None; submission_id:UUID|None=None
+    paper_run_id:UUID; manifest_id:UUID; approval_id:UUID; order_intent_id:UUID; client_order_id:str; idempotency_key:str; series_identity:SeriesIdentity; side:OrderSide; order_type:OrderType; time_in_force:TimeInForce; accounting_mode:AccountingMode; quantity:Decimal; reference_price:Decimal; submitted_notional:Decimal; submitted_at_utc:datetime; economics_sha256:str; state:PaperOrderState=PaperOrderState.SUBMITTED; limit_price:Decimal|None=None; stop_price:Decimal|None=None; submission_id:UUID|None=None; market_evidence_price:Decimal|None=None; risk_reference_price:Decimal|None=None; worst_case_order_price:Decimal|None=None; risk_notional:Decimal|None=None; reservation_notional:Decimal|None=None; price_deviation_bps:Decimal|None=None; price_source_sha256:str|None=None; price_calculator_version:str|None=None
     def __post_init__(self):
         for n,e in (("side",OrderSide),("order_type",OrderType),("time_in_force",TimeInForce),("accounting_mode",AccountingMode),("state",PaperOrderState)):object.__setattr__(self,n,e(getattr(self,n)))
         object.__setattr__(self,"client_order_id",_text(self.client_order_id,"client_order_id")); object.__setattr__(self,"idempotency_key",_text(self.idempotency_key,"idempotency_key")); _dec(self.quantity,"quantity",positive=True); _dec(self.reference_price,"reference_price",positive=True); _dec(self.submitted_notional,"submitted_notional",positive=True); _utc(self.submitted_at_utc,"submitted_at_utc"); _hash(self.economics_sha256,"economics_sha256")
         if self.limit_price is not None:_dec(self.limit_price,"limit_price",positive=True)
         if self.stop_price is not None:_dec(self.stop_price,"stop_price",positive=True)
+        for name in ("market_evidence_price","risk_reference_price","worst_case_order_price","risk_notional","reservation_notional"):
+            value=getattr(self,name)
+            if value is not None:_dec(value,name,positive=True)
+        if self.price_deviation_bps is not None:_dec(self.price_deviation_bps,"price_deviation_bps",nonnegative=True)
+        if self.price_source_sha256 is not None:_hash(self.price_source_sha256,"price_source_sha256")
+        if self.price_calculator_version is not None:object.__setattr__(self,"price_calculator_version",_text(self.price_calculator_version,"price_calculator_version"))
+        if self.risk_notional is None:object.__setattr__(self,"risk_notional",self.submitted_notional)
+        if self.reservation_notional is None:object.__setattr__(self,"reservation_notional",self.risk_notional)
+        if self.worst_case_order_price is None:object.__setattr__(self,"worst_case_order_price",self.risk_notional/self.quantity)
+        if self.risk_reference_price is None:object.__setattr__(self,"risk_reference_price",self.reference_price)
+        if self.market_evidence_price is None:object.__setattr__(self,"market_evidence_price",self.reference_price)
+        if self.price_deviation_bps is None:object.__setattr__(self,"price_deviation_bps",Decimal(0))
+        if self.submitted_notional!=self.risk_notional:raise ValueError("submitted_notional must equal authoritative risk_notional")
         economics={"series_identity":self.series_identity.as_dict(),"side":self.side,"order_type":self.order_type,"time_in_force":self.time_in_force,"accounting_mode":self.accounting_mode,"quantity":self.quantity,"limit_price":self.limit_price,"stop_price":self.stop_price}
         if self.economics_sha256!=_paper_hash(economics): raise ValueError("economics_sha256 mismatch")
         expected=deterministic_paper_uuid("submission",{"run":self.paper_run_id,"manifest":self.manifest_id,"client_order_id":self.client_order_id,"economics":self.economics_sha256})
@@ -157,7 +170,6 @@ class PaperOrderSubmission:
         object.__setattr__(self,"submission_id",expected)
     @property
     def record_sha256(self): return _paper_hash({n:getattr(self,n) for n in self.__dataclass_fields__ if n!="submission_id"})
-
 @dataclass(frozen=True)
 class VenueOrder:
     paper_run_id:UUID; submission_id:UUID; client_order_id:str; venue_order_id:str; series_identity:SeriesIdentity; side:OrderSide; order_type:OrderType; time_in_force:TimeInForce; accounting_mode:AccountingMode; quantity:Decimal; cumulative_filled_quantity:Decimal; average_fill_price:Decimal|None; state:VenueOrderState; created_at_utc:datetime; updated_at_utc:datetime; venue_sequence:int; economics_sha256:str; limit_price:Decimal|None=None; stop_price:Decimal|None=None; operational_request_id:str|None=None; reject_reason:str|None=None
@@ -234,33 +246,51 @@ class PaperReconciliationDifference:
 
 @dataclass(frozen=True)
 class PaperMarketDataEvidence:
-    """Immutable public-safe authority for one validated market observation."""
-    series_identity:SeriesIdentity; provider:str; instrument:str; event_type:str; observation_id:str; observed_at_utc:datetime; available_at_utc:datetime; is_final:bool; validation_status:str; source_sha256:str; record_sha256:str; evidence_id:UUID|None=None
+    """Immutable price evidence, bound either to a verified PostgreSQL source row or an explicit internal fixture."""
+    series_identity:SeriesIdentity; provider:str; instrument:str; event_type:str; observation_id:str; observed_at_utc:datetime; available_at_utc:datetime; is_final:bool; validation_status:str; source_sha256:str; record_sha256:str; evidence_id:UUID|None=None; exchange:str|None=None; provider_instrument_id:str|None=None; instrument_type:str|None=None; source_table:str|None=None; source_row_id:str|None=None; validation_report_id:UUID|None=None; price:Decimal|None=None; price_type:str="close"; quote_currency:str|None=None; normalized_record_sha256:str|None=None; source_kind:str="fixture"
     def __post_init__(self):
-        for name in ("provider","instrument","event_type","observation_id","validation_status"):object.__setattr__(self,name,_text(getattr(self,name),name))
+        for name in ("provider","instrument","event_type","observation_id","validation_status","price_type","source_kind"):object.__setattr__(self,name,_text(getattr(self,name),name))
         _utc(self.observed_at_utc,"observed_at_utc");_utc(self.available_at_utc,"available_at_utc");_hash(self.source_sha256,"source_sha256");_hash(self.record_sha256,"record_sha256")
         if self.available_at_utc<self.observed_at_utc:raise ValueError("market evidence cannot be available before it was observed")
-        if self.provider not in (self.series_identity.provider_name,self.series_identity.exchange):raise ValueError("market evidence provider does not match series identity")
+        if self.provider not in (self.series_identity.provider_name,self.series_identity.exchange,"internal"):raise ValueError("market evidence provider does not match series identity")
         if self.instrument not in (self.series_identity.provider_instrument_id,self.series_identity.canonical_symbol):raise ValueError("market evidence instrument does not match series identity")
-        expected=deterministic_paper_uuid("market-evidence",{"series":self.series_identity.series_identity_sha256,"provider":self.provider,"instrument":self.instrument,"event_type":self.event_type,"observation_id":self.observation_id,"observed":self.observed_at_utc,"available":self.available_at_utc,"final":self.is_final,"validation":self.validation_status,"source":self.source_sha256,"record":self.record_sha256})
+        object.__setattr__(self,"exchange",self.series_identity.exchange if self.exchange is None else _text(self.exchange,"exchange"))
+        object.__setattr__(self,"provider_instrument_id",self.series_identity.provider_instrument_id if self.provider_instrument_id is None else _text(self.provider_instrument_id,"provider_instrument_id"))
+        object.__setattr__(self,"instrument_type",self.series_identity.instrument_type.value if self.instrument_type is None else _text(self.instrument_type,"instrument_type"))
+        object.__setattr__(self,"source_row_id",self.observation_id if self.source_row_id is None else _text(self.source_row_id,"source_row_id"))
+        if self.source_table is not None:object.__setattr__(self,"source_table",_text(self.source_table,"source_table"))
+        object.__setattr__(self,"quote_currency",(self.series_identity.settlement_asset or self.series_identity.canonical_symbol.replace("/","-").split("-")[-1]).upper() if self.quote_currency is None else _text(self.quote_currency,"quote_currency").upper())
+        object.__setattr__(self,"normalized_record_sha256",self.record_sha256 if self.normalized_record_sha256 is None else self.normalized_record_sha256)
+        _hash(self.normalized_record_sha256,"normalized_record_sha256")
+        if self.price is not None:_dec(self.price,"price",positive=True)
+        if self.source_kind not in ("fixture","postgresql"):raise ValueError("market evidence source_kind must be fixture or postgresql")
+        if self.source_kind=="postgresql" and (self.source_table is None or self.validation_report_id is None or self.price is None):raise ValueError("PostgreSQL market evidence requires source table, validation report, and price")
+        legacy=self.source_kind=="fixture" and self.price is None and self.source_table is None and self.validation_report_id is None
+        identity_payload={"series":self.series_identity.series_identity_sha256,"provider":self.provider,"instrument":self.instrument,"event_type":self.event_type,"observation_id":self.observation_id,"observed":self.observed_at_utc,"available":self.available_at_utc,"final":self.is_final,"validation":self.validation_status,"source":self.source_sha256,"record":self.record_sha256} if legacy else {"series":self.series_identity.series_identity_sha256,"provider":self.provider,"exchange":self.exchange,"provider_instrument_id":self.provider_instrument_id,"instrument_type":self.instrument_type,"event_type":self.event_type,"source_kind":self.source_kind,"source_table":self.source_table,"source_row_id":self.source_row_id,"validation_report_id":self.validation_report_id,"observed":self.observed_at_utc,"available":self.available_at_utc,"final":self.is_final,"validation":self.validation_status,"price":self.price,"price_type":self.price_type,"quote_currency":self.quote_currency,"source":self.source_sha256,"record":self.normalized_record_sha256}
+        expected=deterministic_paper_uuid("market-evidence",identity_payload)
         if self.evidence_id is not None and self.evidence_id!=expected:raise ValueError("evidence_id mismatch")
         object.__setattr__(self,"evidence_id",expected)
     @property
-    def evidence_sha256(self):return _paper_hash({n:getattr(self,n) for n in self.__dataclass_fields__ if n!="evidence_id"})
-    def rejection_reasons(self,*,series_identity,at_utc,maximum_age_seconds):
+    def evidence_sha256(self):
+        if self.source_kind=="fixture" and self.price is None and self.source_table is None and self.validation_report_id is None:return _paper_hash({"series_identity":self.series_identity,"provider":self.provider,"instrument":self.instrument,"event_type":self.event_type,"observation_id":self.observation_id,"observed_at_utc":self.observed_at_utc,"available_at_utc":self.available_at_utc,"is_final":self.is_final,"validation_status":self.validation_status,"source_sha256":self.source_sha256,"record_sha256":self.record_sha256})
+        return _paper_hash({n:getattr(self,n) for n in self.__dataclass_fields__ if n!="evidence_id"})
+    def rejection_reasons(self,*,series_identity,at_utc,maximum_age_seconds,expected_currency=None,allow_fixture=True):
         _utc(at_utc,"at_utc");reasons=[]
         if self.series_identity.series_identity_sha256!=series_identity.series_identity_sha256:reasons.append("market_data_identity_mismatch")
-        if self.provider not in (series_identity.provider_name,series_identity.exchange):reasons.append("market_data_provider_mismatch")
+        if self.provider not in (series_identity.provider_name,series_identity.exchange,"internal"):reasons.append("market_data_provider_mismatch")
+        if self.exchange!=series_identity.exchange or self.provider_instrument_id!=series_identity.provider_instrument_id or self.instrument_type!=series_identity.instrument_type.value:reasons.append("market_data_series_fields_mismatch")
         if self.instrument not in (series_identity.provider_instrument_id,series_identity.canonical_symbol):reasons.append("market_data_instrument_mismatch")
         if not self.is_final:reasons.append("market_data_non_final")
         if self.validation_status!="accepted":reasons.append("market_data_"+("quarantined" if self.validation_status=="quarantined" else "invalid"))
         if self.available_at_utc>at_utc or self.observed_at_utc>at_utc:reasons.append("market_data_future")
         age=Decimal(str((at_utc-self.observed_at_utc).total_seconds()))
         if age<0 or age>Decimal(str(maximum_age_seconds)):reasons.append("market_data_stale")
+        if self.source_kind=="fixture" and not allow_fixture:reasons.append("fixture_market_data_forbidden")
+        if self.source_kind=="postgresql" and self.price is None:reasons.append("market_data_price_missing")
+        if expected_currency is not None and self.quote_currency.upper()!=str(expected_currency).upper():reasons.append("market_data_currency_mismatch")
         return tuple(dict.fromkeys(reasons))
 
 MarketDataEvidence=PaperMarketDataEvidence
-
 @dataclass(frozen=True)
 class PaperReconciliationBundle:
     """One indivisible set of exact observations and their reconciliation result."""

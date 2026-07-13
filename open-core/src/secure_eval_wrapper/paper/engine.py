@@ -17,7 +17,9 @@ class PaperTradingEngine:
         if self.configuration.persistence_required:
             if self.repository is None:raise RuntimeError("persistence-required paper run has no PostgreSQL repository")
             if hasattr(self.repository,"prepare_submission"):self.broker.repository=self.repository
-            self.repository.persist_start_run(run=self.run,configuration=self.configuration,credential_reference=credential_reference,snapshot=snapshot,report=report,approval=approval,manifest=self.broker.manifest,kill_switch=self.kill_switch.current,lifecycle_event=event)
+            with self.repository.transaction():
+                self.repository.persist_start_run(run=self.run,configuration=self.configuration,credential_reference=credential_reference,snapshot=snapshot,report=report,approval=approval,manifest=self.broker.manifest,kill_switch=self.kill_switch.current,lifecycle_event=event)
+                if hasattr(self.repository,"bind_internal_venue_economics") and hasattr(self.broker.venue,"implementation_sha256"):self.repository.bind_internal_venue_economics(self.broker.venue,self.run.paper_run_id,at_utc=now,allow_create=True)
         else:approval_controller.validate(approval,paper_run_id=report.paper_run_id,report=report,configuration=self.configuration,snapshot=snapshot,credential_reference=credential_reference,at_utc=self.clock(),consume=True)
         return self.run
     def submit(self,intent,risk_decision,market_evidence=None):

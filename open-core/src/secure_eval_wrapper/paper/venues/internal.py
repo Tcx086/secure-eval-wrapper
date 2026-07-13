@@ -1,6 +1,6 @@
 """Deterministic in-process paper venue; it is not an exchange emulator."""
 from __future__ import annotations
-from dataclasses import dataclass,replace
+from dataclasses import asdict,dataclass,replace
 import copy
 from datetime import timedelta
 from decimal import Decimal
@@ -8,7 +8,7 @@ from secure_eval_wrapper.data_collection.hashing import sha256_payload
 from secure_eval_wrapper.execution.models import AccountingMode,OrderSide,OrderType,TimeInForce
 from ..enums import AccountSnapshotStatus,InternalPaperFaultType,PaperEnvironment,VenueOrderState
 from ..models import PaperAccountSnapshot,VenueBalance,VenueFill,VenueOrder,VenuePosition,deterministic_paper_uuid
-from ..reservations import calculate_reservation,reduce_reservation
+from ..reservations import CALCULATOR_VERSION,DEFAULT_MAXIMUM_ADVERSE_SLIPPAGE_BPS,calculate_reservation,reduce_reservation
 from ..venue import EconomicConflictError,PaperVenue,UnknownSubmissionResult,VenueTimeout
 
 @dataclass(frozen=True)
@@ -18,8 +18,11 @@ class InternalFault:
     def fault_id(self):return deterministic_paper_uuid("internal-fault",{"type":self.fault_type,"client_order_id":self.client_order_id,"ordinal":self.activation_ordinal})
 
 class InternalPaperVenue(PaperVenue):
-    def __init__(self,*,account_reference="public-internal-paper",initial_balances=None,fee_bps=Decimal("10"),faults=()):
-        self.account_reference=account_reference; self.fee_bps=Decimal(fee_bps); self._initial_balances={k.upper():Decimal(v) for k,v in (initial_balances or {"USDT":Decimal("10000")}).items()}; self._balances=dict(self._initial_balances); self._positions={}; self._reservations={}; self._orders={}; self._venue_ids={}; self._fills={}; self._events=[]; self._sequence=0; self._faults=tuple(faults); self._activated=set(); self._last_snapshot=None; self._repository=None; self._paper_run_id=None; self._active_command_id=None; self._active_submission_id=None; self._active_command_at=None; self._latest_internal_event_id=None
+    IMPLEMENTATION_SHA256=sha256_payload({"component":"InternalPaperVenue","version":"phase7-price-terminal-expiry-integrity-v1"})
+    FEE_CURRENCY_POLICY="spot_quote_or_perpetual_settlement"
+    FILL_PRICE_POLICY="explicit_internal_market_event_or_test_fill"
+    def __init__(self,*,account_reference="public-internal-paper",initial_balances=None,fee_bps=Decimal("10"),maximum_adverse_slippage_bps=DEFAULT_MAXIMUM_ADVERSE_SLIPPAGE_BPS,faults=()):
+        self.account_reference=account_reference; self.fee_bps=Decimal(fee_bps); self.maximum_adverse_slippage_bps=Decimal(maximum_adverse_slippage_bps); self.reservation_calculator_version=CALCULATOR_VERSION; self.fee_currency_policy=self.FEE_CURRENCY_POLICY; self.fill_price_policy=self.FILL_PRICE_POLICY; self.implementation_sha256=self.IMPLEMENTATION_SHA256; self._initial_balances={k.upper():Decimal(v) for k,v in (initial_balances or {"USDT":Decimal("10000")}).items()}; self._balances=dict(self._initial_balances); self._positions={}; self._reservations={}; self._orders={}; self._venue_ids={}; self._fills={}; self._events=[]; self._sequence=0; self._faults=tuple(faults); self._activated=set(); self._last_snapshot=None; self._repository=None; self._paper_run_id=None; self._active_command_id=None; self._active_submission_id=None; self._active_command_at=None; self._latest_internal_event_id=None
         self.submit_call_count=0;self.cancel_call_count=0;self.query_call_count=0
     def _fault(self,kind,client=None):
         for f in self._faults:
@@ -46,7 +49,7 @@ class InternalPaperVenue(PaperVenue):
     @property
     def sequence(self):return self._sequence
     def _reserve(self,s):
-        required=calculate_reservation(s,maximum_fee_bps=self.fee_bps);reserved=sum((r["amount"] for r in self._reservations.values() if r["currency"]==required.currency),Decimal(0))
+        required=calculate_reservation(s,maximum_fee_bps=self.fee_bps,maximum_adverse_slippage_bps=self.maximum_adverse_slippage_bps);reserved=sum((r["amount"] for r in self._reservations.values() if r["currency"]==required.currency),Decimal(0))
         if self._balances.get(required.currency,Decimal(0))-reserved<required.amount:raise ValueError("internal venue reservation exceeds balance")
         self._reservations[s.client_order_id]={"currency":required.currency,"amount":required.amount,"original_quantity":s.quantity,"remaining_quantity":s.quantity}
     def _reduce_reservation(self,client,quantity):
@@ -137,7 +140,7 @@ class InternalPaperVenue(PaperVenue):
             if reduced.quantity==0:reservations.pop(client,None)
             else:reservations[client]={**reservation,"remaining_quantity":reduced.quantity,"amount":reduced.amount}
             cumulative=order.cumulative_filled_quantity+quantity;avg_price=((order.cumulative_filled_quantity*(order.average_fill_price or Decimal(0)))+quantity*price)/cumulative;state=VenueOrderState.FILLED if cumulative==order.quantity else VenueOrderState.PARTIALLY_FILLED
-            self._event("fill",client,{"venue_fill_id":venue_fill_id,"quantity":str(quantity),"price":str(price),"fee":str(fee),"fee_currency":fee_currency})
+            balance_deltas={currency:str(balances.get(currency,Decimal(0))-self._balances.get(currency,Decimal(0))) for currency in sorted(set(balances)|set(self._balances)) if balances.get(currency,Decimal(0))!=self._balances.get(currency,Decimal(0))};reservation_after=reservations.get(client);details={"venue_fill_id":venue_fill_id,"quantity":str(quantity),"price":str(price),"fee":str(fee),"fee_currency":fee_currency,"reservation_consumed":str(required),"reservation_released":str(max(Decimal(0),reduced.amount_consumed-required)),"balance_deltas":balance_deltas,"position_before_sha256":sha256_payload(asdict(old)),"position_after_sha256":sha256_payload(asdict(positions[key])),"reservation_before_sha256":sha256_payload(reservation),"reservation_after_sha256":sha256_payload(reservation_after)};self._event("fill",client,details)
             fill=VenueFill(order.paper_run_id,order.submission_id,client,order.venue_order_id,venue_fill_id,order.series_identity,order.side,order.accounting_mode,quantity,price,fee,fee_currency,at,self._sequence,PaperEnvironment.PAPER_INTERNAL);updated=replace(order,cumulative_filled_quantity=cumulative,average_fill_price=avg_price,state=state,updated_at_utc=at,venue_sequence=self._sequence)
             self._balances=balances;self._positions=positions;self._reservations=reservations;self._fills[venue_fill_id]=fill;self._orders[client]=updated
             if self._fault(InternalPaperFaultType.DUPLICATE_FILL,client):self._event("duplicate_fill",client,{"venue_fill_id":venue_fill_id})
