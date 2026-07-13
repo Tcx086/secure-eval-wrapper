@@ -9,7 +9,7 @@ Every future functional PR must update both files in the same change:
 
 Completed work must be listed under `Completed`. Everything not done must remain under `Todo`.
 
-Current phase: `phase_7_paper_trading` (`in_progress`). Phase 7 fifth-round independent audit repairs are in progress; Phase 8 remains entirely todo and has not started.
+Current phase: `phase_8_guarded_live_execution` (`todo`). Phase 7 is complete after the fifth independent audit; Phase 8 remains entirely todo, runtime features are not yet allowed, and no Phase 8 runtime has started.
 
 ## Non-Negotiable Constraints
 - PostgreSQL is the only authoritative storage layer.
@@ -281,7 +281,7 @@ Current phase: `phase_7_paper_trading` (`in_progress`). Phase 7 fifth-round inde
 - [x] Add migration `0015` without modifying migrations `0001` through `0014`.
 - [x] Pass all required local, PostgreSQL 16, packaging, boundary, and migration validation, plus all six jobs in GitHub Actions checkpoint run `29143906785` on `e92d4484e7b4847a7a5b5ee49ae1dc2d573c0186`.
 
-### Phase 7: safe paper trading (completed through the fourth independent audit)
+### Phase 7: safe paper trading (completed through the fifth independent audit)
 
 - [x] Add provider-neutral PaperBroker contracts, bounded run configuration, preflight, explicit approval, immutable manifest, lifecycle, recovery, rate limiting, and safe CLI boundaries.
 - [x] Add the deterministic asynchronous InternalPaperVenue with partial fills, idempotency, deterministic faults, recovery, accounting, reconciliation, monitoring, and persisted kill-switch behavior.
@@ -315,13 +315,11 @@ Current phase: `phase_7_paper_trading` (`in_progress`). Phase 7 fifth-round inde
 - [x] Enforce closed-order-budget monotonicity and terminal projection monotonicity in PostgreSQL.
 - [x] Add append-only migration `0020`, fifth-audit regressions, clean 0001-to-0020 and seeded 0016-to-0020 validation, and migration immutability proof for `0001` through `0019`.
 - [x] Make cancellation confirmation evidence-aware, preserve pending recovery until fill/fee/accounting completeness, and add append-only migration `0021` plus active-claim and immediate-adapter PostgreSQL regressions.
+- [x] Complete Phase 7 at final implementation SHA `ce832e537c765f55f7435ae288e199fc8ffec3d6` after merged-main GitHub Actions run `29221216369` passed all six jobs: Ubuntu Python 3.11 job `86726532443`, Ubuntu Python 3.12 job `86726532445`, Ubuntu Python 3.13 job `86726532447`, Windows Python 3.12 job `86726532444`, PostgreSQL 16 integration job `86726532449`, and public/private and runtime boundary job `86726532440`.
+- [x] Verify migrations `0001` through `0021`, including the active-cancel hidden-fill and immediate-CANCELLED adapter regressions, and close Phase 7 without starting any Phase 8 runtime.
 
 ## Todo
 
-### Phase 7: fifth-round independent audit repairs (in progress)
-
-- [ ] Obtain a final main SHA that passes the complete independent fifth-round review.
-- [ ] Pass all six required GitHub Actions jobs before returning Phase 7 to completed.
 ### Future provider enhancements
 
 - [ ] Consider additional public OHLCV/trade/funding/instrument adapters after Phase 2; Bybit and Coinbase are not currently implemented.
