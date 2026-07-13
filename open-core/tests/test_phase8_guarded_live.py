@@ -109,7 +109,8 @@ class ConfigurationAndEndpointTests(unittest.TestCase):
         self.assertNotIn("lever", body); self.assertNotIn("posSide", body)
 
     def test_authentication_signature_is_deterministic(self):
-        material = InjectedLocalCredentialProvider("placeholder-key", "placeholder-secret", "placeholder-passphrase").load(gates={"read_only_preflight": True, "provider_selected": True, "production_environment": True, "endpoint_catalog_valid": True, "configuration_valid": True, "production_writes_disabled": True, "kill_switch_armed": True, "postgresql_available": True})
+        with patch.dict(os.environ, {"CI": "false", "GITHUB_ACTIONS": "false"}, clear=False):
+            material = InjectedLocalCredentialProvider("placeholder-key", "placeholder-secret", "placeholder-passphrase").load(gates={"read_only_preflight": True, "provider_selected": True, "production_environment": True, "endpoint_catalog_valid": True, "configuration_valid": True, "production_writes_disabled": True, "kill_switch_armed": True, "postgresql_available": True})
         headers = signed_headers(credential_material=material, method="GET", request_path="/api/v5/account/balance", timestamp="2026-07-13T03:00:00.000Z")
         self.assertEqual(set(headers), {"Content-Type", "OK-ACCESS-KEY", "OK-ACCESS-SIGN", "OK-ACCESS-TIMESTAMP", "OK-ACCESS-PASSPHRASE"})
         self.assertEqual(headers, signed_headers(credential_material=material, method="GET", request_path="/api/v5/account/balance", timestamp="2026-07-13T03:00:00.000Z"))
