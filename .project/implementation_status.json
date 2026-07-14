@@ -4,12 +4,12 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-13T03:14:42Z",
+  "updated_at_utc": "2026-07-14T17:13:08Z",
   "current_phase": "phase_8_guarded_live_execution",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
     "future_functional_prs_must_update_json_status": true,
-    "runtime_features_allowed_in_current_phase": false
+    "runtime_features_allowed_in_current_phase": true
   },
   "storage": {
     "authoritative_storage": "PostgreSQL",
@@ -365,19 +365,28 @@
     {
       "id": "phase_8_guarded_live_execution",
       "title": "Phase 8: guarded live execution",
-      "status": "todo",
-      "completed": [],
+      "status": "in_progress",
+      "completed": [
+        "Add a separate secure_eval_wrapper.live package with immutable guarded-live configuration and no changes to paper or simulated execution authorities",
+        "Verify and catalog exact OKX production Spot public-read, authenticated-read, trading-write, and forbidden endpoints against official V5 documentation",
+        "Enforce independent environment, CLI, and exact approval gates plus an unconditional Phase 8A and CI production-write prohibition",
+        "Implement local-only credential loading, permission fail-closed behavior, redaction, short public fingerprints, and no secret persistence",
+        "Implement PostgreSQL-bound preflight, exact-challenge approval, immutable manifest, account evidence, and public-safe lifecycle contracts",
+        "Reuse Phase 7 validated market evidence and conservative price authority for live risk notional, reservations, approval consumption, and summaries",
+        "Implement truthful dry-run intent, exact OKX request planning, durable outbox claim and suppression, query-first recovery, reconciliation, kill switch, restart, and pre/post summaries",
+        "Add append-only migration 0022 with 26 live audit tables, leases, recovery generations, monotonic projections, hard write-disabled constraints, transactional application, idempotency, and injected rollback proof",
+        "Add five safe socket-free CLIs, guarded-live threat model and operator runbooks, 23 offline tests, 9 PostgreSQL integration tests, and explicit CI coverage",
+        "Repair Phase 8A authority integrity with typed evidence-producing preflight, same-run and configuration database bindings, transaction-locked PostgreSQL risk, operational kill freshness, incident-first recovery, and fee-aware Spot reservations",
+        "Add append-only migration 0023, real PostgreSQL-backed live CLIs, typed new-process reconstruction, exact OKX read and response validation, authoritative reconciliation, direct-SQL immutability guards, 21 dedicated offline regressions, 25 dedicated PostgreSQL regressions, and clean plus seeded migration verification while keeping production writes unreachable",
+        "Add append-only migration 0024 with collector-sealed operational evidence, exact OKX response-envelope provenance, Phase 7 market lineage, PostgreSQL-authoritative instrument metadata, atomic reconciliation and risk sequencing, distinct kill-reset and run-continue authority, exact recovery classification, and 29 dedicated offline plus 29 dedicated PostgreSQL regressions, clean and seeded migration verification, and immutable 0001-0023 proof while keeping production writes unreachable",
+        "Repair the final Phase 8A identity blockers with exact-UID-derived OKX account fingerprints, collector-derived runtime repository identity, fail-closed cross-account and forged-SHA rejection before authority persistence, and unchanged migrations 0001 through 0024 while production writes remain unreachable",
+        "Add append-only migration 0025 with exact OKX perm parsing, response-authoritative Phase 8A read-only credential policy, bundle/envelope/credential permission provenance, direct-SQL and restart fail-closed enforcement, focused offline and PostgreSQL attacks, and immutable 0001-0024 proof while production writes remain unreachable"
+      ],
       "todo": [
-        "Design live broker adapter",
-        "Keep live trading disabled by default",
-        "Require explicit live enablement flag",
-        "Require local-only API keys",
-        "Require max notional limits",
-        "Require dry-run support",
-        "Require kill switch",
-        "Require pre-flight risk summary",
-        "Require post-run risk summary",
-        "Require live execution audit manifest"
+        "Complete independent Phase 8A security, PostgreSQL concurrency, recovery, and public/private boundary audits",
+        "Optionally prove authenticated read-only preflight in a controlled local environment without persisting credentials",
+        "Design and independently audit a separate Phase 8B/8C production-write checkpoint before considering any write enablement",
+        "Keep production orders and cancellations disabled until a later explicitly approved phase"
       ]
     },
     {

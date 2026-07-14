@@ -57,6 +57,33 @@ def bootstrap(connection) -> None:
         """)
 
 
+def _apply_migration(connection, path: Path) -> tuple[str, bool]:
+    """Apply one migration and its catalog record in one PostgreSQL transaction."""
+    migration_id = path.stem
+    content = path.read_bytes()
+    digest = hashlib.sha256(content.replace(b"\r\n", b"\n")).hexdigest()
+    with connection.transaction():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT filename, sha256 FROM audit.schema_migrations WHERE migration_id = %s",
+                (migration_id,),
+            )
+            existing = cursor.fetchone()
+            if existing is not None:
+                if (existing[0], existing[1]) != (path.name, digest):
+                    raise RuntimeError(f"migration hash conflict for {migration_id}")
+                return digest, False
+            cursor.execute(content.decode("utf-8-sig"))
+            description = path.stem.split("_", 1)[1].replace("_", " ")
+            cursor.execute(
+                "INSERT INTO audit.schema_migrations "
+                "(migration_id, filename, sha256, description) VALUES (%s, %s, %s, %s)",
+                (migration_id, path.name, digest, description),
+            )
+    return digest, True
+
+
+
 def apply(*, database=None, first=None, through=None, seed_legacy=False, seed_phase5=False, seed_phase6=False) -> None:
     psycopg = _driver()
     connection = psycopg.connect(**_config(database), autocommit=True)
@@ -65,24 +92,14 @@ def apply(*, database=None, first=None, through=None, seed_legacy=False, seed_ph
         files = sorted(MIGRATIONS.glob("[0-9][0-9][0-9][0-9]_*.sql"))
         for path in files:
             migration_key = path.name[:4]
-            migration_id = path.stem
+
             if first and migration_key < first:
                 continue
             if through and migration_key > through:
                 continue
-            content = path.read_bytes()
-            digest = hashlib.sha256(content.replace(b"\r\n", b"\n")).hexdigest()
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT filename, sha256 FROM audit.schema_migrations WHERE migration_id = %s", (migration_id,))
-                existing = cursor.fetchone()
-                if existing is not None:
-                    if (existing[0], existing[1]) != (path.name, digest):
-                        raise RuntimeError(f"migration hash conflict for {migration_id}")
-                    continue
-                cursor.execute(content.decode("utf-8-sig"))
-                description = path.stem.split("_", 1)[1].replace("_", " ")
-                cursor.execute("INSERT INTO audit.schema_migrations (migration_id, filename, sha256, description) VALUES (%s, %s, %s, %s)", (migration_id, path.name, digest, description))
-            print(f"OK: applied {path.name} sha256={digest}")
+            digest, applied = _apply_migration(connection, path)
+            if applied:
+                print(f"OK: applied {path.name} sha256={digest}")
         if seed_phase6:
             timestamp = "2026-01-01T00:00:00+00:00"
             session_id = "00000000-0000-5000-8000-000000001401"

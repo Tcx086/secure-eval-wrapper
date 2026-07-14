@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "secure-eval-wrapper"
-version = "0.7.0"
-description = "Public-safe deterministic crypto trading research, monitoring, simulated FIX, and safe paper framework"
+version = "0.8.0"
+description = "Public-safe crypto research, simulation, paper, and guarded-live dry-run framework"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
@@ -25,6 +25,11 @@ secure-eval-paper-run = "secure_eval_wrapper.paper.cli:run_main"
 secure-eval-paper-status = "secure_eval_wrapper.paper.cli:status_main"
 secure-eval-paper-kill = "secure_eval_wrapper.paper.cli:kill_main"
 secure-eval-paper-reconcile = "secure_eval_wrapper.paper.cli:reconcile_main"
+secure-eval-live-preflight = "secure_eval_wrapper.live.cli:preflight_main"
+secure-eval-live-dry-run = "secure_eval_wrapper.live.cli:dry_run_main"
+secure-eval-live-status = "secure_eval_wrapper.live.cli:status_main"
+secure-eval-live-reconcile = "secure_eval_wrapper.live.cli:reconcile_main"
+secure-eval-live-kill = "secure_eval_wrapper.live.cli:kill_main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

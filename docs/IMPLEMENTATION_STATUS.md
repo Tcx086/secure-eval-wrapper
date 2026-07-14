@@ -9,7 +9,7 @@ Every future functional PR must update both files in the same change:
 
 Completed work must be listed under `Completed`. Everything not done must remain under `Todo`.
 
-Current phase: `phase_8_guarded_live_execution` (`todo`). Phase 7 is complete after the fifth independent audit; Phase 8 remains entirely todo, runtime features are not yet allowed, and no Phase 8 runtime has started.
+Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarded-live dry-run/read-only runtime is implemented for audit; production writes remain disabled, Phase 8 is not complete, and Phase 9 remains todo.
 
 ## Non-Negotiable Constraints
 - PostgreSQL is the only authoritative storage layer.
@@ -318,6 +318,24 @@ Current phase: `phase_8_guarded_live_execution` (`todo`). Phase 7 is complete af
 - [x] Complete Phase 7 at final implementation SHA `ce832e537c765f55f7435ae288e199fc8ffec3d6` after merged-main GitHub Actions run `29221216369` passed all six jobs: Ubuntu Python 3.11 job `86726532443`, Ubuntu Python 3.12 job `86726532445`, Ubuntu Python 3.13 job `86726532447`, Windows Python 3.12 job `86726532444`, PostgreSQL 16 integration job `86726532449`, and public/private and runtime boundary job `86726532440`.
 - [x] Verify migrations `0001` through `0021`, including the active-cancel hidden-fill and immediate-CANCELLED adapter regressions, and close Phase 7 without starting any Phase 8 runtime.
 
+
+### Phase 8A: guarded live execution foundation (in progress)
+
+- [x] Add a separate `secure_eval_wrapper.live` package with immutable guarded-live configuration and no changes to paper or simulated execution authorities.
+- [x] Verify and catalog exact OKX production Spot public-read, authenticated-read, trading-write, and forbidden endpoints against official V5 documentation.
+- [x] Enforce independent environment, CLI, and exact approval gates plus an unconditional Phase 8A and CI production-write prohibition.
+- [x] Implement local-only credential loading, permission fail-closed behavior, redaction, short public fingerprints, and no secret persistence.
+- [x] Implement PostgreSQL-bound preflight, exact-challenge approval, immutable manifest, account evidence, and public-safe lifecycle contracts.
+- [x] Reuse Phase 7 validated market evidence and conservative price authority for live risk notional, reservations, approval consumption, and summaries.
+- [x] Implement truthful dry-run intent, exact OKX request planning, durable outbox claim and suppression, query-first recovery, reconciliation, kill switch, restart, and pre/post summaries.
+- [x] Add append-only migration `0022` with 26 live audit tables, leases, recovery generations, monotonic projections, hard write-disabled constraints, transactional application, idempotency, and injected rollback proof.
+- [x] Add five safe socket-free CLIs, guarded-live threat model and operator runbooks, 23 offline tests, 9 PostgreSQL integration tests, and explicit CI coverage.
+- [x] Repair Phase 8A authority integrity with typed evidence-producing preflight, same-run/configuration database bindings, transaction-locked PostgreSQL risk, operational kill freshness, incident-first recovery, and fee-aware Spot reservations.
+- [x] Add append-only migration `0023`, real PostgreSQL-backed live CLIs, typed new-process reconstruction, exact OKX read/response validation, authoritative reconciliation, direct-SQL immutability guards, 21 dedicated offline regressions, 25 dedicated PostgreSQL regressions, and clean plus seeded migration verification while keeping production writes unreachable.
+- [x] Add append-only migration `0024` with collector-sealed operational evidence, exact OKX response-envelope provenance, Phase 7 market lineage, PostgreSQL-authoritative instrument metadata, atomic reconciliation/risk sequencing, distinct kill-reset and run-continue authority, exact recovery classification, and 29 dedicated offline plus 29 dedicated PostgreSQL regressions, clean and seeded migration verification, and immutable 0001-0023 proof while keeping production writes unreachable.
+- [x] Repair the final Phase 8A identity blockers with exact-UID-derived OKX account fingerprints, collector-derived runtime repository identity, fail-closed cross-account and forged-SHA rejection before authority persistence, and unchanged migrations `0001` through `0024` while production writes remain unreachable.
+- [x] Add append-only migration `0025` with exact OKX `perm` parsing, response-authoritative Phase 8A read-only credential policy, bundle/envelope/credential permission provenance, direct-SQL and restart fail-closed enforcement, focused offline and PostgreSQL attacks, and immutable `0001`-`0024` proof while production writes remain unreachable.
+
 ## Todo
 
 ### Future provider enhancements
@@ -325,17 +343,11 @@ Current phase: `phase_8_guarded_live_execution` (`todo`). Phase 7 is complete af
 - [ ] Consider additional public OHLCV/trade/funding/instrument adapters after Phase 2; Bybit and Coinbase are not currently implemented.
 
 
-### Phase 8: guarded live execution
-- [ ] Design live broker adapter.
-- [ ] Keep live trading disabled by default.
-- [ ] Require explicit live enablement flag.
-- [ ] Require local-only API keys.
-- [ ] Require max notional limits.
-- [ ] Require dry-run support.
-- [ ] Require kill switch.
-- [ ] Require pre-flight risk summary.
-- [ ] Require post-run risk summary.
-- [ ] Require live execution audit manifest.
+### Phase 8: guarded live execution (remaining)
+- [ ] Complete independent Phase 8A security, PostgreSQL concurrency, recovery, and public/private boundary audits.
+- [ ] Optionally prove authenticated read-only preflight in a controlled local environment without persisting credentials.
+- [ ] Design and independently audit a separate Phase 8B/8C production-write checkpoint before considering any write enablement.
+- [ ] Keep production orders and cancellations disabled until a later explicitly approved phase.
 
 ### Phase 9: reporting + public delivery
 - [ ] Build public report templates.

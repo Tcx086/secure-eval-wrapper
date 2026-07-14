@@ -20,6 +20,7 @@ private/
 secrets.*
 credentials.*
 !open-core/src/secure_eval_wrapper/paper/credentials.py
+!open-core/src/secure_eval_wrapper/live/credentials.py
 config.local.*
 
 # ==============================
