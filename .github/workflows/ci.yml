@@ -51,7 +51,7 @@ jobs:
       - run: python -m pip install -e "./open-core[test]"
       - name: Build and verify immutable repository identity metadata
         run: |
-          python -m pip wheel --no-cache-dir --no-deps --no-build-isolation ./open-core --wheel-dir var/tmp/build-identity-wheel
+          python -m pip wheel --no-cache-dir --no-deps ./open-core --wheel-dir var/tmp/build-identity-wheel
           python open-core/scripts/verify_built_repository_identity.py var/tmp/build-identity-wheel
       - run: python -c "import secure_eval_wrapper; import secure_eval_wrapper.execution; import secure_eval_wrapper.backtesting; import secure_eval_wrapper.monitoring; import secure_eval_wrapper.fix; import secure_eval_wrapper.paper; import secure_eval_wrapper.live"
       - name: Dedicated Phase 5 second-audit regression suite
