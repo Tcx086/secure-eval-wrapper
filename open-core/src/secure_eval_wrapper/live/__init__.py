@@ -9,6 +9,7 @@ from .broker import DryRunResult, GuardedLiveBroker
 from .configuration import GuardedLiveConfiguration, phase8a_dry_run_configuration
 from .endpoints import EndpointClass, LiveOperation, endpoint_catalog_hash
 from .gates import evaluate_live_write_authority
+from .identity import *
 from .kill_switch import arm_kill_switch, reset_kill_switch, trigger_kill_switch
 from .models import *
 from .preflight import LivePreflightEngine, LivePreflightEvidence, OperationalPreflightEvidence

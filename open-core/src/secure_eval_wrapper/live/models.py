@@ -15,6 +15,8 @@ from secure_eval_wrapper.data_collection.hashing import sha256_payload
 from secure_eval_wrapper.data_collection.time_utils import require_utc_datetime
 from secure_eval_wrapper.execution.models import AccountingMode, OrderSide, OrderType, TimeInForce
 
+from .identity import validate_git_commit_sha, validate_okx_account_fingerprint
+
 _SHA = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -111,6 +113,8 @@ class LiveCredentialReference:
     def __post_init__(self) -> None:
         for name in ("provider", "alias", "source_type", "account_fingerprint"):
             object.__setattr__(self, name, _text(getattr(self, name), name))
+        if self.provider.lower() == "okx":
+            object.__setattr__(self, "account_fingerprint", validate_okx_account_fingerprint(self.account_fingerprint))
         if self.verified_at_utc is not None:
             _utc(self.verified_at_utc, "verified_at_utc")
         summary = tuple(sorted({_text(value, "permission_summary") for value in self.permission_summary}))
@@ -141,7 +145,7 @@ class LiveAccountSnapshot:
     snapshot_id: UUID | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "account_fingerprint", _text(self.account_fingerprint, "account_fingerprint"))
+        object.__setattr__(self, "account_fingerprint", validate_okx_account_fingerprint(self.account_fingerprint))
         _utc(self.fetched_at_utc, "fetched_at_utc"); _utc(self.venue_time_at_utc, "venue_time_at_utc")
         if self.open_order_count < 0:
             raise ValueError("open_order_count cannot be negative")
@@ -216,7 +220,7 @@ class LivePreflightReport:
     def __post_init__(self) -> None:
         for name in ("configuration_hash", "implementation_hash", "endpoint_catalog_hash", "credential_reference_hash", "account_snapshot_hash"):
             _hash(getattr(self, name), name)
-        object.__setattr__(self, "repository_commit_sha", _text(self.repository_commit_sha, "repository_commit_sha"))
+        object.__setattr__(self, "repository_commit_sha", validate_git_commit_sha(self.repository_commit_sha, field_name="repository_commit_sha"))
         _utc(self.evaluated_at_utc, "evaluated_at_utc")
         object.__setattr__(self, "status", LivePreflightStatus(self.status)); object.__setattr__(self, "checks", tuple(self.checks))
         object.__setattr__(self, "purpose", LivePreflightPurpose(self.purpose))
@@ -263,6 +267,8 @@ class LiveApproval:
         _hash(self.configuration_hash, "configuration_hash"); _hash(self.manifest_hash, "manifest_hash"); _hash(self.confirmation_challenge_hash, "confirmation_challenge_hash")
         for name in ("account_fingerprint", "provider", "environment", "repository_commit_sha", "nonce", "approving_actor"):
             object.__setattr__(self, name, _text(getattr(self, name), name))
+        object.__setattr__(self, "account_fingerprint", validate_okx_account_fingerprint(self.account_fingerprint))
+        object.__setattr__(self, "repository_commit_sha", validate_git_commit_sha(self.repository_commit_sha, field_name="repository_commit_sha"))
         object.__setattr__(self, "allowed_instruments", tuple(sorted({_text(value, "allowed_instruments") for value in self.allowed_instruments})))
         _decimal(self.maximum_total_approved_notional, "maximum_total_approved_notional", positive=True)
         _utc(self.created_at_utc, "created_at_utc"); _utc(self.expires_at_utc, "expires_at_utc")
@@ -308,6 +314,8 @@ class LiveRunManifest:
             _hash(getattr(self, name), name)
         if not self.dry_run or self.production_write_enabled:
             raise ValueError("Phase 8A manifests must be dry-run with writes disabled")
+        object.__setattr__(self, "account_fingerprint", validate_okx_account_fingerprint(self.account_fingerprint))
+        object.__setattr__(self, "repository_commit_sha", validate_git_commit_sha(self.repository_commit_sha, field_name="repository_commit_sha"))
         if self.expected_maximum_duration_seconds <= 0:
             raise ValueError("manifest duration must be positive")
         object.__setattr__(self, "risk_limits", _map(self.risk_limits)); object.__setattr__(self, "kill_switch_policy", _map(self.kill_switch_policy))

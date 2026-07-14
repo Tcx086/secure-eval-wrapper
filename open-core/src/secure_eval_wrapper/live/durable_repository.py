@@ -1220,6 +1220,8 @@ class DurablePostgresLiveRepository:
             )
             if expected is None:
                 raise LiveClaimError("recovery intent authority is missing")
+            if okx_bundle.account_fingerprint != expected["account_fingerprint"]:
+                raise LiveClaimError("cross-account recovery evidence is forbidden")
             self._persist_okx_bundle(okx_bundle)
             observation_bundle = normalize_verified_recovery_observation(
                 okx_bundle, expected_intent=expected,
@@ -1423,6 +1425,16 @@ class DurablePostgresLiveRepository:
             or exact_input.get("endpoint_matrix_sha256") != okx_bundle.endpoint_matrix_hash
         ):
             raise PermissionError("reconciliation inputs are not exact collector-issued authority")
+        local_account_fingerprint = exact_input.get("local", {}).get("account_fingerprint")
+        venue_account_fingerprint = exact_input.get("venue", {}).get("account_fingerprint")
+        if (
+            local_account_fingerprint != okx_bundle.account_fingerprint
+            or (
+                venue_account_fingerprint is not None
+                and venue_account_fingerprint != okx_bundle.account_fingerprint
+            )
+        ):
+            raise PermissionError("cross-account reconciliation cannot reach authority persistence")
         with self.transaction():
             self._lock_run(reconciliation.live_run_id)
             run = self._fetchone(

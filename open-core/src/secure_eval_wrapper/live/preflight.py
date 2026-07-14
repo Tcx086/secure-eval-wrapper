@@ -21,6 +21,7 @@ from .collector_evidence import VerifiedOkxReadObservationBundle
 from .credentials import validate_permission_summary
 from .endpoints import endpoint_catalog_hash
 from .gates import common_ci_indicators
+from .identity import REPOSITORY_IDENTITY_RESOLVER_VERSION, RepositoryIdentityError, resolve_runtime_repository_identity, validate_git_commit_sha
 from .models import (
     LiveAccountSnapshot,
     LiveCredentialReference,
@@ -87,7 +88,6 @@ class LivePreflightEngine:
         evidence: OperationalPreflightEvidence | FixtureOnlyPreflightEvidence,
         evaluated_at_utc: datetime,
         implementation_hash: str,
-        repository_commit_sha: str,
         test_mode: bool = False,
         purpose: LivePreflightPurpose | str = LivePreflightPurpose.RUN_START,
     ) -> LivePreflightReport:
@@ -106,7 +106,7 @@ class LivePreflightEngine:
                 digest,
             )
             return LivePreflightReport(
-                live_run_id, configuration.configuration_hash, implementation_hash, repository_commit_sha,
+                live_run_id, configuration.configuration_hash, implementation_hash, digest[:40],
                 configuration.endpoint_catalog_hash, credential_reference.record_hash, account_snapshot.record_hash,
                 now, (check,), (check.check_name,), (), LivePreflightStatus.BLOCKED, purpose=purpose,
             )
@@ -127,7 +127,18 @@ class LivePreflightEngine:
             digest = sha256_payload({"check": name, "sources": hashes, "derived_passed": bool(passed)})
             checks.append(LivePreflightCheck(name, bool(passed), True, now, explanation, digest, source_time, None, ids, hashes))
 
-        repository = source["repository"].payload
+        repository_source = source["repository"]
+        repository = repository_source.payload
+        observed_commit_sha = repository.get("observed_commit_sha")
+        expected_reviewed_sha = repository.get("expected_reviewed_sha")
+        identity_source = repository.get("identity_source")
+        resolver_version = repository.get("resolver_version")
+        repository_identity_valid = repository_source.collector_kind == "runtime_repository_identity_resolver"
+        try:
+            validate_git_commit_sha(observed_commit_sha, field_name="observed_commit_sha")
+            validate_git_commit_sha(expected_reviewed_sha, field_name="expected_reviewed_sha")
+        except RepositoryIdentityError:
+            repository_identity_valid = False
         migrations = source["migration_catalog"].payload
         postgresql = source["postgresql_probe"].payload
         audit_probe = source["audit_rollback_probe"].payload
@@ -157,7 +168,7 @@ class LivePreflightEngine:
         add("requested_mode_live_write_disabled", configuration.environment == "production" and configuration.dry_run and not configuration.production_write_enabled, "Phase 8A must be production-targeted dry-run with writes disabled", ("repository",))
         add("provider_environment_pair", (configuration.provider, configuration.environment) == ("okx", "production"), "only OKX production is catalogued", ("repository",))
         add("endpoint_catalog", configuration.endpoint_catalog_hash == endpoint_catalog_hash(), "endpoint catalog hash must match code", ("repository",))
-        add("repository_commit_identity", repository.get("commit_sha") == repository_commit_sha == repository.get("expected_commit_sha"), "repository commit must match the requested authority", ("repository",))
+        add("repository_commit_identity", repository_identity_valid and observed_commit_sha == expected_reviewed_sha and identity_source in {"git_checkout", "build_metadata", "verified_ci"} and resolver_version == REPOSITORY_IDENTITY_RESOLVER_VERSION, "resolved repository commit must match the independently reviewed SHA", ("repository",))
         add("implementation_hash", repository.get("implementation_hash") == implementation_hash == configuration.provider_implementation_hash, "provider implementation hash must match", ("repository",))
         add("clean_migration_catalog", bool(migrations.get("catalog_clean")) and migrations.get("latest_migration") == "0024" and bool(migrations.get("immutable_0001_0023")), "migration 0024 and immutable 0001-0023 history must be collector-verified", ("migration_catalog",))
         add("postgresql_authority", bool(postgresql.get("available")) and bool(postgresql.get("transaction_probe")), "PostgreSQL availability and transaction probes must pass", ("postgresql_probe",))
@@ -225,7 +236,7 @@ class LivePreflightEngine:
             else LivePreflightStatus.PASSED if not blockers else LivePreflightStatus.BLOCKED
         )
         return LivePreflightReport(
-            live_run_id, configuration.configuration_hash, implementation_hash, repository_commit_sha,
+            live_run_id, configuration.configuration_hash, implementation_hash, observed_commit_sha,
             configuration.endpoint_catalog_hash, credential_reference.record_hash, account_snapshot.record_hash,
             now, tuple(checks), blockers, tuple(evidence.warnings), status, purpose=purpose,
         )
@@ -305,7 +316,7 @@ def collect_operational_preflight_evidence(
     reconciliation,
     kill_switch,
     okx_bundle: VerifiedOkxReadObservationBundle,
-    repository_commit_sha: str,
+    expected_repository_commit_sha: str,
     collected_at_utc: datetime,
 ) -> OperationalPreflightEvidence:
     """Collect all operational sources without accepting caller-created payload dictionaries."""
@@ -313,8 +324,26 @@ def collect_operational_preflight_evidence(
         raise OperationalPreflightError("operational preflight requires a complete approved OKX adapter bundle")
     if okx_bundle.live_run_id != live_run_id or okx_bundle.purpose != "preflight":
         raise OperationalPreflightError("OKX preflight bundle run or purpose mismatch")
-    if okx_bundle.account_fingerprint != account_snapshot.account_fingerprint:
-        raise OperationalPreflightError("OKX bundle account fingerprint mismatch")
+    account_config_envelope = okx_bundle.envelope("account_config")
+    if not account_config_envelope.completed or not isinstance(account_config_envelope.normalized_payload, Mapping):
+        raise OperationalPreflightError("account identity requires the exact completed account-config response")
+    account_config = dict(account_config_envelope.normalized_payload)
+    observed_subaccount_fingerprint = okx_bundle.account_fingerprint if account_config.get("is_subaccount") is True else None
+    if (
+        okx_bundle.account_fingerprint != configuration.account_fingerprint
+        or okx_bundle.account_fingerprint != account_snapshot.account_fingerprint
+        or okx_bundle.account_fingerprint != credential_reference.account_fingerprint
+    ):
+        raise OperationalPreflightError("response UID fingerprint does not match configuration, snapshot, and credential authority")
+    if configuration.subaccount_fingerprint != observed_subaccount_fingerprint:
+        raise OperationalPreflightError("configured subaccount identity is not proven by the exact uid/mainUid response")
+    try:
+        expected_repository_commit_sha = validate_git_commit_sha(expected_repository_commit_sha, field_name="expected_repository_commit_sha")
+        runtime_repository_identity = resolve_runtime_repository_identity()
+    except RepositoryIdentityError as exc:
+        raise OperationalPreflightError("runtime repository identity cannot be resolved") from exc
+    if runtime_repository_identity.observed_commit_sha != expected_repository_commit_sha:
+        raise OperationalPreflightError("reviewed repository SHA does not match the executing source/build")
     with connection.cursor() as cursor:
         cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (str(live_run_id),))
         cursor.execute(
@@ -390,13 +419,11 @@ def collect_operational_preflight_evidence(
             normalized_payload_hash=normalized_hash,
         )
 
-    account_config_envelope = okx_bundle.envelope("account_config")
     balance_envelope = okx_bundle.envelope("balances")
     positions_envelope = okx_bundle.envelope("positions")
     orders_envelope = okx_bundle.envelope("pending_orders")
     venue_time_envelope = okx_bundle.envelope("venue_time")
     instrument_envelope = okx_bundle.envelope("instrument_metadata")
-    account_config = dict(account_config_envelope.normalized_payload)
     balances = dict(balance_envelope.normalized_payload)
     positions = tuple(positions_envelope.normalized_payload)
     open_orders = tuple(orders_envelope.normalized_payload)
@@ -491,11 +518,14 @@ def collect_operational_preflight_evidence(
         raise OperationalPreflightError("Phase 7 market row is not final, accepted, and quarantine-clear")
 
     repository_payload = {
-        "commit_sha": repository_commit_sha, "expected_commit_sha": repository_commit_sha,
+        "observed_commit_sha": runtime_repository_identity.observed_commit_sha,
+        "expected_reviewed_sha": expected_repository_commit_sha,
+        "identity_source": runtime_repository_identity.identity_source,
+        "resolver_version": runtime_repository_identity.resolver_version,
         "implementation_hash": configuration.provider_implementation_hash,
     }
     sources = [
-        issued("repository", "repository_commit_collector", repository_commit_sha, repository_payload),
+        issued("repository", "runtime_repository_identity_resolver", runtime_repository_identity.observed_commit_sha, repository_payload),
         migration, postgres, rollback,
         issued("credential_reference", "credential_repository_collector", str(credential_reference.reference_id), {
             "reference_id": str(credential_reference.reference_id), "record_hash": credential_reference.record_hash,
@@ -509,10 +539,16 @@ def collect_operational_preflight_evidence(
     ]
     bundle_identity = str(okx_bundle.bundle_id)
     account_raw = account_config_envelope.canonical_response_hash
+    account_config_public = {
+        "account_exists": True,
+        "account_mode": account_config["account_mode"],
+        "is_subaccount": account_config.get("is_subaccount") is True,
+        "account_type": str(account_config.get("type", "")),
+    }
     sources.extend([
-        issued("account_config", "okx_read_only_adapter", bundle_identity, {"account_exists": True, **account_config}, account_raw, okx_bundle.parser_version),
-        issued("account_fingerprint", "okx_read_only_adapter", bundle_identity, {"observed": account_snapshot.account_fingerprint}, account_raw, okx_bundle.parser_version),
-        issued("subaccount", "okx_read_only_adapter", bundle_identity, {"observed": configuration.subaccount_fingerprint}, account_raw, okx_bundle.parser_version),
+        issued("account_config", "okx_read_only_adapter", bundle_identity, account_config_public, account_raw, okx_bundle.parser_version),
+        issued("account_fingerprint", "okx_read_only_adapter", bundle_identity, {"observed": okx_bundle.account_fingerprint, "derivation": "sha256(canonical_json({provider:okx,account_uid:exact_uid}))[:16]"}, account_raw, okx_bundle.parser_version),
+        issued("subaccount", "okx_read_only_adapter", bundle_identity, {"observed": observed_subaccount_fingerprint, "proven_by": "uid_ne_mainUid" if observed_subaccount_fingerprint is not None else "uid_eq_mainUid"}, account_raw, okx_bundle.parser_version),
         issued("account_mode", "okx_read_only_adapter", bundle_identity, {"account_mode": account_config["account_mode"]}, account_raw, okx_bundle.parser_version),
         issued("margin_borrowing", "okx_read_only_adapter", bundle_identity, {
             "margin_enabled": False, "leverage_enabled": False, "borrowing_enabled": False,

@@ -33,6 +33,7 @@ from secure_eval_wrapper.live.collector_evidence import QueryDisposition, Verifi
 from secure_eval_wrapper.live.durable_repository import DurablePostgresLiveRepository
 from secure_eval_wrapper.live.endpoints import EndpointClass, LiveOperation, build_request_path, classify_exact, endpoint_catalog_hash
 from secure_eval_wrapper.live.gates import evaluate_live_write_authority
+from secure_eval_wrapper.live.identity import derive_okx_account_fingerprint, resolve_runtime_repository_identity
 from secure_eval_wrapper.live.kill_switch import arm_kill_switch, reset_kill_switch, trigger_kill_switch
 from secure_eval_wrapper.live.manifests import create_live_manifest, validate_live_manifest
 from secure_eval_wrapper.live.models import LiveAccountSnapshot, LiveKillState, LiveObservationBundle, LiveOrderIntent, LivePreflightStatus, LiveRecoveryOutcome, LiveReconciliationStatus, live_uuid
@@ -47,7 +48,10 @@ from secure_eval_wrapper.paper.models import PaperMarketDataEvidence
 
 T0 = datetime(2026, 7, 13, 3, 0, tzinfo=timezone.utc)
 H = sha256_payload("phase8-repair-test")
-COMMIT = "e60986de598f6b0a397473cc2ff4c1993c813c68"
+OKX_UID = "redacted-account"
+ACCOUNT_FINGERPRINT = derive_okx_account_fingerprint(OKX_UID)
+RUNTIME_IDENTITY = resolve_runtime_repository_identity()
+COMMIT = RUNTIME_IDENTITY.observed_commit_sha
 _PREFLIGHT_BUNDLES = {}
 _RECONCILIATION_DETAILS = {}
 _METADATA_SOURCES = {}
@@ -57,8 +61,10 @@ _MARKET_SOURCES = {}
 class ExactOkxTransport:
     is_fake = True
 
-    def __init__(self, *, at=T0, overrides=None):
+    def __init__(self, *, at=T0, uid=OKX_UID, main_uid=None, overrides=None):
         self.at = at
+        self.uid = uid
+        self.main_uid = uid if main_uid is None else main_uid
         self.overrides = dict(overrides or {})
 
     def execute(self, *, method, url, headers, body):
@@ -67,7 +73,7 @@ class ExactOkxTransport:
         ts = str(int(self.at.timestamp() * 1000))
         responses = {
             "/api/v5/account/config": {"code": "0", "data": [{
-                "uid": "redacted-account", "acctLv": "1", "posMode": "long_short_mode",
+                "uid": self.uid, "mainUid": self.main_uid, "acctLv": "1", "posMode": "long_short_mode",
                 "autoLoan": "false", "enableSpotBorrow": "false",
             }]},
             "/api/v5/account/balance": {"code": "0", "data": [{
@@ -96,15 +102,26 @@ class ExactOkxTransport:
         return value
 
 
-def exact_okx_bundle(run, purpose, *, at=T0, account_fingerprint="0000000000000000", client_order_id=None, venue_sequence=1, overrides=None):
+def exact_okx_bundle(
+    run, purpose, *, at=T0, uid=OKX_UID, main_uid=None,
+    expected_account_fingerprint=None, expected_subaccount_fingerprint=None,
+    client_order_id=None, venue_sequence=1, overrides=None,
+):
+    expected_account_fingerprint = (
+        derive_okx_account_fingerprint(uid)
+        if expected_account_fingerprint is None
+        else expected_account_fingerprint
+    )
     adapter = OkxProductionSpotAdapter(
-        transport=ExactOkxTransport(at=at, overrides=overrides),
+        transport=ExactOkxTransport(at=at, uid=uid, main_uid=main_uid, overrides=overrides),
         credential_material=LiveCredentialMaterial("placeholder-key", "placeholder-secret", "placeholder-passphrase"),
         clock=lambda: at,
     )
     return adapter.collect_read_observation_bundle(
         live_run_id=run, purpose=purpose, instrument="BTC-USDT",
-        account_fingerprint=account_fingerprint, client_order_id=client_order_id,
+        expected_account_fingerprint=expected_account_fingerprint,
+        expected_subaccount_fingerprint=expected_subaccount_fingerprint,
+        client_order_id=client_order_id,
         venue_sequence=venue_sequence,
     )
 
@@ -114,11 +131,11 @@ def identity():
     return SeriesIdentity("okx", "okx", "BTC-USDT", "BTC-USDT", InstrumentType.SPOT, "1m", "USDT")
 
 
-def config():
-    return phase8a_dry_run_configuration(endpoint_catalog_hash=endpoint_catalog_hash(), provider_implementation_hash=OkxProductionSpotAdapter.provider_implementation_hash)
+def config(*, fingerprint=ACCOUNT_FINGERPRINT):
+    return phase8a_dry_run_configuration(account_fingerprint=fingerprint, endpoint_catalog_hash=endpoint_catalog_hash(), provider_implementation_hash=OkxProductionSpotAdapter.provider_implementation_hash)
 
 
-def account(run, *, at=T0, fingerprint="0000000000000000"):
+def account(run, *, at=T0, fingerprint=ACCOUNT_FINGERPRINT):
     balances = {
         "USDT": {"total": Decimal("10000"), "available": Decimal("9000"), "reserved": Decimal("1000")},
         "BTC": {"total": Decimal("10"), "available": Decimal("10"), "reserved": Decimal("0")},
@@ -126,8 +143,8 @@ def account(run, *, at=T0, fingerprint="0000000000000000"):
     return LiveAccountSnapshot(run, fingerprint, at, at, balances, {}, 0, Decimal("10000"), Decimal("9000"), Decimal("1000"), "spot_cash")
 
 
-def credential(*, at=T0, permissions=("read", "spot_trade")):
-    return InjectedLocalCredentialProvider("placeholder-key", "placeholder-secret", "placeholder-passphrase").reference(verified_at_utc=at, permissions=permissions)
+def credential(*, at=T0, permissions=("read", "spot_trade"), fingerprint=ACCOUNT_FINGERPRINT):
+    return InjectedLocalCredentialProvider("placeholder-key", "placeholder-secret", "placeholder-passphrase", expected_account_fingerprint=fingerprint).reference(verified_at_utc=at, permissions=permissions)
 
 
 def market_evidence(*, at=T0, price=Decimal("100")):
@@ -137,7 +154,7 @@ def market_evidence(*, at=T0, price=Decimal("100")):
 
 def typed_reconciliation(run, snap, *, at=T0):
     local = LiveLocalProjection(run, snap.account_fingerprint, (), (), dict(snap.balances), dict(snap.positions), 1, at, (snap.snapshot_id,))
-    bundle = exact_okx_bundle(run, "reconciliation", at=at, account_fingerprint=snap.account_fingerprint)
+    bundle = exact_okx_bundle(run, "reconciliation", at=at, expected_account_fingerprint=snap.account_fingerprint)
     reconciliation, exact_input = reconcile_live(
         local_projection=local, okx_bundle=bundle, evaluated_at_utc=at,
         freshness_seconds=30, maximum_clock_skew_seconds=5,
@@ -148,7 +165,7 @@ def typed_reconciliation(run, snap, *, at=T0):
 
 def operational_evidence(run, cfg, snap, cred, market, reconciliation, kill, *, at=T0, permission_override=None):
     permissions = tuple(cred.permission_summary if permission_override is None else permission_override)
-    bundle = exact_okx_bundle(run, "preflight", at=at, account_fingerprint=snap.account_fingerprint)
+    bundle = exact_okx_bundle(run, "preflight", at=at, expected_account_fingerprint=snap.account_fingerprint)
     _PREFLIGHT_BUNDLES[run] = bundle
     metadata = dict(bundle.envelope("instrument_metadata").normalized_payload[0])
     raw_id = str(market.source_row_id)
@@ -163,16 +180,18 @@ def operational_evidence(run, cfg, snap, cred, market, reconciliation, kill, *, 
         for migration_id, digest in observed_hashes.items()
         if migration_id[:4] <= "0023"
     }
+    account_config = dict(bundle.envelope("account_config").normalized_payload)
+    observed_subaccount_fingerprint = bundle.account_fingerprint if account_config.get("is_subaccount") is True else None
     payloads = {
-        "repository": {"commit_sha": COMMIT, "expected_commit_sha": COMMIT, "implementation_hash": cfg.provider_implementation_hash},
+        "repository": {"observed_commit_sha": COMMIT, "expected_reviewed_sha": COMMIT, "identity_source": RUNTIME_IDENTITY.identity_source, "resolver_version": RUNTIME_IDENTITY.resolver_version, "implementation_hash": cfg.provider_implementation_hash},
         "migration_catalog": {"catalog_clean": True, "latest_migration": "0024", "immutable_0001_0023": True, "expected_hashes_0001_0023": expected_hashes, "observed_hashes": observed_hashes},
         "postgresql_probe": {"available": True, "transaction_probe": True, "fake_transport": True},
         "audit_rollback_probe": {"write_succeeded": True, "rollback_verified": True},
         "credential_reference": {"reference_id": str(cred.reference_id), "record_hash": cred.record_hash, "credential_material_present": False},
         "credential_permissions": {"permissions": permissions, "credential_record_hash": cred.record_hash},
-        "account_config": {"account_exists": True, **dict(bundle.envelope("account_config").normalized_payload)},
-        "account_fingerprint": {"observed": snap.account_fingerprint},
-        "subaccount": {"observed": cfg.subaccount_fingerprint},
+        "account_config": {"account_exists": True, "account_mode": account_config["account_mode"], "is_subaccount": account_config.get("is_subaccount") is True, "account_type": str(account_config.get("type", ""))},
+        "account_fingerprint": {"observed": bundle.account_fingerprint, "derivation": "sha256(canonical_json({provider:okx,account_uid:exact_uid}))[:16]"},
+        "subaccount": {"observed": observed_subaccount_fingerprint, "proven_by": "uid_ne_mainUid" if observed_subaccount_fingerprint is not None else "uid_eq_mainUid"},
         "account_mode": {"account_mode": "spot_cash"},
         "margin_borrowing": {"margin_enabled": False, "leverage_enabled": False, "borrowing_enabled": False},
         "balances": {"complete": True, "snapshot_hash": snap.record_hash},
@@ -207,6 +226,7 @@ def operational_evidence(run, cfg, snap, cred, market, reconciliation, kill, *, 
         envelope = None if endpoint_kind is None else bundle.envelope(endpoint_kind)
         raw_hash = envelope.canonical_response_hash if envelope is not None else sha256_payload({"kind": kind, "payload": payloads[kind]})
         collector_kind = {
+            "repository": "runtime_repository_identity_resolver",
             "migration_catalog": "repository_migration_catalog",
             "postgresql_probe": "postgresql_transaction_probe",
             "audit_rollback_probe": "postgresql_rollback_probe",
@@ -216,7 +236,7 @@ def operational_evidence(run, cfg, snap, cred, market, reconciliation, kill, *, 
             collector_kind=collector_kind, collector_version="phase8a-0024-v1",
             parser_version=None if envelope is None else bundle.parser_version,
             source_system_identity="okx-production-read" if envelope is not None else "test-postgresql-authority",
-            source_record_identity=str(bundle.bundle_id) if envelope is not None else f"{kind}:{raw_hash}",
+            source_record_identity=str(bundle.bundle_id) if envelope is not None else (COMMIT if kind == "repository" else f"{kind}:{raw_hash}"),
             raw_response_hash=raw_hash, normalized_payload_hash=sha256_payload(payloads[kind]),
         )
         sources.append(source)
@@ -231,12 +251,12 @@ def passed_authority(*, run=None, at=T0, permissions=("read", "spot_trade")):
     run = run or uuid4(); cfg = config(); snap = account(run, at=at); cred = credential(at=at, permissions=permissions); market = market_evidence(at=at)
     reconciliation = typed_reconciliation(run, snap, at=at); kill = arm_kill_switch(live_run_id=run, at_utc=at)
     evidence = operational_evidence(run, cfg, snap, cred, market, reconciliation, kill, at=at)
-    report = LivePreflightEngine().evaluate(live_run_id=run, configuration=cfg, account_snapshot=snap, credential_reference=cred, evidence=evidence, evaluated_at_utc=at, implementation_hash=cfg.provider_implementation_hash, repository_commit_sha=COMMIT)
-    preview = manifest_preview_hash(live_run_id=run, configuration=cfg, credential_reference_hash=cred.record_hash, preflight_report_id=report.report_id, account_snapshot_hash=snap.record_hash, repository_commit_sha=COMMIT)
+    report = LivePreflightEngine().evaluate(live_run_id=run, configuration=cfg, account_snapshot=snap, credential_reference=cred, evidence=evidence, evaluated_at_utc=at, implementation_hash=cfg.provider_implementation_hash)
+    preview = manifest_preview_hash(live_run_id=run, configuration=cfg, credential_reference_hash=cred.record_hash, preflight_report_id=report.report_id, account_snapshot_hash=snap.record_hash, repository_commit_sha=report.repository_commit_sha)
     expires = at + timedelta(seconds=300)
-    challenge = confirmation_challenge_hash(live_run_id=run, configuration=cfg, account_fingerprint=snap.account_fingerprint, manifest_hash=preview, repository_commit_sha=COMMIT, nonce="nonce-123", approving_actor="local-operator", created_at_utc=at, expires_at_utc=expires, maximum_total_approved_notional=Decimal("5000"))
-    approval = LiveApprovalController().create(report=report, configuration=cfg, account_snapshot=snap, manifest_hash=preview, repository_commit_sha=COMMIT, created_at_utc=at, ttl_seconds=300, nonce="nonce-123", approving_actor="local-operator", maximum_total_approved_notional=Decimal("5000"), exact_confirmation_challenge_hash=challenge)
-    manifest = create_live_manifest(configuration=cfg, report=report, approval=approval, account_snapshot=snap, credential_reference=cred, repository_commit_sha=COMMIT, at_utc=at)
+    challenge = confirmation_challenge_hash(live_run_id=run, configuration=cfg, account_fingerprint=snap.account_fingerprint, manifest_hash=preview, repository_commit_sha=report.repository_commit_sha, nonce="nonce-123", approving_actor="local-operator", created_at_utc=at, expires_at_utc=expires, maximum_total_approved_notional=Decimal("5000"))
+    approval = LiveApprovalController().create(report=report, configuration=cfg, account_snapshot=snap, manifest_hash=preview, created_at_utc=at, ttl_seconds=300, nonce="nonce-123", approving_actor="local-operator", maximum_total_approved_notional=Decimal("5000"), exact_confirmation_challenge_hash=challenge)
+    manifest = create_live_manifest(configuration=cfg, report=report, approval=approval, account_snapshot=snap, credential_reference=cred, at_utc=at)
     return cfg, snap, cred, report, approval, manifest, kill, evidence, market, reconciliation
 
 
@@ -266,14 +286,14 @@ class EvidenceAndAuthorityTests(unittest.TestCase):
 
     def test_all_true_boolean_fixture_never_passes(self):
         run = uuid4(); cfg = config(); snap = account(run); cred = credential(); fixture = FixtureOnlyPreflightEvidence(run, {name: True for name in SOURCE_KINDS})
-        with self.assertRaises(OperationalPreflightError): LivePreflightEngine().evaluate(live_run_id=run, configuration=cfg, account_snapshot=snap, credential_reference=cred, evidence=fixture, evaluated_at_utc=T0, implementation_hash=cfg.provider_implementation_hash, repository_commit_sha=COMMIT)
-        report = LivePreflightEngine().evaluate(live_run_id=run, configuration=cfg, account_snapshot=snap, credential_reference=cred, evidence=fixture, evaluated_at_utc=T0, implementation_hash=cfg.provider_implementation_hash, repository_commit_sha=COMMIT, test_mode=True)
+        with self.assertRaises(OperationalPreflightError): LivePreflightEngine().evaluate(live_run_id=run, configuration=cfg, account_snapshot=snap, credential_reference=cred, evidence=fixture, evaluated_at_utc=T0, implementation_hash=cfg.provider_implementation_hash)
+        report = LivePreflightEngine().evaluate(live_run_id=run, configuration=cfg, account_snapshot=snap, credential_reference=cred, evidence=fixture, evaluated_at_utc=T0, implementation_hash=cfg.provider_implementation_hash, test_mode=True)
         self.assertIs(report.status, LivePreflightStatus.BLOCKED)
 
     def test_actual_unsafe_credential_blocks_even_safe_source_claim(self):
         run = uuid4(); cfg = config(); snap = account(run); cred = credential(permissions=("read", "withdraw")); market = market_evidence(); reconciliation = typed_reconciliation(run, snap); kill = arm_kill_switch(live_run_id=run, at_utc=T0)
         evidence = operational_evidence(run, cfg, snap, cred, market, reconciliation, kill, permission_override=("read", "spot_trade"))
-        report = LivePreflightEngine().evaluate(live_run_id=run, configuration=cfg, account_snapshot=snap, credential_reference=cred, evidence=evidence, evaluated_at_utc=T0, implementation_hash=cfg.provider_implementation_hash, repository_commit_sha=COMMIT)
+        report = LivePreflightEngine().evaluate(live_run_id=run, configuration=cfg, account_snapshot=snap, credential_reference=cred, evidence=evidence, evaluated_at_utc=T0, implementation_hash=cfg.provider_implementation_hash)
         self.assertIn("credential_permissions", report.blockers)
 
     def test_direct_start_bundle_binding_attack_is_rejected_before_sql(self):
@@ -352,7 +372,7 @@ class OkxAndBoundaryTests(unittest.TestCase):
         account_payload = {
             "code": "0",
             "data": [{
-                "uid": "redacted-account", "acctLv": "1", "posMode": "long_short_mode",
+                "uid": OKX_UID, "mainUid": OKX_UID, "acctLv": "1", "posMode": "long_short_mode",
                 "autoLoan": "false", "enableSpotBorrow": "false",
             }],
         }
@@ -446,7 +466,7 @@ class OkxAndBoundaryTests(unittest.TestCase):
         self.assertFalse(authority.allowed); self.assertTrue(authority.ci_prohibited)
 
     def test_signature_is_deterministic_without_exposing_material(self):
-        provider = InjectedLocalCredentialProvider("placeholder-key", "placeholder-secret", "placeholder-passphrase")
+        provider = InjectedLocalCredentialProvider("placeholder-key", "placeholder-secret", "placeholder-passphrase", expected_account_fingerprint=ACCOUNT_FINGERPRINT)
         gates = {"read_only_preflight": True, "provider_selected": True, "production_environment": True, "endpoint_catalog_valid": True, "configuration_valid": True, "production_writes_disabled": True, "kill_switch_armed": True, "postgresql_available": True}
         with patch.dict(os.environ, {"CI": "false", "GITHUB_ACTIONS": "false"}, clear=False): material = provider.load(gates=gates)
         headers = signed_headers(credential_material=material, method="GET", request_path="/api/v5/account/balance", timestamp="2026-07-13T03:00:00.000Z")
@@ -511,11 +531,11 @@ class ExactOperationalEvidenceRegressionTests(unittest.TestCase):
         run = uuid4()
         bundle = exact_okx_bundle(
             run, "recovery", client_order_id="client1",
-            account_fingerprint="acct",
+            expected_account_fingerprint=ACCOUNT_FINGERPRINT,
             overrides={"/api/v5/trade/order": TimeoutError("timeout")},
         )
         observed = normalize_verified_recovery_observation(
-            bundle, expected_intent=self.expected(), account_fingerprint="acct",
+            bundle, expected_intent=self.expected(), account_fingerprint=ACCOUNT_FINGERPRINT,
         )
         self.assertIs(observed.outcome, LiveRecoveryOutcome.INCONCLUSIVE)
         self.assertFalse(bundle.complete)
@@ -524,28 +544,28 @@ class ExactOperationalEvidenceRegressionTests(unittest.TestCase):
         run = uuid4()
         bundle = exact_okx_bundle(
             run, "recovery", client_order_id="client1",
-            account_fingerprint="acct",
+            expected_account_fingerprint=ACCOUNT_FINGERPRINT,
             overrides={"/api/v5/trade/order": {"code": "51001", "msg": "not found", "data": []}},
         )
         observed = normalize_verified_recovery_observation(
-            bundle, expected_intent=self.expected(), account_fingerprint="acct",
+            bundle, expected_intent=self.expected(), account_fingerprint=ACCOUNT_FINGERPRINT,
         )
         self.assertIs(observed.outcome, LiveRecoveryOutcome.PROVIDER_REJECTED)
         self.assertEqual(bundle.envelope("order_details").disposition, QueryDisposition.EXPLICIT_PROVIDER_REJECTION)
 
     def test_complete_empty_recovery_is_confirmed_absent(self):
         bundle = exact_okx_bundle(
-            uuid4(), "recovery", client_order_id="client1", account_fingerprint="acct",
+            uuid4(), "recovery", client_order_id="client1", expected_account_fingerprint=ACCOUNT_FINGERPRINT,
         )
         observed = normalize_verified_recovery_observation(
-            bundle, expected_intent=self.expected(), account_fingerprint="acct",
+            bundle, expected_intent=self.expected(), account_fingerprint=ACCOUNT_FINGERPRINT,
         )
         self.assertTrue(bundle.complete)
         self.assertIs(observed.outcome, LiveRecoveryOutcome.CONFIRMED_ABSENT)
 
     def test_response_payloads_are_defensively_frozen(self):
         response = {"code": "0", "data": [{
-            "uid": "redacted-account", "acctLv": "1", "posMode": "long_short_mode",
+            "uid": OKX_UID, "mainUid": OKX_UID, "acctLv": "1", "posMode": "long_short_mode",
             "autoLoan": "false", "enableSpotBorrow": "false",
         }]}
         bundle = exact_okx_bundle(

@@ -1,7 +1,6 @@
 """Local-only credential loading and redaction for guarded live preflight."""
 from __future__ import annotations
 
-import hashlib
 import os
 import re
 from abc import ABC, abstractmethod
@@ -9,6 +8,7 @@ from collections.abc import Mapping
 from datetime import datetime
 
 from .gates import common_ci_indicators
+from .identity import validate_okx_account_fingerprint
 from .models import LiveCredentialReference
 
 _SECRET_KEY = re.compile(r"(api.?key|secret|passphrase|signature|authorization|cookie|token|ok-access-(?:key|sign|passphrase))", re.I)
@@ -78,8 +78,8 @@ def _validate_load_gates(gates: Mapping[str, bool]) -> None:
 
 
 class EnvironmentLiveCredentialProvider(LiveCredentialProvider):
-    def __init__(self, *, alias: str = "OKX_LIVE_API_KEY", key_variable: str = "OKX_LIVE_API_KEY", secret_variable: str = "OKX_LIVE_SECRET_KEY", passphrase_variable: str = "OKX_LIVE_PASSPHRASE", account_fingerprint: str = "0000000000000000") -> None:
-        self.alias = alias; self.key_variable = key_variable; self.secret_variable = secret_variable; self.passphrase_variable = passphrase_variable; self.account_fingerprint = account_fingerprint; self.load_count = 0
+    def __init__(self, *, expected_account_fingerprint: str, alias: str = "OKX_LIVE_API_KEY", key_variable: str = "OKX_LIVE_API_KEY", secret_variable: str = "OKX_LIVE_SECRET_KEY", passphrase_variable: str = "OKX_LIVE_PASSPHRASE") -> None:
+        self.alias = alias; self.key_variable = key_variable; self.secret_variable = secret_variable; self.passphrase_variable = passphrase_variable; self.account_fingerprint = validate_okx_account_fingerprint(expected_account_fingerprint, field_name="expected_account_fingerprint"); self.load_count = 0
 
     def reference(self, *, verified_at_utc: datetime | None = None, permissions: tuple[str, ...] = ()) -> LiveCredentialReference:
         return LiveCredentialReference("okx", self.alias, "environment", self.account_fingerprint, False, verified_at_utc, permissions)
@@ -91,12 +91,11 @@ class EnvironmentLiveCredentialProvider(LiveCredentialProvider):
 
 class InjectedLocalCredentialProvider(LiveCredentialProvider):
     """Explicit local injection boundary used by offline tests and operator integrations."""
-    def __init__(self, key: str, secret: str, passphrase: str, *, alias: str = "injected-local", account_fingerprint: str = "0000000000000000") -> None:
-        self._values = (key, secret, passphrase); self.alias = alias; self.account_fingerprint = account_fingerprint; self.load_count = 0
+    def __init__(self, key: str, secret: str, passphrase: str, *, expected_account_fingerprint: str, alias: str = "injected-local") -> None:
+        self._values = (key, secret, passphrase); self.alias = alias; self.account_fingerprint = validate_okx_account_fingerprint(expected_account_fingerprint, field_name="expected_account_fingerprint"); self.load_count = 0
 
     def reference(self, *, verified_at_utc: datetime | None = None, permissions: tuple[str, ...] = ()) -> LiveCredentialReference:
-        public_fingerprint = hashlib.sha256(self._values[0].encode("utf-8")).hexdigest()[:16]
-        return LiveCredentialReference("okx", self.alias, "injected_local", self.account_fingerprint or public_fingerprint, False, verified_at_utc, permissions)
+        return LiveCredentialReference("okx", self.alias, "injected_local", self.account_fingerprint, False, verified_at_utc, permissions)
 
     def load(self, *, gates: Mapping[str, bool]) -> LiveCredentialMaterial:
         _validate_load_gates(gates); self.load_count += 1; return LiveCredentialMaterial(*self._values)

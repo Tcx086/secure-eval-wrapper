@@ -97,6 +97,8 @@ def reconcile_live(
         raise PermissionError("fixture/imported observations cannot create operational reconciliation")
     if local_projection.live_run_id != okx_bundle.live_run_id:
         raise ValueError("reconciliation authorities belong to different runs")
+    if local_projection.account_fingerprint != okx_bundle.account_fingerprint:
+        raise PermissionError("cross-account reconciliation evidence is forbidden")
     now = require_utc_datetime(evaluated_at_utc, field_name="evaluated_at_utc")
     if freshness_seconds <= 0 or maximum_clock_skew_seconds <= 0:
         raise ValueError("reconciliation freshness and clock-skew thresholds must be positive")

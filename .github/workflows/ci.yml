@@ -49,6 +49,10 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e "./open-core[test]"
+      - name: Build and verify immutable repository identity metadata
+        run: |
+          python -m pip wheel --no-cache-dir --no-deps --no-build-isolation ./open-core --wheel-dir var/tmp/build-identity-wheel
+          python open-core/scripts/verify_built_repository_identity.py var/tmp/build-identity-wheel
       - run: python -c "import secure_eval_wrapper; import secure_eval_wrapper.execution; import secure_eval_wrapper.backtesting; import secure_eval_wrapper.monitoring; import secure_eval_wrapper.fix; import secure_eval_wrapper.paper; import secure_eval_wrapper.live"
       - name: Dedicated Phase 5 second-audit regression suite
         run: python -m unittest discover -s open-core/tests -p "test_phase5_second_audit.py" -v
@@ -74,8 +78,8 @@ jobs:
         run: python -m unittest discover -s open-core/tests -p "test_phase7_internal_accounting_reconciliation_kill.py" -v
       - name: Phase 7 official-demo fake transport, credential redaction, CLI, monitoring, and boundaries
         run: python -m unittest discover -s open-core/tests -p "test_phase7_official_sandbox_adapter.py" -v && python -m unittest discover -s open-core/tests -p "test_phase7_cli_monitoring_boundaries.py" -v
-      - name: Phase 8A guarded-live gates, dry-run, recovery, risk, endpoint, credential, and CI prohibition
-        run: python -m unittest discover -s open-core/tests -p "test_phase8_guarded_live.py" -v
+      - name: Phase 8A account/repository identity, guarded-live gates, dry-run, recovery, risk, endpoint, credential, and CI prohibition
+        run: python -m unittest discover -s open-core/tests -p "test_phase8_identity.py" -v && python -m unittest discover -s open-core/tests -p "test_phase8_guarded_live.py" -v
       - name: Compile package and scripts
         run: python -m compileall -q open-core/src open-core/scripts
       - run: secure-eval-backtest
@@ -208,4 +212,4 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install -e "./open-core[test]"
       - name: No production writes, credentials, arbitrary endpoints, account powers, flattening, FIX, or fixture preflight authority
-        run: python open-core/src/secure_eval_wrapper/validation.py --skip-tests && python -m unittest discover -s open-core/tests -p "test_phase8_guarded_live.py" -v
+        run: python open-core/src/secure_eval_wrapper/validation.py --skip-tests && python -m unittest discover -s open-core/tests -p "test_phase8_identity.py" -v && python -m unittest discover -s open-core/tests -p "test_phase8_guarded_live.py" -v

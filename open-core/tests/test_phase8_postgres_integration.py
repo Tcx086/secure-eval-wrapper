@@ -18,7 +18,7 @@ from secure_eval_wrapper.data_collection.hashing import sha256_payload
 from secure_eval_wrapper.live.approval import LiveApprovalController, confirmation_challenge_hash, manifest_preview_hash
 from secure_eval_wrapper.live.authorities import FixtureOnlyPreflightEvidence
 from secure_eval_wrapper.live.broker import GuardedLiveBroker
-from secure_eval_wrapper.live.durable_repository import DurablePostgresLiveRepository, LiveClaimError, LiveConflictError
+from secure_eval_wrapper.live.durable_repository import DurablePostgresLiveRepository, LiveClaimError
 from secure_eval_wrapper.live.models import LivePreflightPurpose, LivePreflightStatus, LiveRecoveryOutcome
 from secure_eval_wrapper.live.preflight import LivePreflightEngine, collect_operational_preflight_evidence
 from secure_eval_wrapper.live.reconciliation import build_and_reconcile
@@ -145,14 +145,14 @@ class Phase8PostgresTests(unittest.TestCase):
     def continuation_authority(self, ctx, *, purpose, at):
         bundle = exact_okx_bundle(
             ctx["manifest"].live_run_id, "preflight", at=T0,
-            account_fingerprint=ctx["snap"].account_fingerprint,
+            expected_account_fingerprint=ctx["snap"].account_fingerprint,
         )
         evidence = collect_operational_preflight_evidence(
             connection=self.connection, live_run_id=ctx["manifest"].live_run_id,
             configuration=ctx["cfg"], credential_reference=ctx["cred"],
             account_snapshot=ctx["snap"], market_evidence=ctx["market"],
             reconciliation=None, kill_switch=None, okx_bundle=bundle,
-            repository_commit_sha=COMMIT, collected_at_utc=at,
+            expected_repository_commit_sha=COMMIT, collected_at_utc=at,
         )
         self.connection.commit()
         report = LivePreflightEngine().evaluate(
@@ -160,27 +160,31 @@ class Phase8PostgresTests(unittest.TestCase):
             account_snapshot=ctx["snap"], credential_reference=ctx["cred"],
             evidence=evidence, evaluated_at_utc=at,
             implementation_hash=ctx["cfg"].provider_implementation_hash,
-            repository_commit_sha=COMMIT, purpose=purpose,
+            purpose=purpose,
         )
         preview = manifest_preview_hash(
             live_run_id=ctx["manifest"].live_run_id, configuration=ctx["cfg"],
             credential_reference_hash=ctx["cred"].record_hash,
             preflight_report_id=report.report_id,
             account_snapshot_hash=ctx["snap"].record_hash,
-            repository_commit_sha=COMMIT,
+            repository_commit_sha=report.repository_commit_sha,
         )
         nonce = f"{purpose.value}-{at.isoformat()}"
         expires = at + timedelta(seconds=300)
         challenge = confirmation_challenge_hash(
             live_run_id=ctx["manifest"].live_run_id, configuration=ctx["cfg"],
             account_fingerprint=ctx["snap"].account_fingerprint,
-            manifest_hash=preview, repository_commit_sha=COMMIT, nonce=nonce,
+            manifest_hash=preview, repository_commit_sha=report.repository_commit_sha, nonce=nonce,
             approving_actor="local-operator", created_at_utc=at,
             expires_at_utc=expires, maximum_total_approved_notional=Decimal("5000"),
         )
+        self.assertFalse(
+            report.blockers,
+            (report.blockers, next(source.payload for source in evidence.sources if source.source_kind == "kill_switch")),
+        )
         approval = LiveApprovalController().create(
             report=report, configuration=ctx["cfg"], account_snapshot=ctx["snap"],
-            manifest_hash=preview, repository_commit_sha=COMMIT, created_at_utc=at,
+            manifest_hash=preview, created_at_utc=at,
             ttl_seconds=300, nonce=nonce, approving_actor="local-operator",
             maximum_total_approved_notional=Decimal("5000"),
             exact_confirmation_challenge_hash=challenge,
@@ -200,6 +204,23 @@ class Phase8PostgresTests(unittest.TestCase):
             cursor.execute("SELECT sha256 FROM audit.schema_migrations WHERE migration_id='0024_phase8a_evidence_reconciliation_metadata_integrity'"); catalog_hash = cursor.fetchone()["sha256"]
         self.assertEqual(names, set(TABLES)); migration = Path(__file__).resolve().parents[1] / "db" / "migrations" / "0024_phase8a_evidence_reconciliation_metadata_integrity.sql"
         self.assertEqual(catalog_hash, hashlib.sha256(migration.read_bytes().replace(b"\r\n", b"\n")).hexdigest())
+
+    def test_identity_sources_persist_observed_expected_source_and_version_without_public_uid(self):
+        ctx = self.context(); self.start(ctx)
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT source_payload_jsonb FROM execution.live_preflight_sources WHERE live_run_id=%s AND source_kind='repository'", (ctx["manifest"].live_run_id,))
+            repository_payload = cursor.fetchone()["source_payload_jsonb"]
+            cursor.execute("SELECT source_payload_jsonb FROM execution.live_preflight_sources WHERE live_run_id=%s AND source_kind='account_config'", (ctx["manifest"].live_run_id,))
+            account_payload = cursor.fetchone()["source_payload_jsonb"]
+            cursor.execute("SELECT raw_response_jsonb FROM execution.live_okx_response_envelopes e JOIN execution.live_okx_response_bundles b ON b.response_bundle_id=e.response_bundle_id WHERE b.live_run_id=%s AND e.endpoint_kind='account_config' LIMIT 1", (ctx["manifest"].live_run_id,))
+            raw_payload = cursor.fetchone()["raw_response_jsonb"]
+        self.assertEqual(repository_payload["observed_commit_sha"], COMMIT)
+        self.assertEqual(repository_payload["expected_reviewed_sha"], COMMIT)
+        self.assertIn(repository_payload["identity_source"], {"git_checkout", "build_metadata", "verified_ci"})
+        self.assertEqual(repository_payload["resolver_version"], "repository-identity-v1")
+        self.assertNotIn("uid", account_payload)
+        self.assertNotIn("mainUid", account_payload)
+        self.assertEqual(raw_payload["data"][0]["uid"], "redacted-account")
 
     def test_start_bundle_rolls_back_each_child_and_replays_exactly(self):
         for failure in ("configuration", "credential", "account", "preflight", "approval", "manifest", "kill_switch", "risk_state"):
@@ -355,8 +376,9 @@ class Phase8PostgresTests(unittest.TestCase):
         fill_rows = tuple({
             **fill, "ts": fill.get("ts", ts),
         } for fill in fills)
+        account_uid = "changed-account" if extra_account else "redacted-account"
         account_config = {
-            "uid": "changed-account" if extra_account else "redacted-account",
+            "uid": account_uid, "mainUid": account_uid,
             "acctLv": "1", "posMode": "long_short_mode",
             "autoLoan": "false", "enableSpotBorrow": "false",
         }
@@ -364,7 +386,7 @@ class Phase8PostgresTests(unittest.TestCase):
         pending = orders if order_row is not None and order_row["state"] in {"live", "partially_filled"} else []
         return exact_okx_bundle(
             ctx["manifest"].live_run_id, "recovery", at=queried_at,
-            account_fingerprint=ctx["snap"].account_fingerprint,
+            uid=account_uid,
             client_order_id=ctx["intent"].client_order_id, venue_sequence=2,
             overrides={
                 "/api/v5/account/config": {"code": "0", "data": [account_config]},
@@ -392,8 +414,10 @@ class Phase8PostgresTests(unittest.TestCase):
         self.assertIsNone(self.repo.claim_recovery(worker_identity="other", at_utc=T0 + timedelta(seconds=2), outbox_id=outbox))
         bundle = self.observation(ctx)
         observation_id = self.repo.persist_recovery_observation(outbox_id=outbox, claim_token=recovery[1], worker_identity="recovery", okx_bundle=bundle, at_utc=T0 + timedelta(seconds=4))
+        bundles_before = self.count("live_okx_response_bundles")
         conflicting = self.observation(ctx, extra_account={"changed": True})
-        with self.assertRaises(LiveConflictError): self.repo.persist_recovery_observation(outbox_id=outbox, claim_token=recovery[1], worker_identity="recovery", okx_bundle=conflicting, at_utc=T0 + timedelta(seconds=4))
+        with self.assertRaises(LiveClaimError): self.repo.persist_recovery_observation(outbox_id=outbox, claim_token=recovery[1], worker_identity="recovery", okx_bundle=conflicting, at_utc=T0 + timedelta(seconds=4))
+        self.assertEqual(self.count("live_okx_response_bundles"), bundles_before)
         self.assertIsNotNone(observation_id)
 
     def test_direct_sql_economic_manifest_request_and_success_mutations_fail(self):
@@ -819,6 +843,21 @@ print(json.dumps(result, sort_keys=True))
         self.assertEqual(restarted["venue_writes"], 0)
         self.assertFalse(restarted["write_enabled"])
 
+    def test_cross_account_reconciliation_fails_before_bundle_persistence(self):
+        ctx = self.context(); self.start(ctx)
+        bundles_before = self.count("live_okx_response_bundles")
+        cross_account_bundle = exact_okx_bundle(
+            ctx["manifest"].live_run_id, "reconciliation", uid="cross-account-uid",
+            at=T0 + timedelta(seconds=1), venue_sequence=2,
+        )
+        with self.assertRaises(PermissionError):
+            build_and_reconcile(
+                repository=self.repo, live_run_id=ctx["manifest"].live_run_id,
+                okx_bundle=cross_account_bundle, configuration=ctx["cfg"],
+                evaluated_at_utc=T0 + timedelta(seconds=2),
+            )
+        self.assertEqual(self.count("live_okx_response_bundles"), bundles_before)
+
     def test_reconciliation_atomically_updates_risk_and_material_unknown_stops_run(self):
         ctx = self.context()
         self.start(ctx)
@@ -826,7 +865,7 @@ print(json.dumps(result, sort_keys=True))
             repository=self.repo, live_run_id=ctx["manifest"].live_run_id,
             okx_bundle=exact_okx_bundle(
                 ctx["manifest"].live_run_id, "reconciliation", at=T0 + timedelta(seconds=1),
-                account_fingerprint=ctx["snap"].account_fingerprint, venue_sequence=2,
+                expected_account_fingerprint=ctx["snap"].account_fingerprint, venue_sequence=2,
             ),
             configuration=ctx["cfg"], evaluated_at_utc=T0 + timedelta(seconds=2),
         )
@@ -850,7 +889,7 @@ print(json.dumps(result, sort_keys=True))
             repository=self.repo, live_run_id=ctx["manifest"].live_run_id,
             okx_bundle=exact_okx_bundle(
                 ctx["manifest"].live_run_id, "reconciliation", at=T0 + timedelta(seconds=3),
-                account_fingerprint=ctx["snap"].account_fingerprint, venue_sequence=3,
+                expected_account_fingerprint=ctx["snap"].account_fingerprint, venue_sequence=3,
                 overrides={"/api/v5/account/balance": TimeoutError("timeout")},
             ),
             configuration=ctx["cfg"], evaluated_at_utc=T0 + timedelta(seconds=3),

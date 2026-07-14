@@ -8,6 +8,8 @@ from typing import Mapping
 
 from secure_eval_wrapper.data_collection.hashing import sha256_payload
 
+from .identity import validate_okx_account_fingerprint
+
 
 def _text(value: str, name: str) -> str:
     if not isinstance(value, str) or not value.strip():
@@ -75,15 +77,11 @@ class GuardedLiveConfiguration:
         object.__setattr__(self, "environment", _text(self.environment, "environment").lower())
         if (self.provider, self.environment) != ("okx", "production"):
             raise ValueError("Phase 8A supports only OKX production")
-        fingerprint = _text(self.account_fingerprint, "account_fingerprint")
-        if len(fingerprint) > 32 or any(ch not in "0123456789abcdef-" for ch in fingerprint.lower()):
-            raise ValueError("account_fingerprint must be a short public-safe fingerprint")
-        object.__setattr__(self, "account_fingerprint", fingerprint.lower())
+        fingerprint = validate_okx_account_fingerprint(self.account_fingerprint)
+        object.__setattr__(self, "account_fingerprint", fingerprint)
         if self.subaccount_fingerprint is not None:
-            sub = _text(self.subaccount_fingerprint, "subaccount_fingerprint")
-            if len(sub) > 32:
-                raise ValueError("subaccount_fingerprint must be public-safe")
-            object.__setattr__(self, "subaccount_fingerprint", sub.lower())
+            sub = validate_okx_account_fingerprint(self.subaccount_fingerprint, field_name="subaccount_fingerprint")
+            object.__setattr__(self, "subaccount_fingerprint", sub)
         for name, upper in (
             ("allowed_instruments", True),
             ("allowed_instrument_types", False),
@@ -138,10 +136,15 @@ class GuardedLiveConfiguration:
         return MappingProxyType({name: getattr(self, name) for name in names})
 
 
-def phase8a_dry_run_configuration(*, endpoint_catalog_hash: str, provider_implementation_hash: str) -> GuardedLiveConfiguration:
+def phase8a_dry_run_configuration(
+    *,
+    account_fingerprint: str,
+    endpoint_catalog_hash: str,
+    provider_implementation_hash: str,
+) -> GuardedLiveConfiguration:
     d = Decimal
     return GuardedLiveConfiguration(
-        provider="okx", environment="production", account_fingerprint="0000000000000000",
+        provider="okx", environment="production", account_fingerprint=account_fingerprint,
         subaccount_fingerprint=None, allowed_instruments=("BTC-USDT",),
         allowed_instrument_types=("spot",), allowed_settlement_assets=("USDT",),
         base_currency="USDT", allowed_order_types=("limit",), maximum_order_notional=d("1000"),

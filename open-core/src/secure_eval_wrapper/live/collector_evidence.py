@@ -13,6 +13,7 @@ from secure_eval_wrapper.data_collection.hashing import sha256_payload
 from secure_eval_wrapper.data_collection.time_utils import require_utc_datetime
 
 from .models import live_uuid
+from .identity import derive_okx_account_fingerprint, validate_okx_account_fingerprint
 
 
 class ObservationClassification(str, Enum):
@@ -202,6 +203,14 @@ class VerifiedOkxReadObservationBundle:
             raise ValueError("duplicate OKX endpoint envelope")
         if set(by_kind) != set(_PURPOSE_ENDPOINTS[purpose]):
             raise ValueError("OKX bundle does not contain its exact purpose endpoint matrix")
+        account_envelope = by_kind["account_config"]
+        account_payload = account_envelope.normalized_payload
+        if not account_envelope.completed or not isinstance(account_payload, Mapping):
+            raise ValueError("OKX bundle requires a completed account-config identity envelope")
+        derived_account_fingerprint = derive_okx_account_fingerprint(account_payload.get("uid"))
+        validate_okx_account_fingerprint(account_fingerprint)
+        if account_fingerprint != derived_account_fingerprint:
+            raise ValueError("OKX bundle account fingerprint is not derived from its exact response UID")
         classification = ObservationClassification(classification)
         matrix = {
             kind: {

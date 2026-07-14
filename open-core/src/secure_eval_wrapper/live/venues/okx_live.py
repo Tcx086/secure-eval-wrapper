@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from collections.abc import Mapping
 import hmac
 import json
 from datetime import datetime, timezone
@@ -14,6 +15,7 @@ from secure_eval_wrapper.data_collection.hashing import sha256_payload
 from ..endpoints import EndpointClass, LiveOperation, OKX_PRODUCTION_ORIGIN, build_request_path, classify_exact, route_for
 from ..collector_evidence import QueryDisposition, _issue_okx_bundle, _issue_okx_envelope
 from ..gates import common_ci_indicators
+from ..identity import derive_okx_account_fingerprint, validate_okx_account_fingerprint
 from ..venue import GuardedLiveVenue, ProductionWriteSuppressed
 
 
@@ -143,12 +145,26 @@ class OkxProductionSpotAdapter(GuardedLiveVenue):
     def parse_account_config(payload: object) -> dict:
         rows = _data(payload, maximum_rows=1)
         if len(rows) != 1: raise ValueError("OKX account config must contain one row")
-        row = rows[0]; _required(row, ("uid", "acctLv", "posMode", "autoLoan", "enableSpotBorrow"))
+        row = rows[0]; _required(row, ("uid", "mainUid", "acctLv", "posMode", "autoLoan", "enableSpotBorrow"))
+        uid = row["uid"]
+        main_uid = row["mainUid"]
+        if not isinstance(uid, str) or not uid or uid != uid.strip():
+            raise ValueError("OKX account config uid must be an exact non-empty string")
+        if not isinstance(main_uid, str) or not main_uid or main_uid != main_uid.strip():
+            raise ValueError("OKX account config mainUid must be an exact non-empty string")
         borrowing_disabled = all(
             str(row[name]).lower() in {"false", "0"} for name in ("autoLoan", "enableSpotBorrow")
         )
         if str(row["acctLv"]) != "1" or not borrowing_disabled: raise ValueError("OKX account is not Spot cash with borrowing disabled")
-        return {**row, "account_mode": "spot_cash", "response_hash": sha256_payload(payload)}
+        return {
+            **row,
+            "uid": uid,
+            "mainUid": main_uid,
+            "account_fingerprint": derive_okx_account_fingerprint(uid),
+            "is_subaccount": uid != main_uid,
+            "account_mode": "spot_cash",
+            "response_hash": sha256_payload(payload),
+        }
 
     @staticmethod
     def parse_balances(payload: object) -> dict:
@@ -281,7 +297,8 @@ class OkxProductionSpotAdapter(GuardedLiveVenue):
         live_run_id,
         purpose: str,
         instrument: str,
-        account_fingerprint: str,
+        expected_account_fingerprint: str | None = None,
+        expected_subaccount_fingerprint: str | None = None,
         client_order_id: str | None = None,
         venue_sequence: int = 0,
     ):
@@ -341,11 +358,24 @@ class OkxProductionSpotAdapter(GuardedLiveVenue):
             raise ValueError("collector purpose must be preflight, reconciliation, or recovery")
         if purpose == "recovery" and not client_order_id:
             raise ValueError("recovery collection requires the exact client order ID")
-        envelopes = tuple(captures[kind]() for kind in required)
+        account_envelope = captures["account_config"]()
+        if not account_envelope.completed or not isinstance(account_envelope.normalized_payload, Mapping):
+            raise PermissionError("OKX account identity cannot be derived from an incomplete account-config response")
+        account_config = account_envelope.normalized_payload
+        observed_account_fingerprint = derive_okx_account_fingerprint(account_config.get("uid"))
+        if expected_account_fingerprint is not None:
+            validate_okx_account_fingerprint(expected_account_fingerprint, field_name="expected_account_fingerprint")
+            if expected_account_fingerprint != observed_account_fingerprint:
+                raise PermissionError("expected OKX account fingerprint does not match the response UID")
+        if expected_subaccount_fingerprint is not None:
+            validate_okx_account_fingerprint(expected_subaccount_fingerprint, field_name="expected_subaccount_fingerprint")
+            if not account_config.get("is_subaccount") or expected_subaccount_fingerprint != observed_account_fingerprint:
+                raise PermissionError("configured OKX subaccount identity is not proven by uid/mainUid")
+        envelopes = (account_envelope,) + tuple(captures[kind]() for kind in required if kind != "account_config")
         venue = next((item.normalized_payload for item in envelopes if item.endpoint_kind == "venue_time" and item.completed), None)
         observed = venue["venue_time_at_utc"] if venue is not None else max(item.query_completed_at_utc for item in envelopes)
         return _issue_okx_bundle(
-            live_run_id=live_run_id, purpose=purpose, account_fingerprint=account_fingerprint,
+            live_run_id=live_run_id, purpose=purpose, account_fingerprint=observed_account_fingerprint,
             envelopes=envelopes, venue_observed_at_utc=observed, venue_sequence=venue_sequence,
             transport_is_fake=bool(getattr(self.transport, "is_fake", False)),
         )

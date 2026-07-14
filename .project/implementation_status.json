@@ -4,7 +4,7 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-13T19:21:35Z",
+  "updated_at_utc": "2026-07-14T17:13:08Z",
   "current_phase": "phase_8_guarded_live_execution",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
@@ -378,7 +378,8 @@
         "Add five safe socket-free CLIs, guarded-live threat model and operator runbooks, 23 offline tests, 9 PostgreSQL integration tests, and explicit CI coverage",
         "Repair Phase 8A authority integrity with typed evidence-producing preflight, same-run and configuration database bindings, transaction-locked PostgreSQL risk, operational kill freshness, incident-first recovery, and fee-aware Spot reservations",
         "Add append-only migration 0023, real PostgreSQL-backed live CLIs, typed new-process reconstruction, exact OKX read and response validation, authoritative reconciliation, direct-SQL immutability guards, 21 dedicated offline regressions, 25 dedicated PostgreSQL regressions, and clean plus seeded migration verification while keeping production writes unreachable",
-        "Add append-only migration 0024 with collector-sealed operational evidence, exact OKX response-envelope provenance, Phase 7 market lineage, PostgreSQL-authoritative instrument metadata, atomic reconciliation and risk sequencing, distinct kill-reset and run-continue authority, exact recovery classification, and 29 dedicated offline plus 29 dedicated PostgreSQL regressions, clean and seeded migration verification, and immutable 0001-0023 proof while keeping production writes unreachable"
+        "Add append-only migration 0024 with collector-sealed operational evidence, exact OKX response-envelope provenance, Phase 7 market lineage, PostgreSQL-authoritative instrument metadata, atomic reconciliation and risk sequencing, distinct kill-reset and run-continue authority, exact recovery classification, and 29 dedicated offline plus 29 dedicated PostgreSQL regressions, clean and seeded migration verification, and immutable 0001-0023 proof while keeping production writes unreachable",
+        "Repair the final Phase 8A identity blockers with exact-UID-derived OKX account fingerprints, collector-derived runtime repository identity, fail-closed cross-account and forged-SHA rejection before authority persistence, and unchanged migrations 0001 through 0024 while production writes remain unreachable"
       ],
       "todo": [
         "Complete independent Phase 8A security, PostgreSQL concurrency, recovery, and public/private boundary audits",
