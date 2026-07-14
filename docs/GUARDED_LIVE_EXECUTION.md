@@ -130,4 +130,4 @@ Allowed sources are process environment, operating-system credential store, or a
 - The public-safe CLIs do not implicitly load credentials or perform network reads.
 - Authenticated read-only preflight is optional and must be wired by a local operator integration.
 - No withdrawals, transfers, subaccount transfers, borrowing, leverage, margin, derivatives, perpetuals, futures, options, automatic flattening, or production FIX capability exists.
-- Phase 8 remains in progress. Later independent audits and a separate Phase 8B/8C checkpoint are required before any write enablement can be considered.
+- Phase 8A is independently audited and accepted at its final-main checkpoint, while Phase 8 remains in progress. The authenticated read-only Phase 8B proof and later independently audited checkpoints are required before any write enablement can be considered.
