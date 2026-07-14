@@ -71,7 +71,7 @@ class OkxAccountIdentityTests(unittest.TestCase):
 
     def test_account_config_requires_and_returns_exact_uid(self):
         payload = {"code": "0", "data": [{
-            "uid": OKX_UID, "mainUid": OKX_UID, "acctLv": "1",
+            "uid": OKX_UID, "mainUid": OKX_UID, "perm": "read_only", "acctLv": "1",
             "posMode": "long_short_mode", "autoLoan": "false",
             "enableSpotBorrow": "false",
         }]}

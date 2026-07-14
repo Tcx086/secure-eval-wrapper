@@ -59,7 +59,7 @@ class GuardedLiveBroker:
             or str(persisted["record_sha256"]) != self.preflight_report.record_hash
             or str(persisted["status"]) != "passed"
             or str(persisted["purpose"]) not in ("run_start", "run_continue")
-            or str(persisted["authority_generation"]) != "collector_0024"
+            or str(persisted["authority_generation"]) != "collector_0025"
         ):
             raise PermissionError("caller-provided preflight cannot replace the persisted normal report")
         prepared = self.repository.prepare_operational_dry_run(

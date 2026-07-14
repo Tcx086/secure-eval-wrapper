@@ -14,8 +14,12 @@ from .models import LiveCredentialReference
 _SECRET_KEY = re.compile(r"(api.?key|secret|passphrase|signature|authorization|cookie|token|ok-access-(?:key|sign|passphrase))", re.I)
 _SECRET_VALUE = re.compile(r"(?i)(authorization:\s*|OK-ACCESS-(?:KEY|SIGN|PASSPHRASE)\s*[:=]\s*)[^\s,;]+")
 _SECRET_QUERY = re.compile(r"([?&](?:api_?key|signature|token|passphrase|secret)=)[^&]+", re.I)
-_FORBIDDEN_PERMISSIONS = frozenset({"withdraw", "withdrawal", "transfer", "subaccount_transfer", "borrow", "margin_admin", "leverage_admin", "account_admin"})
-_ALLOWED_PERMISSIONS = frozenset({"read", "spot_trade"})
+_EXPECTED_PERMISSION_NORMALIZATION = {
+    "read": "read",
+    "read_only": "read",
+    "trade": "trade",
+    "withdraw": "withdraw",
+}
 
 
 def redact(value):
@@ -28,16 +32,25 @@ def redact(value):
     return value
 
 
+def normalize_expected_permission_summary(permissions: tuple[str, ...]) -> tuple[str, ...]:
+    values = tuple(permissions)
+    if not values:
+        return ()
+    normalized = []
+    for value in values:
+        if not isinstance(value, str) or not value or value != value.strip() or value != value.lower():
+            raise PermissionError("expected credential permissions are malformed")
+        mapped = _EXPECTED_PERMISSION_NORMALIZATION.get(value)
+        if mapped is None:
+            raise PermissionError("expected credential permissions are unrecognized")
+        normalized.append(mapped)
+    return tuple(sorted(set(normalized)))
+
+
 def validate_permission_summary(permissions: tuple[str, ...]) -> tuple[str, ...]:
-    normalized = tuple(sorted({str(value).strip().lower() for value in permissions if str(value).strip()}))
-    if not normalized:
-        raise PermissionError("credential permissions are unknown")
-    forbidden = tuple(sorted(_FORBIDDEN_PERMISSIONS.intersection(normalized)))
-    unknown = tuple(sorted(set(normalized).difference(_ALLOWED_PERMISSIONS).difference(_FORBIDDEN_PERMISSIONS)))
-    if forbidden or unknown:
-        raise PermissionError("credential permissions are forbidden or unrecognized")
-    if "read" not in normalized:
-        raise PermissionError("read permission is required for preflight")
+    normalized = normalize_expected_permission_summary(permissions)
+    if normalized != ("read",):
+        raise PermissionError("Phase 8A credential expectation must be exactly read-only")
     return normalized
 
 
@@ -101,4 +114,4 @@ class InjectedLocalCredentialProvider(LiveCredentialProvider):
         _validate_load_gates(gates); self.load_count += 1; return LiveCredentialMaterial(*self._values)
 
 
-__all__ = ["redact", "validate_permission_summary", "LiveCredentialMaterial", "LiveCredentialProvider", "EnvironmentLiveCredentialProvider", "InjectedLocalCredentialProvider"]
+__all__ = ["redact", "normalize_expected_permission_summary", "validate_permission_summary", "LiveCredentialMaterial", "LiveCredentialProvider", "EnvironmentLiveCredentialProvider", "InjectedLocalCredentialProvider"]

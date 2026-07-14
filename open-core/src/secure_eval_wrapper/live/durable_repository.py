@@ -15,7 +15,7 @@ from secure_eval_wrapper.storage.postgres.alpha_signal_base import _json_param
 
 from .authorities import LiveRuntimeRiskState, OperationalPreflightEvidence, VerifiedOperationalSource
 from .collector_evidence import VerifiedOkxReadObservationBundle
-from .credentials import redact, validate_permission_summary
+from .credentials import normalize_expected_permission_summary, redact, validate_permission_summary
 from .models import (
     LiveKillState,
     LiveOrderState,
@@ -197,7 +197,34 @@ class DurablePostgresLiveRepository:
             raise ValueError("all start-bundle authorities must belong to the same live run")
         if report.status is not LivePreflightStatus.PASSED or report.purpose is not LivePreflightPurpose.RUN_START:
             raise PermissionError("only a passed operational preflight can start a live dry-run")
-        validate_permission_summary(credential_reference.permission_summary)
+        expected_permissions = (
+            validate_permission_summary(credential_reference.permission_summary)
+            if credential_reference.permission_summary else ()
+        )
+        source_by_kind = {source.source_kind: source for source in evidence.sources}
+        permission_source = source_by_kind["credential_permissions"]
+        account_config_source = source_by_kind["account_config"]
+        permission_payload = dict(permission_source.payload)
+        if not (
+            permission_source.collector_kind == "okx_account_config_permission_collector"
+            and permission_source.source_record_identity == str(okx_bundle.bundle_id)
+            and permission_source.source_record_identity
+                == account_config_source.source_record_identity
+            and permission_source.raw_response_hash
+                == okx_bundle.envelope("account_config").canonical_response_hash
+            and permission_source.raw_response_hash
+                == account_config_source.raw_response_hash
+            and permission_source.parser_version == okx_bundle.parser_version
+            and tuple(permission_payload.get("provider_permissions", ())) == ("read_only",)
+            and tuple(permission_payload.get("normalized_permissions", ())) == ("read",)
+            and tuple(permission_payload.get("expected_permissions", ()))
+                == expected_permissions
+            and str(permission_payload.get("credential_reference_id"))
+                == str(credential_reference.reference_id)
+            and permission_payload.get("credential_record_hash")
+                == credential_reference.record_hash
+        ):
+            raise PermissionError("start bundle lacks exact OKX credential permission authority")
         required = (
             report.configuration_hash == configuration.configuration_hash,
             report.credential_reference_hash == credential_reference.record_hash,
@@ -258,9 +285,9 @@ class DurablePostgresLiveRepository:
             persisted_report is None
             or persisted_report["status"] != "passed"
             or persisted_report["purpose"] != "run_start"
-            or persisted_report["authority_generation"] != "collector_0024"
+            or persisted_report["authority_generation"] != "collector_0025"
         ):
-            raise PermissionError("persisted start report is not collector_0024 run-start authority")
+            raise PermissionError("persisted start report is not collector_0025 run-start authority")
         expected = {source.source_kind: source for source in evidence.sources}
         observed = {}
         for row in rows:
@@ -472,7 +499,7 @@ class DurablePostgresLiveRepository:
                  report.account_snapshot_hash, report.evaluated_at_utc, report.status.value,
                  _public_payload(report.blockers), _public_payload(report.warnings),
                  credential_reference.reference_id, account_snapshot.snapshot_id,
-                 report.purpose.value, "collector_0024"), report.record_hash,
+                 report.purpose.value, "collector_0025"), report.record_hash,
             )
             for check_ordinal, check in enumerate(report.checks):
                 self._strict_insert(
@@ -602,7 +629,7 @@ class DurablePostgresLiveRepository:
             self._strict_insert(
                 "execution.live_preflight_reports", "preflight_report_id", report.report_id,
                 ("live_run_id", "configuration_sha256", "implementation_sha256", "repository_commit_sha", "endpoint_catalog_sha256", "credential_reference_sha256", "account_snapshot_sha256", "evaluated_at_utc", "status", "blockers_jsonb", "warnings_jsonb", "credential_reference_id", "account_snapshot_id", "purpose", "authority_generation"),
-                (report.live_run_id, report.configuration_hash, report.implementation_hash, report.repository_commit_sha, report.endpoint_catalog_hash, report.credential_reference_hash, report.account_snapshot_hash, report.evaluated_at_utc, report.status.value, _public_payload(report.blockers), _public_payload(report.warnings), credential_reference.reference_id, account_snapshot.snapshot_id, report.purpose.value, "collector_0024"),
+                (report.live_run_id, report.configuration_hash, report.implementation_hash, report.repository_commit_sha, report.endpoint_catalog_hash, report.credential_reference_hash, report.account_snapshot_hash, report.evaluated_at_utc, report.status.value, _public_payload(report.blockers), _public_payload(report.warnings), credential_reference.reference_id, account_snapshot.snapshot_id, report.purpose.value, "collector_0025"),
                 report.record_hash,
             )
             for check_ordinal, check in enumerate(report.checks):
@@ -792,7 +819,7 @@ class DurablePostgresLiveRepository:
             if (
                 report["status"] != "passed"
                 or report["purpose"] not in ("run_start", "run_continue")
-                or report["authority_generation"] != "collector_0024"
+                or report["authority_generation"] != "collector_0025"
                 or approval_row["expires_at_utc"] <= created_at_utc
             ):
                 raise PermissionError("current normal preflight and unexpired approval are required")
@@ -1181,7 +1208,7 @@ class DurablePostgresLiveRepository:
             if (
                 report is None or report["status"] != "passed_for_reset"
                 or report["purpose"] != "kill_reset"
-                or report["authority_generation"] != "collector_0024"
+                or report["authority_generation"] != "collector_0025"
                 or report["evaluated_at_utc"] <= triggered
             ):
                 raise PermissionError("kill reset requires a post-trigger passed_for_reset preflight")
@@ -1612,7 +1639,7 @@ class DurablePostgresLiveRepository:
         if any(row is None for row in required): raise LookupError("live runtime authority is incomplete")
         if preflight["status"] != "passed" or manifest["configuration_sha256"] != approval["configuration_sha256"] or manifest["preflight_report_id"] != approval["preflight_report_id"]: raise PermissionError("live runtime authority chain is inconsistent")
         if (
-            preflight["authority_generation"] != "collector_0024"
+            preflight["authority_generation"] != "collector_0025"
             or preflight["purpose"] != "run_start"
             or risk["latest_reconciliation_input_bundle_id"] is None
         ):
@@ -1630,6 +1657,77 @@ class DurablePostgresLiveRepository:
             "WHERE c.preflight_report_id=%s AND c.live_run_id=%s",
             (preflight["preflight_report_id"], live_run_id),
         )
+        credential_permission = self._fetchone(
+            "SELECT s.*,b.response_bundle_id,b.bundle_purpose,b.producer_classification AS bundle_classification,"
+            "b.parser_version AS bundle_parser_version,e.raw_response_jsonb,e.canonical_response_sha256,"
+            "e.parser_version AS envelope_parser_version,e.query_completed_at_utc AS envelope_completed_at_utc "
+            "FROM execution.live_preflight_checks c "
+            "JOIN execution.live_preflight_check_sources cs "
+            "ON cs.preflight_check_id=c.preflight_check_id AND cs.live_run_id=c.live_run_id "
+            "JOIN execution.live_preflight_sources s "
+            "ON s.source_id=cs.source_id AND s.live_run_id=cs.live_run_id "
+            "LEFT JOIN execution.live_okx_response_bundles b "
+            "ON b.response_bundle_id::text=s.source_record_identity AND b.live_run_id=s.live_run_id "
+            "LEFT JOIN execution.live_okx_response_envelopes e "
+            "ON e.response_bundle_id=b.response_bundle_id AND e.endpoint_kind='account_config' "
+            "WHERE c.preflight_report_id=%s AND c.live_run_id=%s "
+            "AND c.check_name='credential_permissions' AND c.passed AND c.required "
+            "AND s.source_kind='credential_permissions'",
+            (preflight["preflight_report_id"], live_run_id),
+        )
+        permission_valid = False
+        if credential_permission is not None:
+            permission_payload = _json_value(credential_permission["source_payload_jsonb"])
+            raw_response = _json_value(credential_permission["raw_response_jsonb"])
+            try:
+                parsed_permissions = OkxProductionSpotAdapter.parse_account_config(raw_response)
+                expected_permissions = normalize_expected_permission_summary(
+                    tuple(_json_value(credential["permission_summary_jsonb"]))
+                )
+                verified_at = _utc(permission_payload["verified_at_utc"])
+            except (KeyError, PermissionError, TypeError, ValueError):
+                pass
+            else:
+                permission_valid = (
+                    credential_permission["collector_kind"]
+                        == "okx_account_config_permission_collector"
+                    and credential_permission["collector_version"] == "phase8a-0025-v1"
+                    and credential_permission["parser_version"] == "okx-v5-parser-v4"
+                    and credential_permission["bundle_purpose"] == "preflight"
+                    and credential_permission["bundle_classification"]
+                        == "operational_collector"
+                    and credential_permission["bundle_parser_version"]
+                        == credential_permission["envelope_parser_version"]
+                        == credential_permission["parser_version"]
+                    and credential_permission["raw_response_sha256"]
+                        == credential_permission["canonical_response_sha256"]
+                        == sha256_payload(raw_response)
+                    and credential_permission["normalized_payload_sha256"]
+                        == sha256_payload(permission_payload)
+                    and str(permission_payload.get("response_bundle_id"))
+                        == str(credential_permission["response_bundle_id"])
+                    and permission_payload.get("account_config_response_sha256")
+                        == credential_permission["canonical_response_sha256"]
+                    and permission_payload.get("parser_version")
+                        == credential_permission["parser_version"]
+                    and str(permission_payload.get("credential_reference_id"))
+                        == str(credential["credential_reference_id"])
+                    and permission_payload.get("credential_record_hash")
+                        == credential["record_sha256"]
+                    and tuple(permission_payload.get("provider_permissions", ()))
+                        == tuple(parsed_permissions["provider_permissions"])
+                        == ("read_only",)
+                    and tuple(permission_payload.get("normalized_permissions", ()))
+                        == tuple(parsed_permissions["normalized_permissions"])
+                        == ("read",)
+                    and tuple(permission_payload.get("expected_permissions", ()))
+                        == expected_permissions
+                    and (not expected_permissions or expected_permissions == ("read",))
+                    and verified_at == credential_permission["envelope_completed_at_utc"]
+                    and permission_payload.get("policy_version")
+                        == "phase8a-read-only-v1"
+                )
+
         current_reconciliation = self._fetchone(
             "SELECT r.* FROM execution.live_reconciliations r "
             "JOIN execution.live_reconciliation_input_bundles i "
@@ -1654,6 +1752,7 @@ class DurablePostgresLiveRepository:
         )
         if (
             int(source_summary["kinds"]) != 19 or not source_summary["trusted"]
+            or not permission_valid
             or current_reconciliation is None
             or current_reconciliation["producer_classification"] != "operational_collector"
             or int(legacy_runtime["count"]) != 0

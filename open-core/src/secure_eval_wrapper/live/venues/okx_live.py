@@ -19,6 +19,13 @@ from ..identity import derive_okx_account_fingerprint, validate_okx_account_fing
 from ..venue import GuardedLiveVenue, ProductionWriteSuppressed
 
 
+_OKX_PERMISSION_NORMALIZATION = {
+    "read_only": "read",
+    "trade": "trade",
+    "withdraw": "withdraw",
+}
+
+
 class UrllibReadOnlyTransport:
     is_fake = False
 
@@ -74,8 +81,28 @@ def _milliseconds(value: object) -> datetime:
     return datetime.fromtimestamp(float(raw / Decimal(1000)), tz=timezone.utc)
 
 
+def _permissions(value: object) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise ValueError("OKX account config perm must be an exact non-empty string")
+    if any(character.isspace() for character in value):
+        raise ValueError("OKX account config perm contains ambiguous whitespace")
+    tokens = value.split(",")
+    if any(not token for token in tokens):
+        raise ValueError("OKX account config perm is malformed")
+    unknown = set(tokens).difference(_OKX_PERMISSION_NORMALIZATION)
+    if unknown:
+        raise ValueError("OKX account config perm contains an unknown permission")
+    if len(set(tokens)) != len(tokens):
+        raise ValueError("OKX account config perm contains duplicate permissions")
+    provider_permissions = tuple(sorted(tokens))
+    normalized_permissions = tuple(
+        sorted(_OKX_PERMISSION_NORMALIZATION[token] for token in provider_permissions)
+    )
+    return provider_permissions, normalized_permissions
+
+
 class OkxProductionSpotAdapter(GuardedLiveVenue):
-    provider_implementation_hash = sha256_payload({"adapter": "okx-production-spot", "version": 2, "writes": "phase8a-unreachable"})
+    provider_implementation_hash = sha256_payload({"adapter": "okx-production-spot", "version": 3, "writes": "phase8a-unreachable"})
 
     def __init__(self, *, transport, credential_material=None, clock=None) -> None:
         self.transport = transport
@@ -145,7 +172,7 @@ class OkxProductionSpotAdapter(GuardedLiveVenue):
     def parse_account_config(payload: object) -> dict:
         rows = _data(payload, maximum_rows=1)
         if len(rows) != 1: raise ValueError("OKX account config must contain one row")
-        row = rows[0]; _required(row, ("uid", "mainUid", "acctLv", "posMode", "autoLoan", "enableSpotBorrow"))
+        row = rows[0]; _required(row, ("uid", "mainUid", "perm", "acctLv", "posMode", "autoLoan", "enableSpotBorrow"))
         uid = row["uid"]
         main_uid = row["mainUid"]
         if not isinstance(uid, str) or not uid or uid != uid.strip():
@@ -156,10 +183,13 @@ class OkxProductionSpotAdapter(GuardedLiveVenue):
             str(row[name]).lower() in {"false", "0"} for name in ("autoLoan", "enableSpotBorrow")
         )
         if str(row["acctLv"]) != "1" or not borrowing_disabled: raise ValueError("OKX account is not Spot cash with borrowing disabled")
+        provider_permissions, normalized_permissions = _permissions(row["perm"])
         return {
             **row,
             "uid": uid,
             "mainUid": main_uid,
+            "provider_permissions": provider_permissions,
+            "normalized_permissions": normalized_permissions,
             "account_fingerprint": derive_okx_account_fingerprint(uid),
             "is_subaccount": uid != main_uid,
             "account_mode": "spot_cash",
@@ -288,7 +318,7 @@ class OkxProductionSpotAdapter(GuardedLiveVenue):
             disposition=disposition,
             raw_response=raw,
             normalized_payload=normalized,
-            parser_version="okx-v5-parser-v3",
+            parser_version="okx-v5-parser-v4",
         )
 
     def collect_read_observation_bundle(

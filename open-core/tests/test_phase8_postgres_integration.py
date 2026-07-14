@@ -19,7 +19,7 @@ from secure_eval_wrapper.live.approval import LiveApprovalController, confirmati
 from secure_eval_wrapper.live.authorities import FixtureOnlyPreflightEvidence
 from secure_eval_wrapper.live.broker import GuardedLiveBroker
 from secure_eval_wrapper.live.durable_repository import DurablePostgresLiveRepository, LiveClaimError
-from secure_eval_wrapper.live.models import LivePreflightPurpose, LivePreflightStatus, LiveRecoveryOutcome
+from secure_eval_wrapper.live.models import LivePreflightPurpose, LivePreflightStatus, LiveRecoveryOutcome, live_uuid
 from secure_eval_wrapper.live.preflight import LivePreflightEngine, collect_operational_preflight_evidence
 from secure_eval_wrapper.live.reconciliation import build_and_reconcile
 from secure_eval_wrapper.live.restart import ReconstructedLiveRuntime, reconstruct_live_runtime
@@ -145,6 +145,7 @@ class Phase8PostgresTests(unittest.TestCase):
     def continuation_authority(self, ctx, *, purpose, at):
         bundle = exact_okx_bundle(
             ctx["manifest"].live_run_id, "preflight", at=T0,
+            venue_sequence=1 + int((at - T0).total_seconds()),
             expected_account_fingerprint=ctx["snap"].account_fingerprint,
         )
         evidence = collect_operational_preflight_evidence(
@@ -198,11 +199,11 @@ class Phase8PostgresTests(unittest.TestCase):
     def count(self, table):
         with self.connection.cursor() as cursor: cursor.execute(f"SELECT count(*) AS count FROM execution.{table}"); return cursor.fetchone()["count"]
 
-    def test_catalog_and_migration_0024_are_installed(self):
+    def test_catalog_and_migration_0025_are_installed(self):
         with self.connection.cursor() as cursor:
             cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='execution' AND table_name LIKE 'live_%'"); names = {row["table_name"] for row in cursor.fetchall()}
-            cursor.execute("SELECT sha256 FROM audit.schema_migrations WHERE migration_id='0024_phase8a_evidence_reconciliation_metadata_integrity'"); catalog_hash = cursor.fetchone()["sha256"]
-        self.assertEqual(names, set(TABLES)); migration = Path(__file__).resolve().parents[1] / "db" / "migrations" / "0024_phase8a_evidence_reconciliation_metadata_integrity.sql"
+            cursor.execute("SELECT sha256 FROM audit.schema_migrations WHERE migration_id='0025_phase8a_okx_credential_permission_authority'"); catalog_hash = cursor.fetchone()["sha256"]
+        self.assertEqual(names, set(TABLES)); migration = Path(__file__).resolve().parents[1] / "db" / "migrations" / "0025_phase8a_okx_credential_permission_authority.sql"
         self.assertEqual(catalog_hash, hashlib.sha256(migration.read_bytes().replace(b"\r\n", b"\n")).hexdigest())
 
     def test_identity_sources_persist_observed_expected_source_and_version_without_public_uid(self):
@@ -263,6 +264,151 @@ class Phase8PostgresTests(unittest.TestCase):
                     ),
                 )
         self.connection.rollback()
+
+    def _forged_permission_source_values(self, ctx, *, bundle=None):
+        bundle = ctx["preflight_bundle"] if bundle is None else bundle
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM execution.live_preflight_sources "
+                "WHERE live_run_id=%s AND source_kind='credential_permissions'",
+                (ctx["manifest"].live_run_id,),
+            )
+            original = dict(cursor.fetchone())
+            cursor.execute(
+                "SELECT canonical_response_sha256,query_completed_at_utc,parser_version "
+                "FROM execution.live_okx_response_envelopes "
+                "WHERE response_bundle_id=%s AND endpoint_kind='account_config'",
+                (bundle.bundle_id,),
+            )
+            envelope = dict(cursor.fetchone())
+        payload = dict(original["source_payload_jsonb"])
+        payload.update({
+            "response_bundle_id": str(bundle.bundle_id),
+            "account_config_response_sha256": envelope["canonical_response_sha256"],
+            "parser_version": envelope["parser_version"],
+            "verified_at_utc": envelope["query_completed_at_utc"].isoformat(),
+        })
+        collected_at = T0 + timedelta(microseconds=1)
+        normalized_hash = sha256_payload(payload)
+        source_hash = sha256_payload({
+            "run": ctx["manifest"].live_run_id,
+            "kind": "credential_permissions",
+            "collector_kind": "okx_account_config_permission_collector",
+            "collector_version": "phase8a-0025-v1",
+            "parser_version": envelope["parser_version"],
+            "collected_at": collected_at,
+            "source_system_identity": original["source_system_identity"],
+            "source_record_identity": str(bundle.bundle_id),
+            "raw_response_hash": envelope["canonical_response_sha256"],
+            "normalized_payload_hash": normalized_hash,
+            "source_schema_version": 1,
+            "payload": payload,
+            "classification": "operational_collector",
+        })
+        source_id = live_uuid("verified-preflight-source", {
+            "run": ctx["manifest"].live_run_id,
+            "kind": "credential_permissions",
+            "record": str(bundle.bundle_id),
+            "hash": source_hash,
+        })
+        record_hash = sha256_payload({
+            "source_id": source_id,
+            "source_hash": source_hash,
+            "raw_response_hash": envelope["canonical_response_sha256"],
+            "normalized_payload_hash": normalized_hash,
+            "classification": "operational_collector",
+        })
+        return (
+            source_id, ctx["manifest"].live_run_id, collected_at, json.dumps(payload),
+            source_hash, record_hash, original["source_system_identity"], str(bundle.bundle_id),
+            envelope["canonical_response_sha256"], normalized_hash, envelope["parser_version"],
+        )
+
+    def _insert_forged_permission_source(self, values):
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO execution.live_preflight_sources "
+                "(source_id,live_run_id,source_kind,collected_at_utc,source_payload_jsonb,"
+                "source_sha256,operational,record_sha256,producer_classification,collector_kind,"
+                "collector_version,parser_version,source_system_identity,source_record_identity,"
+                "raw_response_sha256,normalized_payload_sha256,source_schema_version) "
+                "VALUES (%s,%s,'credential_permissions',%s,%s::jsonb,%s,true,%s,"
+                "'operational_collector','okx_account_config_permission_collector',"
+                "'phase8a-0025-v1',%s,%s,%s,%s,%s,1)",
+                (
+                    values[0], values[1], values[2], values[3], values[4], values[5],
+                    values[10], values[6], values[7], values[8], values[9],
+                ),
+            )
+
+    def test_credential_permission_source_is_exact_response_authority(self):
+        ctx = self.context(); self.start(ctx)
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT s.*,e.canonical_response_sha256,e.query_completed_at_utc "
+                "FROM execution.live_preflight_sources s "
+                "JOIN execution.live_okx_response_bundles b "
+                "ON b.response_bundle_id::text=s.source_record_identity AND b.live_run_id=s.live_run_id "
+                "JOIN execution.live_okx_response_envelopes e "
+                "ON e.response_bundle_id=b.response_bundle_id AND e.endpoint_kind='account_config' "
+                "WHERE s.live_run_id=%s AND s.source_kind='credential_permissions'",
+                (ctx["manifest"].live_run_id,),
+            )
+            source = dict(cursor.fetchone())
+        payload = dict(source["source_payload_jsonb"])
+        self.assertEqual(source["collector_kind"], "okx_account_config_permission_collector")
+        self.assertEqual(payload["provider_permissions"], ["read_only"])
+        self.assertEqual(payload["normalized_permissions"], ["read"])
+        self.assertEqual(payload["credential_reference_id"], str(ctx["cred"].reference_id))
+        self.assertEqual(payload["credential_record_hash"], ctx["cred"].record_hash)
+        self.assertEqual(payload["response_bundle_id"], str(ctx["preflight_bundle"].bundle_id))
+        self.assertEqual(source["raw_response_sha256"], source["canonical_response_sha256"])
+
+    def test_direct_sql_self_consistent_forged_permission_source_fails(self):
+        ctx = self.context(); self.start(ctx)
+        with self.assertRaises(Exception):
+            self._insert_forged_permission_source(self._forged_permission_source_values(ctx))
+            self.connection.commit()
+        self.connection.rollback()
+
+    def test_permission_source_raw_hash_change_and_cross_bundle_attachment_fail(self):
+        first = self.context(); self.start(first)
+        with self.assertRaises(Exception):
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE execution.live_preflight_sources SET raw_response_sha256=%s "
+                    "WHERE live_run_id=%s AND source_kind='credential_permissions'",
+                    ("f" * 64, first["manifest"].live_run_id),
+                )
+        self.connection.rollback()
+        second = self.context(); self.start(second)
+        with self.assertRaises(Exception):
+            self._insert_forged_permission_source(
+                self._forged_permission_source_values(first, bundle=second["preflight_bundle"])
+            )
+            self.connection.commit()
+        self.connection.rollback()
+
+    def test_restart_rejects_legacy_or_unbound_permission_provenance(self):
+        ctx = self.context(); self.start(ctx)
+
+        class LegacyViewRepository(DurablePostgresLiveRepository):
+            def _fetchone(inner_self, sql, params=()):
+                row = super()._fetchone(sql, params)
+                if row is not None and "FROM execution.live_preflight_reports WHERE" in sql:
+                    row["authority_generation"] = "collector_0024"
+                return row
+
+        class UnboundViewRepository(DurablePostgresLiveRepository):
+            def _fetchone(inner_self, sql, params=()):
+                if "SELECT s.*,b.response_bundle_id" in sql:
+                    return None
+                return super()._fetchone(sql, params)
+
+        with self.assertRaises(PermissionError):
+            LegacyViewRepository(self.connection).reconstruct(ctx["manifest"].live_run_id)
+        with self.assertRaises(PermissionError):
+            UnboundViewRepository(self.connection).reconstruct(ctx["manifest"].live_run_id)
 
     def test_cross_run_report_approval_manifest_and_intent_attacks_fail(self):
         a = self.context(); self.start(a); b = self.context(); self.start(b)
@@ -378,7 +524,7 @@ class Phase8PostgresTests(unittest.TestCase):
         } for fill in fills)
         account_uid = "changed-account" if extra_account else "redacted-account"
         account_config = {
-            "uid": account_uid, "mainUid": account_uid,
+            "uid": account_uid, "mainUid": account_uid, "perm": "read_only",
             "acctLv": "1", "posMode": "long_short_mode",
             "autoLoan": "false", "enableSpotBorrow": "false",
         }

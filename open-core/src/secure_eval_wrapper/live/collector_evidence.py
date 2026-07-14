@@ -238,7 +238,7 @@ class VerifiedOkxReadObservationBundle:
             "venue_observed_at_utc": observed, "venue_sequence": venue_sequence,
             "classification": classification, "collector_kind": "okx_production_spot_read_adapter",
             "transport_is_fake": bool(transport_is_fake),
-            "collector_version": "phase8a-0024-v1", "parser_version": "okx-v5-parser-v3",
+            "collector_version": "phase8a-0025-v1", "parser_version": "okx-v5-parser-v4",
             "endpoint_matrix_hash": matrix_hash, "normalized_payload_hash": normalized_hash,
             "bundle_id": bundle_id, "record_hash": record_hash,
         }

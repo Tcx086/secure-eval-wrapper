@@ -61,10 +61,11 @@ _MARKET_SOURCES = {}
 class ExactOkxTransport:
     is_fake = True
 
-    def __init__(self, *, at=T0, uid=OKX_UID, main_uid=None, overrides=None):
+    def __init__(self, *, at=T0, uid=OKX_UID, main_uid=None, perm="read_only", overrides=None):
         self.at = at
         self.uid = uid
         self.main_uid = uid if main_uid is None else main_uid
+        self.perm = perm
         self.overrides = dict(overrides or {})
 
     def execute(self, *, method, url, headers, body):
@@ -73,7 +74,7 @@ class ExactOkxTransport:
         ts = str(int(self.at.timestamp() * 1000))
         responses = {
             "/api/v5/account/config": {"code": "0", "data": [{
-                "uid": self.uid, "mainUid": self.main_uid, "acctLv": "1", "posMode": "long_short_mode",
+                "uid": self.uid, "mainUid": self.main_uid, "perm": self.perm, "acctLv": "1", "posMode": "long_short_mode",
                 "autoLoan": "false", "enableSpotBorrow": "false",
             }]},
             "/api/v5/account/balance": {"code": "0", "data": [{
@@ -105,7 +106,7 @@ class ExactOkxTransport:
 def exact_okx_bundle(
     run, purpose, *, at=T0, uid=OKX_UID, main_uid=None,
     expected_account_fingerprint=None, expected_subaccount_fingerprint=None,
-    client_order_id=None, venue_sequence=1, overrides=None,
+    client_order_id=None, venue_sequence=1, perm="read_only", overrides=None,
 ):
     expected_account_fingerprint = (
         derive_okx_account_fingerprint(uid)
@@ -113,7 +114,7 @@ def exact_okx_bundle(
         else expected_account_fingerprint
     )
     adapter = OkxProductionSpotAdapter(
-        transport=ExactOkxTransport(at=at, uid=uid, main_uid=main_uid, overrides=overrides),
+        transport=ExactOkxTransport(at=at, uid=uid, main_uid=main_uid, perm=perm, overrides=overrides),
         credential_material=LiveCredentialMaterial("placeholder-key", "placeholder-secret", "placeholder-passphrase"),
         clock=lambda: at,
     )
@@ -143,7 +144,7 @@ def account(run, *, at=T0, fingerprint=ACCOUNT_FINGERPRINT):
     return LiveAccountSnapshot(run, fingerprint, at, at, balances, {}, 0, Decimal("10000"), Decimal("9000"), Decimal("1000"), "spot_cash")
 
 
-def credential(*, at=T0, permissions=("read", "spot_trade"), fingerprint=ACCOUNT_FINGERPRINT):
+def credential(*, at=T0, permissions=("read",), fingerprint=ACCOUNT_FINGERPRINT):
     return InjectedLocalCredentialProvider("placeholder-key", "placeholder-secret", "placeholder-passphrase", expected_account_fingerprint=fingerprint).reference(verified_at_utc=at, permissions=permissions)
 
 
@@ -178,17 +179,28 @@ def operational_evidence(run, cfg, snap, cred, market, reconciliation, kill, *, 
     expected_hashes = {
         migration_id: digest
         for migration_id, digest in observed_hashes.items()
-        if migration_id[:4] <= "0023"
+        if migration_id[:4] <= "0024"
     }
     account_config = dict(bundle.envelope("account_config").normalized_payload)
     observed_subaccount_fingerprint = bundle.account_fingerprint if account_config.get("is_subaccount") is True else None
     payloads = {
         "repository": {"observed_commit_sha": COMMIT, "expected_reviewed_sha": COMMIT, "identity_source": RUNTIME_IDENTITY.identity_source, "resolver_version": RUNTIME_IDENTITY.resolver_version, "implementation_hash": cfg.provider_implementation_hash},
-        "migration_catalog": {"catalog_clean": True, "latest_migration": "0024", "immutable_0001_0023": True, "expected_hashes_0001_0023": expected_hashes, "observed_hashes": observed_hashes},
+        "migration_catalog": {"catalog_clean": True, "latest_migration": "0025", "immutable_0001_0024": True, "expected_hashes_0001_0024": expected_hashes, "observed_hashes": observed_hashes},
         "postgresql_probe": {"available": True, "transaction_probe": True, "fake_transport": True},
         "audit_rollback_probe": {"write_succeeded": True, "rollback_verified": True},
         "credential_reference": {"reference_id": str(cred.reference_id), "record_hash": cred.record_hash, "credential_material_present": False},
-        "credential_permissions": {"permissions": permissions, "credential_record_hash": cred.record_hash},
+        "credential_permissions": {
+            "provider_permissions": tuple(account_config["provider_permissions"]),
+            "normalized_permissions": tuple(account_config["normalized_permissions"]),
+            "expected_permissions": permissions,
+            "credential_reference_id": str(cred.reference_id),
+            "credential_record_hash": cred.record_hash,
+            "response_bundle_id": str(bundle.bundle_id),
+            "account_config_response_sha256": bundle.envelope("account_config").canonical_response_hash,
+            "parser_version": bundle.parser_version,
+            "verified_at_utc": bundle.envelope("account_config").query_completed_at_utc,
+            "policy_version": "phase8a-read-only-v1",
+        },
         "account_config": {"account_exists": True, "account_mode": account_config["account_mode"], "is_subaccount": account_config.get("is_subaccount") is True, "account_type": str(account_config.get("type", ""))},
         "account_fingerprint": {"observed": bundle.account_fingerprint, "derivation": "sha256(canonical_json({provider:okx,account_uid:exact_uid}))[:16]"},
         "subaccount": {"observed": observed_subaccount_fingerprint, "proven_by": "uid_ne_mainUid" if observed_subaccount_fingerprint is not None else "uid_eq_mainUid"},
@@ -214,7 +226,7 @@ def operational_evidence(run, cfg, snap, cred, market, reconciliation, kill, *, 
         "kill_switch": {"state": kill.state.value, "kill_switch_id": str(kill.kill_switch_id), "version": 0, "evidence_hash": kill.evidence_hash},
     }
     endpoint_by_kind = {
-        "account_config": "account_config", "account_fingerprint": "account_config",
+        "credential_permissions": "account_config", "account_config": "account_config", "account_fingerprint": "account_config",
         "subaccount": "account_config", "account_mode": "account_config",
         "margin_borrowing": "account_config", "balances": "balances",
         "positions": "positions", "open_orders": "pending_orders",
@@ -230,10 +242,11 @@ def operational_evidence(run, cfg, snap, cred, market, reconciliation, kill, *, 
             "migration_catalog": "repository_migration_catalog",
             "postgresql_probe": "postgresql_transaction_probe",
             "audit_rollback_probe": "postgresql_rollback_probe",
-        }.get(kind, "offline_exact_test_collector")
+            "credential_permissions": "okx_account_config_permission_collector",
+        }.get(kind, "okx_read_only_adapter" if envelope is not None else "offline_exact_test_collector")
         source = _issue_verified_source(
             source_kind=kind, live_run_id=run, collected_at_utc=at, payload=payloads[kind],
-            collector_kind=collector_kind, collector_version="phase8a-0024-v1",
+            collector_kind=collector_kind, collector_version="phase8a-0025-v1",
             parser_version=None if envelope is None else bundle.parser_version,
             source_system_identity="okx-production-read" if envelope is not None else "test-postgresql-authority",
             source_record_identity=str(bundle.bundle_id) if envelope is not None else (COMMIT if kind == "repository" else f"{kind}:{raw_hash}"),
@@ -247,7 +260,7 @@ def operational_evidence(run, cfg, snap, cred, market, reconciliation, kill, *, 
     return OperationalPreflightEvidence(run, tuple(sources))
 
 
-def passed_authority(*, run=None, at=T0, permissions=("read", "spot_trade")):
+def passed_authority(*, run=None, at=T0, permissions=("read",)):
     run = run or uuid4(); cfg = config(); snap = account(run, at=at); cred = credential(at=at, permissions=permissions); market = market_evidence(at=at)
     reconciliation = typed_reconciliation(run, snap, at=at); kill = arm_kill_switch(live_run_id=run, at_utc=at)
     evidence = operational_evidence(run, cfg, snap, cred, market, reconciliation, kill, at=at)
@@ -372,7 +385,7 @@ class OkxAndBoundaryTests(unittest.TestCase):
         account_payload = {
             "code": "0",
             "data": [{
-                "uid": OKX_UID, "mainUid": OKX_UID, "acctLv": "1", "posMode": "long_short_mode",
+                "uid": OKX_UID, "mainUid": OKX_UID, "perm": "read_only", "acctLv": "1", "posMode": "long_short_mode",
                 "autoLoan": "false", "enableSpotBorrow": "false",
             }],
         }
@@ -565,7 +578,7 @@ class ExactOperationalEvidenceRegressionTests(unittest.TestCase):
 
     def test_response_payloads_are_defensively_frozen(self):
         response = {"code": "0", "data": [{
-            "uid": OKX_UID, "mainUid": OKX_UID, "acctLv": "1", "posMode": "long_short_mode",
+            "uid": OKX_UID, "mainUid": OKX_UID, "perm": "read_only", "acctLv": "1", "posMode": "long_short_mode",
             "autoLoan": "false", "enableSpotBorrow": "false",
         }]}
         bundle = exact_okx_bundle(

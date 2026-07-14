@@ -18,7 +18,7 @@ from .authorities import (
     _issue_verified_source,
 )
 from .collector_evidence import VerifiedOkxReadObservationBundle
-from .credentials import validate_permission_summary
+from .credentials import normalize_expected_permission_summary
 from .endpoints import endpoint_catalog_hash
 from .gates import common_ci_indicators
 from .identity import REPOSITORY_IDENTITY_RESOLVER_VERSION, RepositoryIdentityError, resolve_runtime_repository_identity, validate_git_commit_sha
@@ -69,7 +69,7 @@ def _collector_source(
     normalized_hash = sha256_payload(payload)
     return _issue_verified_source(
         source_kind=source_kind, live_run_id=live_run_id, collected_at_utc=collected_at_utc,
-        payload=payload, collector_kind=collector_kind, collector_version="phase8a-0024-v1",
+        payload=payload, collector_kind=collector_kind, collector_version="phase8a-0025-v1",
         parser_version=parser_version, source_system_identity="secure-eval-wrapper/postgresql",
         source_record_identity=source_record_identity, raw_response_hash=normalized_hash,
         normalized_payload_hash=normalized_hash,
@@ -158,24 +158,52 @@ class LivePreflightEngine:
         reconciliation = source["reconciliation"].payload
         kill = source["kill_switch"].payload
 
-        actual_permissions: tuple[str, ...] = ()
+        permission_authority = source["credential_permissions"]
+        account_config_authority = source["account_config"]
+        provider_permissions = tuple(permission_source.get("provider_permissions", ()))
+        normalized_permissions = tuple(permission_source.get("normalized_permissions", ()))
+        expected_permissions: tuple[str, ...] = ()
         permission_error = None
         try:
-            actual_permissions = validate_permission_summary(credential_reference.permission_summary)
+            expected_permissions = normalize_expected_permission_summary(
+                credential_reference.permission_summary
+            )
         except PermissionError as exc:
             permission_error = str(exc)
+        permission_binding_valid = (
+            permission_authority.collector_kind == "okx_account_config_permission_collector"
+            and permission_authority.source_record_identity
+                == account_config_authority.source_record_identity
+            and permission_authority.raw_response_hash
+                == account_config_authority.raw_response_hash
+            and permission_authority.parser_version
+                == account_config_authority.parser_version
+            and permission_source.get("response_bundle_id")
+                == permission_authority.source_record_identity
+            and permission_source.get("account_config_response_sha256")
+                == permission_authority.raw_response_hash
+            and permission_source.get("parser_version")
+                == permission_authority.parser_version
+            and str(permission_source.get("credential_reference_id"))
+                == str(credential_reference.reference_id)
+            and permission_source.get("credential_record_hash")
+                == credential_reference.record_hash
+            and tuple(permission_source.get("expected_permissions", ()))
+                == expected_permissions
+            and _datetime(permission_source.get("verified_at_utc")) is not None
+        )
 
         add("requested_mode_live_write_disabled", configuration.environment == "production" and configuration.dry_run and not configuration.production_write_enabled, "Phase 8A must be production-targeted dry-run with writes disabled", ("repository",))
         add("provider_environment_pair", (configuration.provider, configuration.environment) == ("okx", "production"), "only OKX production is catalogued", ("repository",))
         add("endpoint_catalog", configuration.endpoint_catalog_hash == endpoint_catalog_hash(), "endpoint catalog hash must match code", ("repository",))
         add("repository_commit_identity", repository_identity_valid and observed_commit_sha == expected_reviewed_sha and identity_source in {"git_checkout", "build_metadata", "verified_ci"} and resolver_version == REPOSITORY_IDENTITY_RESOLVER_VERSION, "resolved repository commit must match the independently reviewed SHA", ("repository",))
         add("implementation_hash", repository.get("implementation_hash") == implementation_hash == configuration.provider_implementation_hash, "provider implementation hash must match", ("repository",))
-        add("clean_migration_catalog", bool(migrations.get("catalog_clean")) and migrations.get("latest_migration") == "0024" and bool(migrations.get("immutable_0001_0023")), "migration 0024 and immutable 0001-0023 history must be collector-verified", ("migration_catalog",))
+        add("clean_migration_catalog", bool(migrations.get("catalog_clean")) and migrations.get("latest_migration") == "0025" and bool(migrations.get("immutable_0001_0024")), "migration 0025 and immutable 0001-0024 history must be collector-verified", ("migration_catalog",))
         add("postgresql_authority", bool(postgresql.get("available")) and bool(postgresql.get("transaction_probe")), "PostgreSQL availability and transaction probes must pass", ("postgresql_probe",))
         add("audit_tables_writable", bool(audit_probe.get("write_succeeded")) and bool(audit_probe.get("rollback_verified")), "audit-table write and rollback probes must pass", ("audit_rollback_probe",))
         add("credential_reference", str(credential_source.get("reference_id")) == str(credential_reference.reference_id) and credential_source.get("record_hash") == credential_reference.record_hash, "persisted credential identity and hash must match", ("credential_reference",))
         add("credential_material_not_persisted", credential_source.get("credential_material_present") is False, "credential material must not be persisted", ("credential_reference",))
-        add("credential_permissions", permission_error is None and tuple(permission_source.get("permissions", ())) == actual_permissions and permission_source.get("credential_record_hash") == credential_reference.record_hash, "permissions are derived from the actual persisted credential reference and limited to read/Spot trade", ("credential_permissions", "credential_reference"))
+        add("credential_permissions", permission_error is None and permission_binding_valid and provider_permissions == ("read_only",) and normalized_permissions == ("read",) and (not expected_permissions or expected_permissions == normalized_permissions), "the exact OKX account-config response must prove a read_only key and match any caller expectation", ("credential_permissions", "credential_reference", "account_config"))
         add("account_fingerprint", account_fingerprint.get("observed") == credential_reference.account_fingerprint == configuration.account_fingerprint == account_snapshot.account_fingerprint, "account fingerprints must match", ("account_fingerprint", "credential_reference"))
         add("subaccount_fingerprint", subaccount.get("observed") == configuration.subaccount_fingerprint, "configured subaccount must match", ("subaccount",))
         add("account_exists", account_config.get("account_exists") is True, "account config response must prove the account exists", ("account_config",))
@@ -290,18 +318,18 @@ def collect_migration_catalog_source(*, connection, live_run_id, collected_at_ut
     expected_hashes = {
         path.stem: hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
         for path in sorted(migration_root.glob("*.sql"))
-        if path.name[:4].isdigit() and path.name[:4] <= "0023"
+        if path.name[:4].isdigit() and path.name[:4] <= "0024"
     }
-    observed_immutable = {key: value for key, value in actual.items() if key[:4] <= "0023"}
-    immutable = observed_immutable == expected_hashes and len(expected_hashes) == 23
+    observed_immutable = {key: value for key, value in actual.items() if key[:4] <= "0024"}
+    immutable = observed_immutable == expected_hashes and len(expected_hashes) == 24
     latest = max((key[:4] for key in actual), default="")
-    catalog_hash = sha256_payload({"observed": actual, "expected_0001_0023": expected_hashes})
+    catalog_hash = sha256_payload({"observed": actual, "expected_0001_0024": expected_hashes})
     return _collector_source(
         "migration_catalog", live_run_id=live_run_id, collected_at_utc=collected_at_utc,
         collector_kind="repository_migration_catalog", source_record_identity=catalog_hash,
-        catalog_clean=immutable and latest == "0024", latest_migration=latest,
-        immutable_0001_0023=immutable, observed_hashes=actual,
-        expected_hashes_0001_0023=expected_hashes, catalog_hash=catalog_hash,
+        catalog_clean=immutable and latest == "0025", latest_migration=latest,
+        immutable_0001_0024=immutable, observed_hashes=actual,
+        expected_hashes_0001_0024=expected_hashes, catalog_hash=catalog_hash,
     )
 
 
@@ -337,6 +365,24 @@ def collect_operational_preflight_evidence(
         raise OperationalPreflightError("response UID fingerprint does not match configuration, snapshot, and credential authority")
     if configuration.subaccount_fingerprint != observed_subaccount_fingerprint:
         raise OperationalPreflightError("configured subaccount identity is not proven by the exact uid/mainUid response")
+    provider_permissions = tuple(account_config.get("provider_permissions", ()))
+    normalized_permissions = tuple(account_config.get("normalized_permissions", ()))
+    if provider_permissions != ("read_only",) or normalized_permissions != ("read",):
+        raise OperationalPreflightError(
+            "Phase 8A requires the exact OKX permission set to be read_only"
+        )
+    try:
+        expected_permissions = normalize_expected_permission_summary(
+            credential_reference.permission_summary
+        )
+    except PermissionError as exc:
+        raise OperationalPreflightError(
+            "credential permission expectation is malformed or unrecognized"
+        ) from exc
+    if expected_permissions and expected_permissions != normalized_permissions:
+        raise OperationalPreflightError(
+            "credential permission expectation does not match the exact OKX response"
+        )
     try:
         expected_repository_commit_sha = validate_git_commit_sha(expected_repository_commit_sha, field_name="expected_repository_commit_sha")
         runtime_repository_identity = resolve_runtime_repository_identity()
@@ -413,7 +459,7 @@ def collect_operational_preflight_evidence(
         normalized_hash = sha256_payload(payload)
         return _issue_verified_source(
             source_kind=kind, live_run_id=live_run_id, collected_at_utc=collected_at_utc,
-            payload=payload, collector_kind=collector, collector_version="phase8a-0024-v1",
+            payload=payload, collector_kind=collector, collector_version="phase8a-0025-v1",
             parser_version=parser, source_system_identity="okx-production/postgresql",
             source_record_identity=identity, raw_response_hash=raw_hash or normalized_hash,
             normalized_payload_hash=normalized_hash,
@@ -531,14 +577,25 @@ def collect_operational_preflight_evidence(
             "reference_id": str(credential_reference.reference_id), "record_hash": credential_reference.record_hash,
             "credential_material_present": False,
         }),
-        issued("credential_permissions", "credential_permission_verifier", f"{credential_reference.reference_id}:{credential_reference.verified_at_utc}", {
-            "permissions": credential_reference.permission_summary,
-            "credential_record_hash": credential_reference.record_hash,
-            "verified_at_utc": credential_reference.verified_at_utc, "verifier_version": "permission-v2",
-        }),
     ]
     bundle_identity = str(okx_bundle.bundle_id)
     account_raw = account_config_envelope.canonical_response_hash
+    permission_payload = {
+        "provider_permissions": provider_permissions,
+        "normalized_permissions": normalized_permissions,
+        "expected_permissions": expected_permissions,
+        "credential_reference_id": str(credential_reference.reference_id),
+        "credential_record_hash": credential_reference.record_hash,
+        "response_bundle_id": bundle_identity,
+        "account_config_response_sha256": account_raw,
+        "parser_version": okx_bundle.parser_version,
+        "verified_at_utc": account_config_envelope.query_completed_at_utc,
+        "policy_version": "phase8a-read-only-v1",
+    }
+    sources.append(issued(
+        "credential_permissions", "okx_account_config_permission_collector",
+        bundle_identity, permission_payload, account_raw, okx_bundle.parser_version,
+    ))
     account_config_public = {
         "account_exists": True,
         "account_mode": account_config["account_mode"],
