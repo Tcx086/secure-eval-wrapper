@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 from secure_eval_wrapper.data_collection.hashing import sha256_payload
 
 from ..endpoints import EndpointClass, LiveOperation, OKX_PRODUCTION_ORIGIN, build_request_path, classify_exact, route_for
+from ..collector_evidence import QueryDisposition, _issue_okx_bundle, _issue_okx_envelope
 from ..gates import common_ci_indicators
 from ..venue import GuardedLiveVenue, ProductionWriteSuppressed
 
@@ -74,12 +75,13 @@ def _milliseconds(value: object) -> datetime:
 class OkxProductionSpotAdapter(GuardedLiveVenue):
     provider_implementation_hash = sha256_payload({"adapter": "okx-production-spot", "version": 2, "writes": "phase8a-unreachable"})
 
-    def __init__(self, *, transport, credential_material=None) -> None:
+    def __init__(self, *, transport, credential_material=None, clock=None) -> None:
         self.transport = transport
         self.credential_material = credential_material
         self.network_reads = 0
         self.network_writes = 0
 
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
     @staticmethod
     def normalize_decimal(value: Decimal, step: Decimal) -> Decimal:
         value = Decimal(value); step = Decimal(step)
@@ -113,7 +115,20 @@ class OkxProductionSpotAdapter(GuardedLiveVenue):
             _required(row, ("instType", "instId", "baseCcy", "quoteCcy", "tickSz", "lotSz", "minSz", "state"))
             if row["instType"] != "SPOT": raise ValueError("OKX instrument response contains a non-Spot instrument")
             if expected_instrument is not None and row["instId"] != expected_instrument: raise ValueError("OKX instrument identity mismatch")
-            parsed.append({**row, "tick_size": _number(row["tickSz"], positive=True), "lot_size": _number(row["lotSz"], positive=True), "minimum_size": _number(row["minSz"], positive=True)})
+            tick = _number(row["tickSz"], positive=True)
+            lot = _number(row["lotSz"], positive=True)
+            minimum = _number(row["minSz"], positive=True)
+            minimum_notional = _number(
+                row.get("minNotional", minimum * tick),
+                positive=True,
+            )
+            parsed.append({
+                **row, "instrument": row["instId"], "instrument_type": "spot",
+                "instrument_state": str(row["state"]).lower(),
+                "base_currency": row["baseCcy"], "quote_currency": row["quoteCcy"],
+                "tick_size": tick, "lot_size": lot, "minimum_size": minimum,
+                "minimum_notional": minimum_notional,
+            })
         return tuple(parsed)
 
     @staticmethod
@@ -224,6 +239,116 @@ class OkxProductionSpotAdapter(GuardedLiveVenue):
     def recent_orders(self, *, instrument: str): return self.parse_order_history(self._read(LiveOperation.RECENT_ORDERS, {"instType": "SPOT", "instId": instrument}), expected_instrument=instrument)
     def open_orders(self, *, instrument: str): return self.parse_pending_orders(self._read(LiveOperation.OPEN_ORDERS, {"instType": "SPOT", "instId": instrument}), expected_instrument=instrument)
     def fills(self, *, instrument: str): return self.parse_fills_history(self._read(LiveOperation.FILLS, {"instType": "SPOT", "instId": instrument}), expected_instrument=instrument)
+
+    def _capture(self, *, endpoint_kind: str, operation: LiveOperation, query, parser):
+        path = build_request_path(operation, query)
+        request_identity = sha256_payload({"method": "GET", "path": path})
+        started = self._clock()
+        raw = None
+        normalized = None
+        try:
+            raw = self._read(operation, query)
+            normalized = parser(raw)
+            disposition = QueryDisposition.COMPLETED
+        except Exception as exc:
+            name = type(exc).__name__.lower()
+            code = None if not isinstance(raw, dict) else str(raw.get("code"))
+            if "rate" in name or code in {"50011", "50040"}:
+                disposition = QueryDisposition.RATE_LIMITED
+            elif raw is None:
+                disposition = QueryDisposition.TRANSPORT_AMBIGUOUS
+            elif code not in (None, "0"):
+                disposition = QueryDisposition.EXPLICIT_PROVIDER_REJECTION
+            else:
+                disposition = QueryDisposition.PARSER_ERROR
+            normalized = {"error_type": type(exc).__name__}
+        completed = self._clock()
+        return _issue_okx_envelope(
+            endpoint_kind=endpoint_kind,
+            request_identity=request_identity,
+            request_path=path,
+            query_started_at_utc=started,
+            query_completed_at_utc=completed,
+            disposition=disposition,
+            raw_response=raw,
+            normalized_payload=normalized,
+            parser_version="okx-v5-parser-v3",
+        )
+
+    def collect_read_observation_bundle(
+        self,
+        *,
+        live_run_id,
+        purpose: str,
+        instrument: str,
+        account_fingerprint: str,
+        client_order_id: str | None = None,
+        venue_sequence: int = 0,
+    ):
+        """Collect exact approved GET envelopes; no caller payloads or hashes are accepted."""
+        captures = {
+            "account_config": lambda: self._capture(
+                endpoint_kind="account_config", operation=LiveOperation.ACCOUNT_CONFIG,
+                query=None, parser=self.parse_account_config,
+            ),
+            "balances": lambda: self._capture(
+                endpoint_kind="balances", operation=LiveOperation.BALANCES,
+                query=None, parser=self.parse_balances,
+            ),
+            "order_details": lambda: self._capture(
+                endpoint_kind="order_details", operation=LiveOperation.ORDER_DETAILS,
+                query={"instId": instrument, "clOrdId": client_order_id or ""},
+                parser=lambda payload: self.parse_order_details(
+                    payload, expected_instrument=instrument,
+                    expected_client_order_id=client_order_id or "",
+                ),
+            ),
+            "positions": lambda: self._capture(
+                endpoint_kind="positions", operation=LiveOperation.POSITIONS,
+                query={"instType": "SPOT"}, parser=self.parse_positions,
+            ),
+            "pending_orders": lambda: self._capture(
+                endpoint_kind="pending_orders", operation=LiveOperation.OPEN_ORDERS,
+                query={"instType": "SPOT", "instId": instrument},
+                parser=lambda payload: self.parse_pending_orders(payload, expected_instrument=instrument),
+            ),
+            "order_history": lambda: self._capture(
+                endpoint_kind="order_history", operation=LiveOperation.RECENT_ORDERS,
+                query={"instType": "SPOT", "instId": instrument},
+                parser=lambda payload: self.parse_order_history(payload, expected_instrument=instrument),
+            ),
+            "fills": lambda: self._capture(
+                endpoint_kind="fills", operation=LiveOperation.FILLS,
+                query={"instType": "SPOT", "instId": instrument},
+                parser=lambda payload: self.parse_fills_history(payload, expected_instrument=instrument),
+            ),
+            "venue_time": lambda: self._capture(
+                endpoint_kind="venue_time", operation=LiveOperation.VENUE_TIME,
+                query=None, parser=self.parse_venue_time,
+            ),
+            "instrument_metadata": lambda: self._capture(
+                endpoint_kind="instrument_metadata", operation=LiveOperation.PUBLIC_INSTRUMENTS,
+                query={"instType": "SPOT", "instId": instrument},
+                parser=lambda payload: self.parse_instruments(payload, expected_instrument=instrument),
+            ),
+        }
+        required = {
+            "preflight": ("account_config", "balances", "positions", "pending_orders", "venue_time", "instrument_metadata"),
+            "reconciliation": ("account_config", "balances", "positions", "pending_orders", "order_history", "fills", "venue_time"),
+            "recovery": ("account_config", "balances", "positions", "pending_orders", "order_history", "fills", "order_details"),
+        }.get(purpose)
+        if required is None:
+            raise ValueError("collector purpose must be preflight, reconciliation, or recovery")
+        if purpose == "recovery" and not client_order_id:
+            raise ValueError("recovery collection requires the exact client order ID")
+        envelopes = tuple(captures[kind]() for kind in required)
+        venue = next((item.normalized_payload for item in envelopes if item.endpoint_kind == "venue_time" and item.completed), None)
+        observed = venue["venue_time_at_utc"] if venue is not None else max(item.query_completed_at_utc for item in envelopes)
+        return _issue_okx_bundle(
+            live_run_id=live_run_id, purpose=purpose, account_fingerprint=account_fingerprint,
+            envelopes=envelopes, venue_observed_at_utc=observed, venue_sequence=venue_sequence,
+            transport_is_fake=bool(getattr(self.transport, "is_fake", False)),
+        )
 
     def submit_order(self, request_body):
         raise ProductionWriteSuppressed("Phase 8A cannot invoke OKX order submission")

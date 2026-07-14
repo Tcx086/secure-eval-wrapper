@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from secure_eval_wrapper.data_collection.hashing import sha256_payload
 
-from .models import LiveApproval, LivePreflightStatus
+from .models import LiveApproval, LivePreflightPurpose, LivePreflightStatus
 
 
 class LiveApprovalError(ValueError):
@@ -23,8 +23,12 @@ def confirmation_challenge_hash(*, live_run_id, configuration, account_fingerpri
 
 class LiveApprovalController:
     def create(self, *, report, configuration, account_snapshot, manifest_hash: str, repository_commit_sha: str, created_at_utc: datetime, ttl_seconds: int, nonce: str, approving_actor: str, maximum_total_approved_notional: Decimal, exact_confirmation_challenge_hash: str) -> LiveApproval:
-        if report.status is not LivePreflightStatus.PASSED:
-            raise LiveApprovalError("a blocked preflight cannot be approved")
+        normal = report.status is LivePreflightStatus.PASSED and report.purpose in (
+            LivePreflightPurpose.RUN_START, LivePreflightPurpose.RUN_CONTINUE,
+        )
+        reset = report.status is LivePreflightStatus.PASSED_FOR_RESET and report.purpose is LivePreflightPurpose.KILL_RESET
+        if not (normal or reset):
+            raise LiveApprovalError("only a purpose-correct passed preflight can be approved")
         if report.configuration_hash != configuration.configuration_hash or report.account_snapshot_hash != account_snapshot.record_hash:
             raise LiveApprovalError("approval inputs do not match the persisted preflight")
         if ttl_seconds <= 0 or ttl_seconds > 900:

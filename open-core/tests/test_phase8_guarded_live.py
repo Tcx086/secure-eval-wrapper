@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from decimal import Decimal
 from unittest.mock import patch
 from uuid import uuid4
@@ -20,21 +22,23 @@ from secure_eval_wrapper.live.authorities import (
     LiveEvidenceSource,
     LiveLocalProjection,
     LiveRuntimeRiskState,
-    LiveVenueObservation,
+    _issue_verified_source,
+    VerifiedOperationalSource,
     OperationalPreflightEvidence,
     SOURCE_KINDS,
 )
 from secure_eval_wrapper.live.configuration import GuardedLiveConfiguration, phase8a_dry_run_configuration
-from secure_eval_wrapper.live.credentials import InjectedLocalCredentialProvider, redact, validate_permission_summary
+from secure_eval_wrapper.live.credentials import InjectedLocalCredentialProvider, LiveCredentialMaterial, redact, validate_permission_summary
+from secure_eval_wrapper.live.collector_evidence import QueryDisposition, VerifiedOkxResponseEnvelope
 from secure_eval_wrapper.live.durable_repository import DurablePostgresLiveRepository
 from secure_eval_wrapper.live.endpoints import EndpointClass, LiveOperation, build_request_path, classify_exact, endpoint_catalog_hash
 from secure_eval_wrapper.live.gates import evaluate_live_write_authority
 from secure_eval_wrapper.live.kill_switch import arm_kill_switch, reset_kill_switch, trigger_kill_switch
 from secure_eval_wrapper.live.manifests import create_live_manifest, validate_live_manifest
-from secure_eval_wrapper.live.models import LiveAccountSnapshot, LiveKillState, LiveOrderIntent, LivePreflightStatus, LiveRecoveryOutcome, LiveReconciliationStatus, live_uuid
+from secure_eval_wrapper.live.models import LiveAccountSnapshot, LiveKillState, LiveObservationBundle, LiveOrderIntent, LivePreflightStatus, LiveRecoveryOutcome, LiveReconciliationStatus, live_uuid
 from secure_eval_wrapper.live.preflight import LivePreflightEngine, OperationalPreflightError
 from secure_eval_wrapper.live.reconciliation import reconcile_live
-from secure_eval_wrapper.live.recovery import query_first_recovery
+from secure_eval_wrapper.live.recovery import normalize_verified_recovery_observation, query_first_recovery
 from secure_eval_wrapper.live.reservations import calculate_live_reservation
 from secure_eval_wrapper.live.risk import evaluate_live_risk
 from secure_eval_wrapper.live.venues.fake_live import FakeLiveVenue
@@ -44,6 +48,66 @@ from secure_eval_wrapper.paper.models import PaperMarketDataEvidence
 T0 = datetime(2026, 7, 13, 3, 0, tzinfo=timezone.utc)
 H = sha256_payload("phase8-repair-test")
 COMMIT = "e60986de598f6b0a397473cc2ff4c1993c813c68"
+_PREFLIGHT_BUNDLES = {}
+_RECONCILIATION_DETAILS = {}
+_METADATA_SOURCES = {}
+_MARKET_SOURCES = {}
+
+
+class ExactOkxTransport:
+    is_fake = True
+
+    def __init__(self, *, at=T0, overrides=None):
+        self.at = at
+        self.overrides = dict(overrides or {})
+
+    def execute(self, *, method, url, headers, body):
+        if method != "GET":
+            raise PermissionError("test transport is read-only")
+        ts = str(int(self.at.timestamp() * 1000))
+        responses = {
+            "/api/v5/account/config": {"code": "0", "data": [{
+                "uid": "redacted-account", "acctLv": "1", "posMode": "long_short_mode",
+                "autoLoan": "false", "enableSpotBorrow": "false",
+            }]},
+            "/api/v5/account/balance": {"code": "0", "data": [{
+                "totalEq": "10000", "uTime": ts, "details": [
+                    {"ccy": "USDT", "eq": "10000", "availEq": "9000", "frozenBal": "1000"},
+                    {"ccy": "BTC", "eq": "10", "availEq": "10", "frozenBal": "0"},
+                ],
+            }]},
+            "/api/v5/account/positions": {"code": "0", "data": []},
+            "/api/v5/trade/orders-pending": {"code": "0", "data": []},
+            "/api/v5/trade/orders-history": {"code": "0", "data": []},
+            "/api/v5/trade/fills-history": {"code": "0", "data": []},
+            "/api/v5/public/time": {"code": "0", "data": [{"ts": ts}]},
+            "/api/v5/public/instruments": {"code": "0", "data": [{
+                "instType": "SPOT", "instId": "BTC-USDT", "baseCcy": "BTC",
+                "quoteCcy": "USDT", "tickSz": "0.01", "lotSz": "0.001",
+                "minSz": "0.001", "minNotional": "1", "state": "live",
+            }]},
+            "/api/v5/trade/order": {"code": "0", "data": []},
+        }
+        responses.update(self.overrides)
+        path = url.removeprefix("https://www.okx.com").split("?", 1)[0]
+        value = responses[path]
+        if isinstance(value, BaseException):
+            raise value
+        return value
+
+
+def exact_okx_bundle(run, purpose, *, at=T0, account_fingerprint="0000000000000000", client_order_id=None, venue_sequence=1, overrides=None):
+    adapter = OkxProductionSpotAdapter(
+        transport=ExactOkxTransport(at=at, overrides=overrides),
+        credential_material=LiveCredentialMaterial("placeholder-key", "placeholder-secret", "placeholder-passphrase"),
+        clock=lambda: at,
+    )
+    return adapter.collect_read_observation_bundle(
+        live_run_id=run, purpose=purpose, instrument="BTC-USDT",
+        account_fingerprint=account_fingerprint, client_order_id=client_order_id,
+        venue_sequence=venue_sequence,
+    )
+
 
 
 def identity():
@@ -67,26 +131,46 @@ def credential(*, at=T0, permissions=("read", "spot_trade")):
 
 
 def market_evidence(*, at=T0, price=Decimal("100")):
-    ident = identity(); report_id = uuid4(); row_id = str(uuid4()); source_hash = sha256_payload({"source": row_id})
+    ident = identity(); report_id = live_uuid("test-market-report", {"at": at, "price": price}); row_id = str(live_uuid("test-market-row", {"at": at, "price": price})); source_hash = sha256_payload({"source": row_id})
     return PaperMarketDataEvidence(ident, "okx", "BTC-USDT", "bar_close", row_id, at, at, True, "accepted", source_hash, source_hash, exchange="okx", provider_instrument_id="BTC-USDT", instrument_type="spot", source_table="market_data.validated_bars", source_row_id=row_id, validation_report_id=report_id, price=price, price_type="close", quote_currency="USDT", normalized_record_sha256=source_hash, source_kind="postgresql")
 
 
 def typed_reconciliation(run, snap, *, at=T0):
     local = LiveLocalProjection(run, snap.account_fingerprint, (), (), dict(snap.balances), dict(snap.positions), 1, at, (snap.snapshot_id,))
-    venue = LiveVenueObservation(run, snap.account_fingerprint, (), (), dict(snap.balances), dict(snap.positions), 1, at, (H,))
-    return reconcile_live(local_projection=local, venue_observation=venue, evaluated_at_utc=at)
+    bundle = exact_okx_bundle(run, "reconciliation", at=at, account_fingerprint=snap.account_fingerprint)
+    reconciliation, exact_input = reconcile_live(
+        local_projection=local, okx_bundle=bundle, evaluated_at_utc=at,
+        freshness_seconds=30, maximum_clock_skew_seconds=5,
+    )
+    _RECONCILIATION_DETAILS[reconciliation.reconciliation_id] = (exact_input, bundle)
+    return reconciliation
 
 
 def operational_evidence(run, cfg, snap, cred, market, reconciliation, kill, *, at=T0, permission_override=None):
     permissions = tuple(cred.permission_summary if permission_override is None else permission_override)
+    bundle = exact_okx_bundle(run, "preflight", at=at, account_fingerprint=snap.account_fingerprint)
+    _PREFLIGHT_BUNDLES[run] = bundle
+    metadata = dict(bundle.envelope("instrument_metadata").normalized_payload[0])
+    raw_id = str(market.source_row_id)
+    migration_root = Path(__file__).resolve().parents[1] / "db" / "migrations"
+    observed_hashes = {
+        path.stem: hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+        for path in sorted(migration_root.glob("*.sql"))
+        if path.name[:4].isdigit()
+    }
+    expected_hashes = {
+        migration_id: digest
+        for migration_id, digest in observed_hashes.items()
+        if migration_id[:4] <= "0023"
+    }
     payloads = {
         "repository": {"commit_sha": COMMIT, "expected_commit_sha": COMMIT, "implementation_hash": cfg.provider_implementation_hash},
-        "migration_catalog": {"catalog_clean": True, "latest_migration": "0023", "immutable_0001_0022": True},
+        "migration_catalog": {"catalog_clean": True, "latest_migration": "0024", "immutable_0001_0023": True, "expected_hashes_0001_0023": expected_hashes, "observed_hashes": observed_hashes},
         "postgresql_probe": {"available": True, "transaction_probe": True, "fake_transport": True},
         "audit_rollback_probe": {"write_succeeded": True, "rollback_verified": True},
         "credential_reference": {"reference_id": str(cred.reference_id), "record_hash": cred.record_hash, "credential_material_present": False},
         "credential_permissions": {"permissions": permissions, "credential_record_hash": cred.record_hash},
-        "account_config": {"account_exists": True},
+        "account_config": {"account_exists": True, **dict(bundle.envelope("account_config").normalized_payload)},
         "account_fingerprint": {"observed": snap.account_fingerprint},
         "subaccount": {"observed": cfg.subaccount_fingerprint},
         "account_mode": {"account_mode": "spot_cash"},
@@ -97,17 +181,50 @@ def operational_evidence(run, cfg, snap, cred, market, reconciliation, kill, *, 
         "venue_time": {"venue_time_at_utc": at},
         "market_data": {
             "validated": True, "source_kind": "postgresql", "validated_at_utc": at, "quote_currency": "USDT",
+            "validation_status": "accepted", "report_status": "accepted",
+            "raw_observation_ids": (raw_id,), "raw_observation_hashes": {raw_id: market.source_sha256},
+            "finality_verified": True, "quarantine_clear": True,
             "market_evidence_sha256": market.evidence_sha256, "provider": "okx", "exchange": "okx", "provider_instrument_id": "BTC-USDT",
             "canonical_symbol": "BTC-USDT", "timeframe": "1m", "event_type": "bar_close", "source_row_id": market.source_row_id,
             "observed_at_utc": market.observed_at_utc, "available_at_utc": market.available_at_utc, "source_sha256": market.source_sha256,
             "normalized_record_sha256": market.normalized_record_sha256, "validation_report_id": str(market.validation_report_id), "price": market.price,
             "price_type": "close",
         },
-        "instrument_metadata": {"instrument": "BTC-USDT", "instrument_type": "spot", "tick_size": "0.01", "lot_size": "0.001", "minimum_size": "0.001", "minimum_notional": "1", "maximum_notional": "100000"},
-        "reconciliation": {"status": reconciliation.status.value, "evaluated_at_utc": reconciliation.evaluated_at_utc, "reconciliation_id": str(reconciliation.reconciliation_id), "record_hash": reconciliation.record_hash},
-        "kill_switch": {"state": kill.state.value, "kill_switch_id": str(kill.kill_switch_id)},
+        "instrument_metadata": {**metadata, "response_bundle_id": str(bundle.bundle_id), "provider_response_hash": bundle.envelope("instrument_metadata").canonical_response_hash, "maximum_notional": "100000"},
+        "reconciliation": {"status": reconciliation.status.value, "evaluated_at_utc": reconciliation.evaluated_at_utc, "reconciliation_id": str(reconciliation.reconciliation_id), "record_hash": reconciliation.record_hash, "input_bundle_id": str(reconciliation.response_bundle_id)},
+        "kill_switch": {"state": kill.state.value, "kill_switch_id": str(kill.kill_switch_id), "version": 0, "evidence_hash": kill.evidence_hash},
     }
-    return OperationalPreflightEvidence(run, tuple(LiveEvidenceSource(run, kind, at, payloads[kind], True) for kind in sorted(SOURCE_KINDS)))
+    endpoint_by_kind = {
+        "account_config": "account_config", "account_fingerprint": "account_config",
+        "subaccount": "account_config", "account_mode": "account_config",
+        "margin_borrowing": "account_config", "balances": "balances",
+        "positions": "positions", "open_orders": "pending_orders",
+        "venue_time": "venue_time", "instrument_metadata": "instrument_metadata",
+    }
+    sources = []
+    for kind in sorted(SOURCE_KINDS):
+        endpoint_kind = endpoint_by_kind.get(kind)
+        envelope = None if endpoint_kind is None else bundle.envelope(endpoint_kind)
+        raw_hash = envelope.canonical_response_hash if envelope is not None else sha256_payload({"kind": kind, "payload": payloads[kind]})
+        collector_kind = {
+            "migration_catalog": "repository_migration_catalog",
+            "postgresql_probe": "postgresql_transaction_probe",
+            "audit_rollback_probe": "postgresql_rollback_probe",
+        }.get(kind, "offline_exact_test_collector")
+        source = _issue_verified_source(
+            source_kind=kind, live_run_id=run, collected_at_utc=at, payload=payloads[kind],
+            collector_kind=collector_kind, collector_version="phase8a-0024-v1",
+            parser_version=None if envelope is None else bundle.parser_version,
+            source_system_identity="okx-production-read" if envelope is not None else "test-postgresql-authority",
+            source_record_identity=str(bundle.bundle_id) if envelope is not None else f"{kind}:{raw_hash}",
+            raw_response_hash=raw_hash, normalized_payload_hash=sha256_payload(payloads[kind]),
+        )
+        sources.append(source)
+        if kind == "instrument_metadata":
+            _METADATA_SOURCES[run] = source
+        elif kind == "market_data":
+            _MARKET_SOURCES[run] = source
+    return OperationalPreflightEvidence(run, tuple(sources))
 
 
 def passed_authority(*, run=None, at=T0, permissions=("read", "spot_trade")):
@@ -129,7 +246,16 @@ def runtime_state(run, snap, reconciliation, market, *, at=T0, **overrides):
 
 
 def live_intent(manifest, snap, reconciliation, market, *, side=OrderSide.BUY, reference=Decimal("100"), limit=Decimal("100"), quantity=Decimal("1"), at=T0):
-    return LiveOrderIntent(manifest.live_run_id, manifest.manifest_id, identity(), side, quantity, reference, limit, at, market.evidence_id, market.evidence_sha256, H, snap.record_hash, reconciliation.record_hash)
+    metadata = _METADATA_SOURCES.get(manifest.live_run_id)
+    market_source = _MARKET_SOURCES.get(manifest.live_run_id)
+    return LiveOrderIntent(
+        manifest.live_run_id, manifest.manifest_id, identity(), side, quantity, reference, limit, at,
+        market.evidence_id if market_source is None else market_source.source_id,
+        market.evidence_sha256 if market_source is None else market_source.source_hash,
+        metadata.source_hash if metadata else H,
+        snap.record_hash, reconciliation.record_hash,
+        instrument_metadata_source_id=None if metadata is None else metadata.source_id,
+    )
 
 
 class EvidenceAndAuthorityTests(unittest.TestCase):
@@ -152,7 +278,7 @@ class EvidenceAndAuthorityTests(unittest.TestCase):
 
     def test_direct_start_bundle_binding_attack_is_rejected_before_sql(self):
         ctx_a = passed_authority(); ctx_b = passed_authority()
-        with self.assertRaises(ValueError): DurablePostgresLiveRepository._validate_start_bundle(configuration=ctx_a[0], credential_reference=ctx_a[2], account_snapshot=ctx_a[1], report=ctx_a[3], approval=ctx_b[4], manifest=ctx_a[5], kill_switch=ctx_a[6], evidence=ctx_a[7])
+        with self.assertRaises(ValueError): DurablePostgresLiveRepository._validate_start_bundle(configuration=ctx_a[0], credential_reference=ctx_a[2], account_snapshot=ctx_a[1], report=ctx_a[3], approval=ctx_b[4], manifest=ctx_a[5], kill_switch=ctx_a[6], evidence=ctx_a[7], okx_bundle=_PREFLIGHT_BUNDLES[ctx_a[5].live_run_id])
 
     def test_configuration_and_manifest_remain_write_disabled(self):
         cfg, snap, cred, report, approval, manifest, *_ = passed_authority()
@@ -333,6 +459,144 @@ class OkxAndBoundaryTests(unittest.TestCase):
         script = os.path.join(os.path.dirname(__file__), "..", "scripts", "run_live_status.py")
         completed = subprocess.run([sys.executable, script], capture_output=True, text=True)
         self.assertNotEqual(completed.returncode, 0); self.assertNotIn("network_writes_occurred\":true", completed.stdout.lower())
+
+
+class ExactOperationalEvidenceRegressionTests(unittest.TestCase):
+    @staticmethod
+    def expected(client_order_id="client1"):
+        return {
+            "instrument": "BTC-USDT", "client_order_id": client_order_id,
+            "side": "buy", "quantity": Decimal("1"), "limit_price": Decimal("100"),
+        }
+
+    def test_public_models_cannot_self_declare_operational_authority(self):
+        run = uuid4()
+        for kind, payload in (
+            ("repository", {}),
+            ("migration_catalog", {"catalog_clean": True, "immutable_0001_0023": True}),
+            ("postgresql_probe", {"available": True, "transaction_probe": True}),
+        ):
+            with self.subTest(kind=kind), self.assertRaises(PermissionError):
+                LiveEvidenceSource(run, kind, T0, payload, True)
+        with self.assertRaises(PermissionError):
+            VerifiedOperationalSource(
+                live_run_id=uuid4(), source_kind="repository", collected_at_utc=T0,
+                payload={}, collector_kind="caller", collector_version="caller",
+                parser_version=None, source_system_identity="caller",
+                source_record_identity="caller", raw_response_hash=H,
+                normalized_payload_hash=H,
+            )
+        with self.assertRaises(PermissionError):
+            VerifiedOkxResponseEnvelope(
+                endpoint_kind="balances", request_identity=H,
+                request_path="/api/v5/account/balance",
+                query_started_at_utc=T0, query_completed_at_utc=T0,
+                disposition=QueryDisposition.COMPLETED,
+                raw_response={"code": "0", "data": []},
+                normalized_payload={}, parser_version="caller",
+            )
+
+    def test_manual_recovery_bundle_is_not_operational_authority(self):
+        manual = LiveObservationBundle(
+            uuid4(), "client1", None, (), (), (),
+            {"account_fingerprint": "acct", "query_timestamp_utc": T0},
+            T0, LiveRecoveryOutcome.CONFIRMED_ABSENT,
+        )
+        with self.assertRaises(TypeError):
+            normalize_verified_recovery_observation(
+                manual, expected_intent=self.expected(), account_fingerprint="acct",
+            )
+
+    def test_recovery_transport_ambiguity_is_inconclusive(self):
+        run = uuid4()
+        bundle = exact_okx_bundle(
+            run, "recovery", client_order_id="client1",
+            account_fingerprint="acct",
+            overrides={"/api/v5/trade/order": TimeoutError("timeout")},
+        )
+        observed = normalize_verified_recovery_observation(
+            bundle, expected_intent=self.expected(), account_fingerprint="acct",
+        )
+        self.assertIs(observed.outcome, LiveRecoveryOutcome.INCONCLUSIVE)
+        self.assertFalse(bundle.complete)
+
+    def test_only_explicit_nonzero_provider_code_is_provider_rejected(self):
+        run = uuid4()
+        bundle = exact_okx_bundle(
+            run, "recovery", client_order_id="client1",
+            account_fingerprint="acct",
+            overrides={"/api/v5/trade/order": {"code": "51001", "msg": "not found", "data": []}},
+        )
+        observed = normalize_verified_recovery_observation(
+            bundle, expected_intent=self.expected(), account_fingerprint="acct",
+        )
+        self.assertIs(observed.outcome, LiveRecoveryOutcome.PROVIDER_REJECTED)
+        self.assertEqual(bundle.envelope("order_details").disposition, QueryDisposition.EXPLICIT_PROVIDER_REJECTION)
+
+    def test_complete_empty_recovery_is_confirmed_absent(self):
+        bundle = exact_okx_bundle(
+            uuid4(), "recovery", client_order_id="client1", account_fingerprint="acct",
+        )
+        observed = normalize_verified_recovery_observation(
+            bundle, expected_intent=self.expected(), account_fingerprint="acct",
+        )
+        self.assertTrue(bundle.complete)
+        self.assertIs(observed.outcome, LiveRecoveryOutcome.CONFIRMED_ABSENT)
+
+    def test_response_payloads_are_defensively_frozen(self):
+        response = {"code": "0", "data": [{
+            "uid": "redacted-account", "acctLv": "1", "posMode": "long_short_mode",
+            "autoLoan": "false", "enableSpotBorrow": "false",
+        }]}
+        bundle = exact_okx_bundle(
+            uuid4(), "preflight", overrides={"/api/v5/account/config": response},
+        )
+        envelope = bundle.envelope("account_config")
+        response["data"][0]["acctLv"] = "9"
+        self.assertEqual(envelope.raw_response["data"][0]["acctLv"], "1")
+        with self.assertRaises(TypeError):
+            envelope.raw_response["data"][0]["acctLv"] = "9"
+        operational = passed_authority()[7]
+        market_source = next(
+            source for source in operational.sources if source.source_kind == "market_data"
+        )
+        nested_hashes = market_source.payload["raw_observation_hashes"]
+        with self.assertRaises(TypeError):
+            nested_hashes[next(iter(nested_hashes))] = H
+
+    def test_reconciliation_rejects_future_stale_and_untrusted_evidence(self):
+        run = uuid4()
+        snap = account(run)
+        local = LiveLocalProjection(
+            run, snap.account_fingerprint, (), (), dict(snap.balances),
+            dict(snap.positions), 1, T0, (snap.snapshot_id,),
+        )
+        with self.assertRaises(ValueError):
+            reconcile_live(
+                local_projection=local,
+                okx_bundle=exact_okx_bundle(run, "reconciliation", at=T0 + timedelta(seconds=1)),
+                evaluated_at_utc=T0, freshness_seconds=30, maximum_clock_skew_seconds=5,
+            )
+        with self.assertRaises(ValueError):
+            reconcile_live(
+                local_projection=local,
+                okx_bundle=exact_okx_bundle(run, "reconciliation", at=T0),
+                evaluated_at_utc=T0 + timedelta(seconds=31),
+                freshness_seconds=30, maximum_clock_skew_seconds=5,
+            )
+        with self.assertRaises(TypeError):
+            reconcile_live(
+                local_projection=local, venue_observation={"status": "reconciled"},
+                evaluated_at_utc=T0, freshness_seconds=30, maximum_clock_skew_seconds=5,
+            )
+
+    def test_dry_run_cli_exposes_no_authoritative_tick_or_lot_flags(self):
+        script = Path(__file__).resolve().parents[1] / "scripts" / "run_live_dry_run.py"
+        completed = subprocess.run([sys.executable, str(script), "--help"], capture_output=True, text=True)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("--tick-size", completed.stdout)
+        self.assertNotIn("--lot-size", completed.stdout)
+
 
 
 if __name__ == "__main__": unittest.main()

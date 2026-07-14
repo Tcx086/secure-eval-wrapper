@@ -332,6 +332,7 @@ Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarde
 - [x] Add five safe socket-free CLIs, guarded-live threat model and operator runbooks, 23 offline tests, 9 PostgreSQL integration tests, and explicit CI coverage.
 - [x] Repair Phase 8A authority integrity with typed evidence-producing preflight, same-run/configuration database bindings, transaction-locked PostgreSQL risk, operational kill freshness, incident-first recovery, and fee-aware Spot reservations.
 - [x] Add append-only migration `0023`, real PostgreSQL-backed live CLIs, typed new-process reconstruction, exact OKX read/response validation, authoritative reconciliation, direct-SQL immutability guards, 21 dedicated offline regressions, 25 dedicated PostgreSQL regressions, and clean plus seeded migration verification while keeping production writes unreachable.
+- [x] Add append-only migration `0024` with collector-sealed operational evidence, exact OKX response-envelope provenance, Phase 7 market lineage, PostgreSQL-authoritative instrument metadata, atomic reconciliation/risk sequencing, distinct kill-reset and run-continue authority, exact recovery classification, and 29 dedicated offline plus 29 dedicated PostgreSQL regressions, clean and seeded migration verification, and immutable 0001-0023 proof while keeping production writes unreachable.
 
 ## Todo
 

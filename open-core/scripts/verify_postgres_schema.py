@@ -1231,6 +1231,14 @@ ALLOWED_DATA_MIGRATIONS = {
         r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.live_recovery_records\b.*?;",
         r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.live_runs\b.*?;",
     ),
+    "0024_phase8a_evidence_reconciliation_metadata_integrity.sql": (
+        r"\bUPDATE\s+ON\s+execution\.live_okx_response_envelopes\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.live_preflight_reports\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.live_preflight_reports\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.live_recovery_records\b.*?;",
+        r"\bUPDATE\s+ON\s+execution\.live_kill_switches\b.*?;",
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.%I\b.*?;",
+    ),
 }
 
 class CatalogClient(Protocol):

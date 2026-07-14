@@ -15,18 +15,27 @@ from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 from secure_eval_wrapper.data_collection.hashing import sha256_payload
+from secure_eval_wrapper.live.approval import LiveApprovalController, confirmation_challenge_hash, manifest_preview_hash
 from secure_eval_wrapper.live.authorities import FixtureOnlyPreflightEvidence
 from secure_eval_wrapper.live.broker import GuardedLiveBroker
 from secure_eval_wrapper.live.durable_repository import DurablePostgresLiveRepository, LiveClaimError, LiveConflictError
-from secure_eval_wrapper.live.models import LiveObservationBundle, LiveRecoveryOutcome
+from secure_eval_wrapper.live.models import LivePreflightPurpose, LivePreflightStatus, LiveRecoveryOutcome
+from secure_eval_wrapper.live.preflight import LivePreflightEngine, collect_operational_preflight_evidence
+from secure_eval_wrapper.live.reconciliation import build_and_reconcile
 from secure_eval_wrapper.live.restart import ReconstructedLiveRuntime, reconstruct_live_runtime
 from secure_eval_wrapper.live.risk_summary import build_post_run_summary, build_pre_run_summary
 from secure_eval_wrapper.live.venues.fake_live import FakeLiveVenue
 from secure_eval_wrapper.live.venues.okx_live import OkxProductionSpotAdapter
-from test_phase8_guarded_live import T0, account, live_intent, passed_authority
+from test_phase8_guarded_live import (
+    COMMIT, T0, _PREFLIGHT_BUNDLES, _RECONCILIATION_DETAILS,
+    exact_okx_bundle, live_intent, passed_authority,
+)
 
 RUN = os.environ.get("RUN_POSTGRES_INTEGRATION", "").lower() == "true"
 TABLES = (
+    "live_recovery_query_completions", "live_reconciliation_input_bundles",
+    "live_instrument_metadata_sources", "live_market_source_bindings",
+    "live_okx_response_envelopes", "live_okx_response_bundles",
     "live_post_run_summaries", "live_pre_run_summaries", "live_lifecycle_events", "live_recovery_records",
     "live_reconciliation_differences", "live_reconciliations", "live_fill_observations", "live_order_projections",
     "live_order_observations", "live_transport_attempts", "live_cancel_outbox", "live_dispatch_events",
@@ -50,43 +59,153 @@ class Phase8PostgresTests(unittest.TestCase):
     def tearDownClass(cls): cls.connection.close()
 
     def setUp(self):
-        with self.connection.cursor() as cursor: cursor.execute("TRUNCATE " + ",".join("execution." + name for name in TABLES) + " CASCADE")
+        self.connection.rollback()
+        with self.connection.cursor() as cursor:
+            cursor.execute("TRUNCATE " + ",".join("execution." + name for name in TABLES) + " CASCADE")
+            cursor.execute("DELETE FROM market_data.validated_bars WHERE validation_report_id IN (SELECT validation_report_id FROM data_quality.validation_reports WHERE dataset_ref LIKE 'phase8-%')")
+            cursor.execute("DELETE FROM market_data.raw_source_observations WHERE source_endpoint='phase8-test'")
+            cursor.execute("DELETE FROM data_quality.validation_reports WHERE dataset_ref LIKE 'phase8-%'")
         self.connection.commit(); self.repo = DurablePostgresLiveRepository(self.connection)
 
     def context(self, *, at=T0):
         cfg, snap, cred, report, approval, manifest, kill, evidence, market, reconciliation = passed_authority(at=at)
+        preflight_bundle = _PREFLIGHT_BUNDLES[manifest.live_run_id]
+        exact_input, reconciliation_bundle = _RECONCILIATION_DETAILS[reconciliation.reconciliation_id]
         intent = live_intent(manifest, snap, reconciliation, market, limit=Decimal("100"), at=at)
-        body = OkxProductionSpotAdapter.build_limit_order_body(instrument="BTC-USDT", side=intent.side.value, quantity=intent.quantity, limit_price=intent.limit_price, client_order_id=intent.client_order_id, tick_size=Decimal("0.01"), lot_size=Decimal("0.001"))
-        request_hash = sha256_payload({"method": "POST", "path": "/api/v5/trade/order", "body": body})
         return locals()
 
+    def seed_phase7(self, ctx):
+        market = ctx["market"]
+        raw_id = market.source_row_id
+        provenance = {
+            "is_final": True, "available_at_utc": market.available_at_utc.isoformat(),
+            "quote_currency": market.quote_currency,
+            "normalized_record_sha256": market.normalized_record_sha256,
+        }
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO data_quality.validation_reports "
+                "(validation_report_id,validation_run_id,dataset_ref,accepted_count,status,report_sha256,report_jsonb,created_at_utc) "
+                "VALUES (%s,%s,%s,1,'accepted',%s,'{}'::jsonb,%s) ON CONFLICT (validation_report_id) DO NOTHING",
+                (market.validation_report_id, uuid4(), f"phase8-{market.source_row_id}", sha256_payload({"report": market.source_row_id}), ctx["at"]),
+            )
+            cursor.execute(
+                "INSERT INTO market_data.raw_source_observations "
+                "(observation_id,source_provider,source_exchange,source_endpoint,symbol_raw,symbol_normalized,timeframe,"
+                "observed_at_utc,ingested_at_utc,payload_jsonb,source_sha256,data_type,provider_instrument_id,instrument_type) "
+                "VALUES (%s,'okx','okx','phase8-test','BTC-USDT','BTC-USDT','1m',%s,%s,'{}'::jsonb,%s,'ohlcv','BTC-USDT','spot') "
+                "ON CONFLICT (observation_id) DO NOTHING",
+                (raw_id, market.observed_at_utc, market.available_at_utc, market.source_sha256),
+            )
+            cursor.execute(
+                "INSERT INTO market_data.validated_bars "
+                "(bar_id,symbol,exchange,timeframe,bar_open_time_utc,bar_close_time_utc,is_final,open,high,low,close,volume,"
+                "validation_status,validation_report_id,source_observation_ids,provenance_jsonb) "
+                "VALUES (%s,'BTC-USDT','okx','1m',%s,%s,true,%s,%s,%s,%s,1,'accepted',%s,%s,%s::jsonb) "
+                "ON CONFLICT (bar_id) DO NOTHING",
+                (market.source_row_id, market.observed_at_utc - timedelta(minutes=1), market.observed_at_utc,
+                 market.price, market.price, market.price, market.price, market.validation_report_id,
+                 [raw_id], json.dumps(provenance)),
+            )
+        self.connection.commit()
+
     def start(self, ctx, **kwargs):
-        self.repo.persist_reconciliation(ctx["reconciliation"], exact_input={"local": {"source": "postgresql"}, "venue": {"source": "typed_exact_bundle"}})
-        return self.repo.persist_start_bundle(configuration=ctx["cfg"], credential_reference=ctx["cred"], account_snapshot=ctx["snap"], report=ctx["report"], approval=ctx["approval"], manifest=ctx["manifest"], kill_switch=ctx["kill"], evidence=ctx["evidence"], created_at_utc=ctx["at"], **kwargs)
+        self.seed_phase7(ctx)
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT 1 FROM execution.live_reconciliations WHERE reconciliation_id=%s",
+                (ctx["reconciliation"].reconciliation_id,),
+            )
+            present = cursor.fetchone() is not None
+        self.connection.commit()
+        if not present:
+            self.repo.persist_reconciliation(
+                ctx["reconciliation"], exact_input=ctx["exact_input"],
+                okx_bundle=ctx["reconciliation_bundle"],
+            )
+        return self.repo.persist_start_bundle(
+            configuration=ctx["cfg"], credential_reference=ctx["cred"],
+            account_snapshot=ctx["snap"], report=ctx["report"], approval=ctx["approval"],
+            manifest=ctx["manifest"], kill_switch=ctx["kill"], evidence=ctx["evidence"],
+            okx_bundle=ctx["preflight_bundle"], created_at_utc=ctx["at"], **kwargs,
+        )
 
     def prepare(self, ctx, *, repo=None, intent=None, configuration=None, approval=None, **kwargs):
-        repo = repo or self.repo; intent = intent or ctx["intent"]
+        repo = repo or self.repo
+        intent = intent or ctx["intent"]
         configuration = configuration or ctx["cfg"]
         approval = approval or ctx["approval"]
-        body = OkxProductionSpotAdapter.build_limit_order_body(instrument="BTC-USDT", side=intent.side.value, quantity=intent.quantity, limit_price=intent.limit_price, client_order_id=intent.client_order_id, tick_size=Decimal("0.01"), lot_size=Decimal("0.001"))
-        request_hash = sha256_payload({"method": "POST", "path": "/api/v5/trade/order", "body": body})
-        return repo.prepare_operational_dry_run(intent=intent, configuration=configuration, approval=approval, market_evidence=ctx["market"], request_body=body, provider_request_hash=request_hash, created_at_utc=ctx["at"], **kwargs)
+        result = repo.prepare_operational_dry_run(
+            intent=intent, configuration=configuration, approval=approval,
+            market_evidence=ctx["market"], created_at_utc=ctx["at"], **kwargs,
+        )
+        ctx["intent"] = result["intent"]
+        return result
 
+    def continuation_authority(self, ctx, *, purpose, at):
+        bundle = exact_okx_bundle(
+            ctx["manifest"].live_run_id, "preflight", at=T0,
+            account_fingerprint=ctx["snap"].account_fingerprint,
+        )
+        evidence = collect_operational_preflight_evidence(
+            connection=self.connection, live_run_id=ctx["manifest"].live_run_id,
+            configuration=ctx["cfg"], credential_reference=ctx["cred"],
+            account_snapshot=ctx["snap"], market_evidence=ctx["market"],
+            reconciliation=None, kill_switch=None, okx_bundle=bundle,
+            repository_commit_sha=COMMIT, collected_at_utc=at,
+        )
+        self.connection.commit()
+        report = LivePreflightEngine().evaluate(
+            live_run_id=ctx["manifest"].live_run_id, configuration=ctx["cfg"],
+            account_snapshot=ctx["snap"], credential_reference=ctx["cred"],
+            evidence=evidence, evaluated_at_utc=at,
+            implementation_hash=ctx["cfg"].provider_implementation_hash,
+            repository_commit_sha=COMMIT, purpose=purpose,
+        )
+        preview = manifest_preview_hash(
+            live_run_id=ctx["manifest"].live_run_id, configuration=ctx["cfg"],
+            credential_reference_hash=ctx["cred"].record_hash,
+            preflight_report_id=report.report_id,
+            account_snapshot_hash=ctx["snap"].record_hash,
+            repository_commit_sha=COMMIT,
+        )
+        nonce = f"{purpose.value}-{at.isoformat()}"
+        expires = at + timedelta(seconds=300)
+        challenge = confirmation_challenge_hash(
+            live_run_id=ctx["manifest"].live_run_id, configuration=ctx["cfg"],
+            account_fingerprint=ctx["snap"].account_fingerprint,
+            manifest_hash=preview, repository_commit_sha=COMMIT, nonce=nonce,
+            approving_actor="local-operator", created_at_utc=at,
+            expires_at_utc=expires, maximum_total_approved_notional=Decimal("5000"),
+        )
+        approval = LiveApprovalController().create(
+            report=report, configuration=ctx["cfg"], account_snapshot=ctx["snap"],
+            manifest_hash=preview, repository_commit_sha=COMMIT, created_at_utc=at,
+            ttl_seconds=300, nonce=nonce, approving_actor="local-operator",
+            maximum_total_approved_notional=Decimal("5000"),
+            exact_confirmation_challenge_hash=challenge,
+        )
+        self.repo.persist_operational_preflight_approval(
+            credential_reference=ctx["cred"], account_snapshot=ctx["snap"],
+            report=report, approval=approval, evidence=evidence,
+            okx_bundle=bundle, created_at_utc=at,
+        )
+        return report, approval, evidence
     def count(self, table):
         with self.connection.cursor() as cursor: cursor.execute(f"SELECT count(*) AS count FROM execution.{table}"); return cursor.fetchone()["count"]
 
-    def test_catalog_and_migration_0023_are_installed(self):
+    def test_catalog_and_migration_0024_are_installed(self):
         with self.connection.cursor() as cursor:
             cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='execution' AND table_name LIKE 'live_%'"); names = {row["table_name"] for row in cursor.fetchall()}
-            cursor.execute("SELECT sha256 FROM audit.schema_migrations WHERE migration_id='0023_phase8a_authority_recovery_and_cli_integrity'"); catalog_hash = cursor.fetchone()["sha256"]
-        self.assertEqual(names, set(TABLES)); migration = Path(__file__).resolve().parents[1] / "db" / "migrations" / "0023_phase8a_authority_recovery_and_cli_integrity.sql"
+            cursor.execute("SELECT sha256 FROM audit.schema_migrations WHERE migration_id='0024_phase8a_evidence_reconciliation_metadata_integrity'"); catalog_hash = cursor.fetchone()["sha256"]
+        self.assertEqual(names, set(TABLES)); migration = Path(__file__).resolve().parents[1] / "db" / "migrations" / "0024_phase8a_evidence_reconciliation_metadata_integrity.sql"
         self.assertEqual(catalog_hash, hashlib.sha256(migration.read_bytes().replace(b"\r\n", b"\n")).hexdigest())
 
     def test_start_bundle_rolls_back_each_child_and_replays_exactly(self):
         for failure in ("configuration", "credential", "account", "preflight", "approval", "manifest", "kill_switch", "risk_state"):
             with self.subTest(failure=failure):
-                self.setUp(); ctx = self.context(); self.repo.persist_reconciliation(ctx["reconciliation"], exact_input={"seed": True})
-                with self.assertRaises(RuntimeError): self.repo.persist_start_bundle(configuration=ctx["cfg"], credential_reference=ctx["cred"], account_snapshot=ctx["snap"], report=ctx["report"], approval=ctx["approval"], manifest=ctx["manifest"], kill_switch=ctx["kill"], evidence=ctx["evidence"], created_at_utc=T0, fail_at=failure)
+                self.setUp(); ctx = self.context()
+                with self.assertRaises(RuntimeError): self.start(ctx, fail_at=failure)
                 self.assertEqual(self.count("live_runs"), 0); self.assertEqual(self.count("live_preflight_reports"), 0)
         self.setUp(); ctx = self.context(); self.assertTrue(self.start(ctx)); self.assertTrue(self.start(ctx)); self.assertEqual(self.count("live_runs"), 1)
 
@@ -98,6 +217,31 @@ class Phase8PostgresTests(unittest.TestCase):
                 cursor.execute("INSERT INTO execution.live_credential_references (credential_reference_id,provider,alias,source_type,account_fingerprint,loaded,verified_at_utc,permission_summary_jsonb,record_sha256,created_at_utc) VALUES (%s,'okx','unsafe','injected_local',%s,false,%s,'[\"read\",\"withdraw\"]'::jsonb,%s,%s)", (unsafe_id, ctx["snap"].account_fingerprint, T0, unsafe_hash, T0))
                 cursor.execute("INSERT INTO execution.live_preflight_reports (preflight_report_id,live_run_id,configuration_sha256,implementation_sha256,repository_commit_sha,endpoint_catalog_sha256,credential_reference_sha256,account_snapshot_sha256,evaluated_at_utc,status,blockers_jsonb,warnings_jsonb,record_sha256,credential_reference_id,account_snapshot_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'passed','[]'::jsonb,'[]'::jsonb,%s,%s,%s)", (report_id, ctx["manifest"].live_run_id, ctx["cfg"].configuration_hash, ctx["cfg"].provider_implementation_hash, ctx["manifest"].repository_commit_sha, ctx["cfg"].endpoint_catalog_hash, unsafe_hash, ctx["snap"].record_hash, T0, "b" * 64, unsafe_id, ctx["snap"].snapshot_id))
         self.connection.rollback(); self.assertEqual(self.count("live_credential_references"), 1)
+        forged_catalog = {
+            "catalog_clean": True,
+            "immutable_0001_0023": True,
+            "latest_migration": "0024",
+            "expected_hashes_0001_0023": {},
+            "observed_hashes": {},
+        }
+        with self.assertRaises(Exception):
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO execution.live_preflight_sources "
+                    "(source_id,live_run_id,source_kind,collected_at_utc,source_payload_jsonb,"
+                    "source_sha256,operational,record_sha256,producer_classification,"
+                    "collector_kind,collector_version,source_system_identity,"
+                    "source_record_identity,raw_response_sha256,normalized_payload_sha256,"
+                    "source_schema_version) "
+                    "VALUES (%s,%s,'migration_catalog',%s,%s,%s,true,%s,"
+                    "'operational_collector','repository_migration_catalog','forged',"
+                    "'forged','forged',%s,%s,1)",
+                    (
+                        uuid4(), ctx["manifest"].live_run_id, T0, json.dumps(forged_catalog),
+                        "c" * 64, "d" * 64, "e" * 64, sha256_payload(forged_catalog),
+                    ),
+                )
+        self.connection.rollback()
 
     def test_cross_run_report_approval_manifest_and_intent_attacks_fail(self):
         a = self.context(); self.start(a); b = self.context(); self.start(b)
@@ -124,7 +268,36 @@ class Phase8PostgresTests(unittest.TestCase):
         with self.assertRaises(PermissionError): self.repo.reset_kill(live_run_id=ctx["manifest"].live_run_id, fresh_preflight_report_id=ctx["report"].report_id, new_approval_id=ctx["approval"].approval_id, at_utc=T0 + timedelta(seconds=2))
 
     def test_buy_sell_fee_reservations_and_duplicate_replay(self):
-        ctx = self.context(); self.start(ctx); result = self.prepare(ctx); reservation = result["reservation"]
+        ctx = self.context()
+        self.start(ctx)
+        ctx["intent"] = live_intent(
+            ctx["manifest"], ctx["snap"], ctx["reconciliation"], ctx["market"],
+            quantity=Decimal("1.2345"), limit=Decimal("100.019"),
+        )
+        result = self.prepare(ctx)
+        reservation = result["reservation"]
+        self.assertEqual(result["intent"].quantity, Decimal("1.234"))
+        self.assertEqual(result["intent"].limit_price, Decimal("100.01"))
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT request_jsonb,provider_request_sha256 "
+                "FROM execution.live_dispatch_outbox WHERE dispatch_outbox_id=%s",
+                (result["outbox_id"],),
+            )
+            request_row = cursor.fetchone()
+        expected_body = {
+            "instId": "BTC-USDT", "tdMode": "cash",
+            "clOrdId": result["intent"].client_order_id, "side": "buy",
+            "ordType": "limit", "px": "100.01", "sz": "1.234",
+        }
+        self.assertEqual(request_row["request_jsonb"], expected_body)
+        self.assertEqual(
+            request_row["provider_request_sha256"],
+            sha256_payload({
+                "method": "POST", "path": "/api/v5/trade/order",
+                "body": expected_body,
+            }),
+        )
         self.assertEqual(reservation.currency, "USDT"); self.assertEqual(reservation.original_amount, reservation.risk_notional + reservation.maximum_fee_amount)
         replay = self.prepare(ctx); self.assertTrue(replay["replayed"]); self.assertEqual(self.count("live_reservations"), 1)
         self.setUp(); ctx = self.context(); sell = live_intent(ctx["manifest"], ctx["snap"], ctx["reconciliation"], ctx["market"], side="sell", quantity=Decimal("2"))
@@ -172,22 +345,34 @@ class Phase8PostgresTests(unittest.TestCase):
 
     def observation(self, ctx, *, order=None, fills=(), extra_account=None, declared=LiveRecoveryOutcome.CONFIRMED_ABSENT):
         queried_at = T0 + timedelta(seconds=3)
-        recent = (order,) if order is not None else ()
-        open_orders = recent if order is not None and order.get("state") in {"live", "partially_filled"} else ()
-        fills = tuple(fills)
-        account_observation = {"account_fingerprint": ctx["snap"].account_fingerprint, "query_timestamp_utc": queried_at}
-        if extra_account:
-            account_observation.update(extra_account)
-        account_observation["response_hashes"] = {
-            "queried_order": sha256_payload(order),
-            "recent_orders": sha256_payload(recent),
-            "open_orders": sha256_payload(open_orders),
-            "fills": sha256_payload(fills),
-            "account": sha256_payload(account_observation),
+        ts = str(int(queried_at.timestamp() * 1000))
+        order_row = None if order is None else {
+            "ordId": order["ordId"], "clOrdId": order["clOrdId"], "instId": order["instId"],
+            "side": order["side"], "sz": order["sz"], "px": order["px"],
+            "state": order.get("state", "live"), "accFillSz": order.get("accFillSz", "0"),
+            "cTime": order.get("cTime", ts), "uTime": order.get("uTime", ts),
         }
-        return LiveObservationBundle(
-            ctx["manifest"].live_run_id, ctx["intent"].client_order_id, order, recent, open_orders,
-            fills, account_observation, queried_at, declared,
+        fill_rows = tuple({
+            **fill, "ts": fill.get("ts", ts),
+        } for fill in fills)
+        account_config = {
+            "uid": "changed-account" if extra_account else "redacted-account",
+            "acctLv": "1", "posMode": "long_short_mode",
+            "autoLoan": "false", "enableSpotBorrow": "false",
+        }
+        orders = [] if order_row is None else [order_row]
+        pending = orders if order_row is not None and order_row["state"] in {"live", "partially_filled"} else []
+        return exact_okx_bundle(
+            ctx["manifest"].live_run_id, "recovery", at=queried_at,
+            account_fingerprint=ctx["snap"].account_fingerprint,
+            client_order_id=ctx["intent"].client_order_id, venue_sequence=2,
+            overrides={
+                "/api/v5/account/config": {"code": "0", "data": [account_config]},
+                "/api/v5/trade/order": {"code": "0", "data": orders[:1]},
+                "/api/v5/trade/orders-history": {"code": "0", "data": orders},
+                "/api/v5/trade/orders-pending": {"code": "0", "data": pending},
+                "/api/v5/trade/fills-history": {"code": "0", "data": list(fill_rows)},
+            },
         )
 
     def test_observed_external_order_and_fill_create_incident_and_stop_kill(self):
@@ -197,7 +382,7 @@ class Phase8PostgresTests(unittest.TestCase):
                 order = {"ordId": "o1", "clOrdId": ctx["intent"].client_order_id, "instId": "BTC-USDT", "state": "live", "side": "buy", "sz": "1", "px": "100"}
                 fills = ({"tradeId": "f1", "ordId": "o1", "clOrdId": ctx["intent"].client_order_id, "instId": "BTC-USDT", "side": "buy", "fillSz": "1", "fillPx": "100", "fee": "-0.1", "feeCcy": "USDT"},) if outcome is LiveRecoveryOutcome.OBSERVED_EXTERNAL_FILL else ()
                 bundle = self.observation(ctx, order=order, fills=fills, declared=LiveRecoveryOutcome.CONFIRMED_ABSENT)
-                self.repo.persist_recovery_observation(outbox_id=outbox, claim_token=recovery[1], worker_identity="recovery", observation_bundle=bundle, at_utc=T0 + timedelta(seconds=4))
+                self.repo.persist_recovery_observation(outbox_id=outbox, claim_token=recovery[1], worker_identity="recovery", okx_bundle=bundle, at_utc=T0 + timedelta(seconds=4))
                 with self.connection.cursor() as cursor:
                     cursor.execute("SELECT d.state,p.state AS projection,k.state AS kill FROM execution.live_dispatch_outbox d JOIN execution.live_order_projections p ON p.order_intent_id=d.order_intent_id JOIN execution.live_kill_switches k ON k.live_run_id=d.live_run_id WHERE d.dispatch_outbox_id=%s", (outbox,)); row = cursor.fetchone()
                 self.assertEqual((row["state"], row["projection"], row["kill"]), ("unexpected_external_side_effect", "incident_blocked", "stopped"))
@@ -206,9 +391,9 @@ class Phase8PostgresTests(unittest.TestCase):
         ctx = self.context(); self.start(ctx); outbox, recovery = self._pending_recovery(ctx)
         self.assertIsNone(self.repo.claim_recovery(worker_identity="other", at_utc=T0 + timedelta(seconds=2), outbox_id=outbox))
         bundle = self.observation(ctx)
-        observation_id = self.repo.persist_recovery_observation(outbox_id=outbox, claim_token=recovery[1], worker_identity="recovery", observation_bundle=bundle, at_utc=T0 + timedelta(seconds=4))
+        observation_id = self.repo.persist_recovery_observation(outbox_id=outbox, claim_token=recovery[1], worker_identity="recovery", okx_bundle=bundle, at_utc=T0 + timedelta(seconds=4))
         conflicting = self.observation(ctx, extra_account={"changed": True})
-        with self.assertRaises(LiveConflictError): self.repo.persist_recovery_observation(outbox_id=outbox, claim_token=recovery[1], worker_identity="recovery", observation_bundle=conflicting, at_utc=T0 + timedelta(seconds=4))
+        with self.assertRaises(LiveConflictError): self.repo.persist_recovery_observation(outbox_id=outbox, claim_token=recovery[1], worker_identity="recovery", okx_bundle=conflicting, at_utc=T0 + timedelta(seconds=4))
         self.assertIsNotNone(observation_id)
 
     def test_direct_sql_economic_manifest_request_and_success_mutations_fail(self):
@@ -244,6 +429,18 @@ class Phase8PostgresTests(unittest.TestCase):
             ("UPDATE execution.live_dispatch_outbox SET request_method='GET' WHERE dispatch_outbox_id=%s", (outbox,)),
             ("UPDATE execution.live_dispatch_outbox SET request_path='/api/v5/trade/cancel-order' WHERE dispatch_outbox_id=%s", (outbox,)),
             ("UPDATE execution.live_transport_attempts SET external_write_attempted=true,successful_write=true WHERE transport_attempt_id=%s", (attempt_id,)),
+            (
+                "UPDATE execution.live_okx_response_envelopes "
+                "SET raw_response_jsonb=%s::jsonb "
+                "WHERE response_bundle_id=%s AND endpoint_kind='balances'",
+                (json.dumps({"code": "0", "data": [{"totalEq": "999"}]}), ctx["preflight_bundle"].bundle_id),
+            ),
+            (
+                "UPDATE execution.live_okx_response_envelopes "
+                "SET raw_response_jsonb=%s::jsonb "
+                "WHERE response_bundle_id=%s AND endpoint_kind='pending_orders'",
+                (json.dumps({"code": "0", "data": [{"clOrdId": "forged"}]}), ctx["preflight_bundle"].bundle_id),
+            ),
         ]
         for sql, params in attacks:
             with self.subTest(sql=sql):
@@ -258,6 +455,25 @@ class Phase8PostgresTests(unittest.TestCase):
                     (uuid4(), ctx["manifest"].live_run_id, ctx["intent"].order_intent_id, "a" * 64, T0, "b" * 64),
                 )
         self.connection.rollback()
+        extra_path = "/api/v5/trade/order?clOrdId=forged&instId=BTC-USDT"
+        extra_raw = {"code": "0", "data": []}
+        with self.assertRaises(Exception):
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO execution.live_okx_response_envelopes "
+                    "(response_bundle_id,endpoint_kind,request_identity,request_method,request_path,"
+                    "top_level_provider_code,query_started_at_utc,query_completed_at_utc,completed,"
+                    "raw_response_jsonb,canonical_response_sha256,parser_version,record_sha256) "
+                    "VALUES (%s,'order_details',%s,'GET',%s,'0',%s,%s,true,%s,%s,%s,%s)",
+                    (
+                        ctx["preflight_bundle"].bundle_id,
+                        sha256_payload({"method": "GET", "path": extra_path}),
+                        extra_path, T0, T0, json.dumps(extra_raw), sha256_payload(extra_raw),
+                        ctx["preflight_bundle"].parser_version, "f" * 64,
+                    ),
+                )
+                self.connection.commit()
+        self.connection.rollback()
 
     def test_restart_reconstructs_typed_operational_dry_run(self):
         ctx = self.context(); self.start(ctx); runtime = reconstruct_live_runtime(repository=DurablePostgresLiveRepository(self.connection), live_run_id=ctx["manifest"].live_run_id)
@@ -267,15 +483,15 @@ class Phase8PostgresTests(unittest.TestCase):
         now = datetime.now(timezone.utc); ctx = self.context(at=now); self.start(ctx); root = Path(__file__).resolve().parents[1]; env = dict(os.environ); env["PYTHONPATH"] = str(root / "src")
         commands = {
             "preflight": [root / "scripts" / "run_live_preflight.py", "--live-run-id", str(ctx["manifest"].live_run_id)],
-            "dry-run": [root / "scripts" / "run_live_dry_run.py", "--live-run-id", str(ctx["manifest"].live_run_id), "--side", "buy", "--quantity", "1", "--limit-price", "100", "--tick-size", "0.01", "--lot-size", "0.001"],
+            "dry-run": [root / "scripts" / "run_live_dry_run.py", "--live-run-id", str(ctx["manifest"].live_run_id), "--side", "buy", "--quantity", "1", "--limit-price", "100"],
             "status": [root / "scripts" / "run_live_status.py", "--live-run-id", str(ctx["manifest"].live_run_id)],
         }
         for name, command in commands.items():
-            completed = subprocess.run([sys.executable, *map(str, command)], env=env, capture_output=True, text=True); self.assertIn(completed.returncode, (0, 1), (name, completed.stdout, completed.stderr)); payload = json.loads(completed.stdout); self.assertFalse(payload["network_writes_occurred"])
+            completed = subprocess.run([sys.executable, *map(str, command)], env=env, capture_output=True, text=True); self.assertIn(completed.returncode, (0, 1, 2), (name, completed.stdout, completed.stderr)); payload = json.loads(completed.stdout); self.assertFalse(payload["network_writes_occurred"])
         projection = self.repo.build_local_projection(ctx["manifest"].live_run_id, observed_at_utc=now)
         with TemporaryDirectory() as temporary:
             path = Path(temporary) / "venue.json"; path.write_text(json.dumps({"account_fingerprint": projection["account_fingerprint"], "orders": projection["orders"], "fills": projection["fills"], "balances": projection["balances"], "positions": projection["positions"], "sequence": projection["sequence"], "observed_at_utc": projection["timestamp_utc"], "response_hashes": ["a" * 64]}, default=str), encoding="utf-8")
-            completed = subprocess.run([sys.executable, str(root / "scripts" / "run_live_reconcile.py"), "--live-run-id", str(ctx["manifest"].live_run_id), "--venue-observation-json", str(path)], env=env, capture_output=True, text=True); self.assertIn(completed.returncode, (0, 1)); self.assertFalse(json.loads(completed.stdout)["network_writes_occurred"])
+            completed = subprocess.run([sys.executable, str(root / "scripts" / "run_live_reconcile.py"), "--live-run-id", str(ctx["manifest"].live_run_id), "--venue-observation-json", str(path)], env=env, capture_output=True, text=True); self.assertIn(completed.returncode, (0, 1, 2)); self.assertFalse(json.loads(completed.stdout)["network_writes_occurred"])
         completed = subprocess.run([sys.executable, str(root / "scripts" / "run_live_kill.py"), "--live-run-id", str(ctx["manifest"].live_run_id)], env=env, capture_output=True, text=True); self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr); self.assertFalse(json.loads(completed.stdout)["network_writes_occurred"])
 
     def _restart_process(self, live_run_id, action):
@@ -602,5 +818,158 @@ print(json.dumps(result, sort_keys=True))
         self.assertEqual(restarted["summary_count"], 2)
         self.assertEqual(restarted["venue_writes"], 0)
         self.assertFalse(restarted["write_enabled"])
+
+    def test_reconciliation_atomically_updates_risk_and_material_unknown_stops_run(self):
+        ctx = self.context()
+        self.start(ctx)
+        reconciled, _ = build_and_reconcile(
+            repository=self.repo, live_run_id=ctx["manifest"].live_run_id,
+            okx_bundle=exact_okx_bundle(
+                ctx["manifest"].live_run_id, "reconciliation", at=T0 + timedelta(seconds=1),
+                account_fingerprint=ctx["snap"].account_fingerprint, venue_sequence=2,
+            ),
+            configuration=ctx["cfg"], evaluated_at_utc=T0 + timedelta(seconds=2),
+        )
+        self.connection.commit()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT latest_reconciliation_id,latest_reconciliation_status,"
+                "latest_reconciliation_input_bundle_id,latest_local_sequence,latest_venue_sequence "
+                "FROM execution.live_run_risk_state WHERE live_run_id=%s",
+                (ctx["manifest"].live_run_id,),
+            )
+            risk = cursor.fetchone()
+        self.assertEqual(risk["latest_reconciliation_id"], reconciled.reconciliation_id)
+        self.assertEqual(risk["latest_reconciliation_status"], "reconciled")
+        self.assertIsNotNone(risk["latest_reconciliation_input_bundle_id"])
+        self.assertGreaterEqual(risk["latest_local_sequence"], 2)
+        self.assertEqual(risk["latest_venue_sequence"], 2)
+        self.connection.commit()
+
+        unknown, _ = build_and_reconcile(
+            repository=self.repo, live_run_id=ctx["manifest"].live_run_id,
+            okx_bundle=exact_okx_bundle(
+                ctx["manifest"].live_run_id, "reconciliation", at=T0 + timedelta(seconds=3),
+                account_fingerprint=ctx["snap"].account_fingerprint, venue_sequence=3,
+                overrides={"/api/v5/account/balance": TimeoutError("timeout")},
+            ),
+            configuration=ctx["cfg"], evaluated_at_utc=T0 + timedelta(seconds=3),
+        )
+        self.connection.commit()
+        self.assertEqual(unknown.status.value, "unknown")
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT r.latest_reconciliation_status,k.state AS kill_state,l.state AS run_state "
+                "FROM execution.live_run_risk_state r "
+                "JOIN execution.live_kill_switches k USING (live_run_id) "
+                "JOIN execution.live_runs l USING (live_run_id) WHERE r.live_run_id=%s",
+                (ctx["manifest"].live_run_id,),
+            )
+            row = cursor.fetchone()
+        self.assertEqual((row["latest_reconciliation_status"], row["kill_state"], row["run_state"]), ("unknown", "stopped", "stopped"))
+        with self.assertRaises(PermissionError):
+            self.prepare(ctx)
+
+    def test_direct_sql_cannot_promote_preflight_json_to_reconciled(self):
+        ctx = self.context()
+        self.start(ctx)
+        fake_id = uuid4()
+        with self.assertRaises(Exception):
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO execution.live_reconciliations "
+                    "(reconciliation_id,live_run_id,status,input_bundle_sha256,exact_input_jsonb,"
+                    "evaluated_at_utc,record_sha256,local_projection_as_of_utc,"
+                    "venue_observation_as_of_utc,query_started_at_utc,query_completed_at_utc,"
+                    "response_bundle_id,producer_classification,local_sequence,venue_sequence) "
+                    "VALUES (%s,%s,'reconciled',%s,'{\"caller\":true}'::jsonb,%s,%s,%s,%s,%s,%s,%s,"
+                    "'operational_collector',2,2)",
+                    (fake_id, ctx["manifest"].live_run_id, "a" * 64, T0, "b" * 64,
+                     T0, T0, T0, T0, ctx["preflight_bundle"].bundle_id),
+                )
+                self.connection.commit()
+        self.connection.rollback()
+        self.assertEqual(self.count("live_reconciliations"), 1)
+
+    def test_metadata_authority_rejects_cross_run_and_suspended_sources(self):
+        first = self.context()
+        self.start(first)
+        second = self.context()
+        self.start(second)
+        foreign = next(source for source in second["evidence"].sources if source.source_kind == "instrument_metadata")
+        attack = replace(
+            first["intent"], instrument_metadata_source_id=foreign.source_id,
+            instrument_metadata_hash=foreign.source_hash,
+            order_intent_id=None, client_order_id=None,
+        )
+        with self.assertRaises(PermissionError):
+            self.prepare(first, intent=attack)
+        own = next(source for source in first["evidence"].sources if source.source_kind == "instrument_metadata")
+        for quantity, limit_price in (
+            (Decimal("0.0004"), Decimal("100")),
+            (Decimal("0.001"), Decimal("1")),
+        ):
+            with self.subTest(quantity=quantity, limit_price=limit_price):
+                below_minimum = live_intent(
+                    first["manifest"], first["snap"], first["reconciliation"],
+                    first["market"], quantity=quantity, limit=limit_price,
+                )
+                with self.assertRaises(PermissionError):
+                    self.prepare(first, intent=below_minimum)
+        with self.assertRaises(Exception):
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE execution.live_instrument_metadata_sources SET instrument_state='suspended' WHERE source_id=%s",
+                    (own.source_id,),
+                )
+        self.connection.rollback()
+
+    def test_kill_reset_requires_reset_authority_then_new_run_continue_authority(self):
+        ctx = self.context()
+        self.start(ctx)
+        self.repo.trigger_kill(
+            live_run_id=ctx["manifest"].live_run_id, reason="manual",
+            evidence={"test": "reset"}, at_utc=T0 + timedelta(seconds=1),
+        )
+        reset_report, reset_approval, _ = self.continuation_authority(
+            ctx, purpose=LivePreflightPurpose.KILL_RESET, at=T0 + timedelta(seconds=2),
+        )
+        self.assertIs(reset_report.status, LivePreflightStatus.PASSED_FOR_RESET)
+        self.assertEqual(
+            self.repo.reset_kill(
+                live_run_id=ctx["manifest"].live_run_id,
+                fresh_preflight_report_id=reset_report.report_id,
+                new_approval_id=reset_approval.approval_id,
+                at_utc=T0 + timedelta(seconds=3),
+            ),
+            "armed",
+        )
+        with self.assertRaises(PermissionError):
+            self.repo.prepare_operational_dry_run(
+                intent=ctx["intent"], configuration=ctx["cfg"], approval=reset_approval,
+                market_evidence=ctx["market"], created_at_utc=T0 + timedelta(seconds=3),
+            )
+
+        continue_report, continue_approval, continue_evidence = self.continuation_authority(
+            ctx, purpose=LivePreflightPurpose.RUN_CONTINUE, at=T0 + timedelta(seconds=4),
+        )
+        self.assertIs(continue_report.status, LivePreflightStatus.PASSED)
+        sources = {source.source_kind: source for source in continue_evidence.sources}
+        intent = replace(
+            ctx["intent"], created_at_utc=T0 + timedelta(seconds=4),
+            market_evidence_id=sources["market_data"].source_id,
+            market_evidence_hash=sources["market_data"].source_hash,
+            instrument_metadata_source_id=sources["instrument_metadata"].source_id,
+            instrument_metadata_hash=sources["instrument_metadata"].source_hash,
+            order_intent_id=None, client_order_id=None,
+        )
+        prepared = self.repo.prepare_operational_dry_run(
+            intent=intent, configuration=ctx["cfg"], approval=continue_approval,
+            market_evidence=ctx["market"], created_at_utc=T0 + timedelta(seconds=4),
+        )
+        self.assertTrue(prepared["risk_decision"].accepted)
+        self.assertIsNotNone(prepared["outbox_id"])
+
+
 
 if __name__ == "__main__": unittest.main()

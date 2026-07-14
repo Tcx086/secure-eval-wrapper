@@ -51,43 +51,10 @@ def _uuid(value: str) -> UUID:
         raise ValueError("--live-run-id must be a UUID") from exc
 
 
-def _migration_hashes_0001_0022() -> dict[str, str]:
-    result = {}
-    for path in sorted(MIGRATIONS.glob("[0-9][0-9][0-9][0-9]_*.sql")):
-        if path.name[:4] > "0022": break
-        result[path.stem] = hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
-    return result
-
-
-def _persist_preflight_report(repository, *, configuration, credential, account, evidence, report, created_at_utc):
-    with repository.transaction():
-        repository._lock_run(report.live_run_id)
-        for source in evidence.sources:
-            repository._strict_insert(
-                "execution.live_preflight_sources", "source_id", source.source_id,
-                ("live_run_id", "source_kind", "collected_at_utc", "source_payload_jsonb", "source_sha256", "operational"),
-                (source.live_run_id, source.source_kind, source.collected_at_utc, _public_payload(dict(source.payload)), source.source_hash, True), source.record_hash,
-            )
-        repository._strict_insert(
-            "execution.live_preflight_reports", "preflight_report_id", report.report_id,
-            ("live_run_id", "configuration_sha256", "implementation_sha256", "repository_commit_sha", "endpoint_catalog_sha256", "credential_reference_sha256", "account_snapshot_sha256", "evaluated_at_utc", "status", "blockers_jsonb", "warnings_jsonb", "credential_reference_id", "account_snapshot_id"),
-            (report.live_run_id, report.configuration_hash, report.implementation_hash, report.repository_commit_sha, report.endpoint_catalog_hash, report.credential_reference_hash, report.account_snapshot_hash, report.evaluated_at_utc, report.status.value, _public_payload(report.blockers), _public_payload(report.warnings), credential.reference_id, account.snapshot_id), report.record_hash,
-        )
-        for check_ordinal, check in enumerate(report.checks):
-            repository._strict_insert(
-                "execution.live_preflight_checks", "preflight_check_id", check.check_id,
-                ("preflight_report_id", "live_run_id", "check_ordinal", "check_name", "passed", "required", "evaluated_at_utc", "source_timestamp_utc", "explanation", "evidence_sha256"),
-                (report.report_id, report.live_run_id, check_ordinal, check.check_name, check.passed, check.required, check.evaluated_at_utc, check.source_timestamp_utc, check.explanation, check.evidence_hash), check.record_hash,
-            )
-            for source_ordinal, (source_id, source_hash) in enumerate(zip(check.source_ids, check.source_hashes)):
-                repository._execute("INSERT INTO execution.live_preflight_check_sources (preflight_check_id,source_ordinal,source_id,live_run_id,source_sha256) VALUES (%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING", (check.check_id, source_ordinal, source_id, report.live_run_id, source_hash))
-
-
 def preflight_main(argv=None):
-    parser = _parser("Secure Eval live preflight (offline PostgreSQL authority by default)")
+    parser = _parser("Secure Eval live preflight collector gate")
     parser.add_argument("--read-only-network-preflight", action="store_true")
     args = parser.parse_args(argv)
-    network_reads = False
     try:
         run_id = _uuid(args.live_run_id)
         with _connect() as connection:
@@ -95,27 +62,24 @@ def preflight_main(argv=None):
             runtime = reconstruct_live_runtime(repository=repository, live_run_id=run_id)
             if args.configuration_hash and args.configuration_hash != runtime.configuration.configuration_hash:
                 raise PermissionError("requested configuration hash does not match PostgreSQL")
-            if args.read_only_network_preflight:
-                raise PermissionError("authenticated reads require an explicit local credential-provider integration; no credential is loaded implicitly")
-            now = datetime.now(timezone.utc)
-            rows = repository._fetchall("SELECT * FROM execution.live_preflight_sources WHERE live_run_id=%s ORDER BY collected_at_utc DESC", (run_id,))
-            latest = {}
-            for row in rows:
-                latest.setdefault(row["source_kind"], LiveEvidenceSource(run_id, row["source_kind"], row["collected_at_utc"], row["source_payload_jsonb"], bool(row["operational"]), row["source_id"], row["source_sha256"]))
-            postgres, rollback = collect_postgresql_probe_sources(connection=connection, live_run_id=run_id, collected_at_utc=now, fake_transport=True)
-            migration = collect_migration_catalog_source(connection=connection, live_run_id=run_id, collected_at_utc=now, expected_hashes=_migration_hashes_0001_0022())
-            repository_source = RepositoryCommitEvidence.source(live_run_id=run_id, collected_at_utc=now, commit_sha=runtime.manifest.repository_commit_sha, expected_commit_sha=runtime.manifest.repository_commit_sha, implementation_hash=runtime.configuration.provider_implementation_hash)
-            latest.update(repository=repository_source, migration_catalog=migration, postgresql_probe=postgres, audit_rollback_probe=rollback)
-            evidence = OperationalPreflightEvidence(run_id, tuple(latest[kind] for kind in sorted(latest)))
-            report = LivePreflightEngine().evaluate(live_run_id=run_id, configuration=runtime.configuration, account_snapshot=runtime.account_snapshot, credential_reference=runtime.credential_reference, evidence=evidence, evaluated_at_utc=now, implementation_hash=runtime.configuration.provider_implementation_hash, repository_commit_sha=runtime.manifest.repository_commit_sha)
-            _persist_preflight_report(repository, configuration=runtime.configuration, credential=runtime.credential_reference, account=runtime.account_snapshot, evidence=evidence, report=report, created_at_utc=now)
-            _print({"command": "live-preflight", "live_run_id": run_id, "configuration_hash": runtime.configuration.configuration_hash, "preflight_report_id": report.report_id, "status": report.status.value, "blockers": report.blockers, "network_reads_occurred": network_reads, "network_writes_occurred": False, "production_write_status": "disabled"})
-            return 0 if not report.blockers else 1
+            if not args.read_only_network_preflight:
+                raise PermissionError(
+                    "fresh account, position, open-order, venue-time, and instrument responses "
+                    "must be recollected by the approved read-only adapter; historical source rows "
+                    "are never reused"
+                )
+            raise PermissionError(
+                "no credential material is loaded implicitly; provide an explicit local-only "
+                "credential integration to the approved read-only collector"
+            )
     except Exception as exc:
-        _print({"command": "live-preflight", "status": "blocked", "blockers": [str(exc)], "network_reads_occurred": network_reads, "network_writes_occurred": False, "production_write_status": "disabled"})
+        _print({
+            "command": "live-preflight", "status": "blocked", "blockers": [str(exc)],
+            "evidence_classification": "no_stale_reuse",
+            "network_reads_occurred": False, "network_writes_occurred": False,
+            "production_write_status": "disabled",
+        })
         return 2
-
-
 def _market_evidence(repository, risk_row, configuration):
     source = repository._fetchone("SELECT source_payload_jsonb FROM execution.live_preflight_sources WHERE source_id=%s", (risk_row["latest_market_evidence_id"],))
     payload = source["source_payload_jsonb"]
@@ -140,29 +104,60 @@ def dry_run_main(argv=None):
     parser.add_argument("--quantity", type=Decimal, required=True)
     parser.add_argument("--limit-price", type=Decimal, required=True)
     parser.add_argument("--reference-price", type=Decimal)
-    parser.add_argument("--tick-size", type=Decimal, required=True)
-    parser.add_argument("--lot-size", type=Decimal, required=True)
     args = parser.parse_args(argv)
     try:
         run_id = _uuid(args.live_run_id)
         with _connect() as connection:
             repository = DurablePostgresLiveRepository(connection)
             runtime = reconstruct_live_runtime(repository=repository, live_run_id=run_id)
-            if args.configuration_hash and args.configuration_hash != runtime.configuration.configuration_hash: raise PermissionError("configuration mismatch")
-            risk_row = repository._fetchone("SELECT * FROM execution.live_run_risk_state WHERE live_run_id=%s", (run_id,))
+            if args.configuration_hash and args.configuration_hash != runtime.configuration.configuration_hash:
+                raise PermissionError("configuration mismatch")
+            risk_row = repository._fetchone(
+                "SELECT * FROM execution.live_run_risk_state WHERE live_run_id=%s", (run_id,),
+            )
             market = _market_evidence(repository, risk_row, runtime.configuration)
-            reconciliation = repository._fetchone("SELECT * FROM execution.live_reconciliations WHERE reconciliation_id=%s AND live_run_id=%s", (risk_row["latest_reconciliation_id"], run_id))
-            metadata = repository._fetchone("SELECT source_sha256 FROM execution.live_preflight_sources WHERE live_run_id=%s AND source_kind='instrument_metadata' ORDER BY collected_at_utc DESC LIMIT 1", (run_id,))
+            reconciliation = repository._fetchone(
+                "SELECT * FROM execution.live_reconciliations "
+                "WHERE reconciliation_id=%s AND live_run_id=%s",
+                (risk_row["latest_reconciliation_id"], run_id),
+            )
+            metadata = repository._fetchone(
+                "SELECT m.source_id,s.source_sha256 FROM execution.live_instrument_metadata_sources m "
+                "JOIN execution.live_preflight_sources s ON s.source_id=m.source_id "
+                "AND s.live_run_id=m.live_run_id WHERE m.live_run_id=%s "
+                "AND m.instrument_id=%s ORDER BY m.collected_at_utc DESC LIMIT 1",
+                (run_id, market.series_identity.provider_instrument_id),
+            )
+            if metadata is None:
+                raise PermissionError("verified PostgreSQL instrument metadata is missing")
             now = datetime.now(timezone.utc)
-            intent = LiveOrderIntent(run_id, runtime.manifest.manifest_id, market.series_identity, OrderSide(args.side), args.quantity, args.reference_price or args.limit_price, args.limit_price, now, market.evidence_id, market.evidence_sha256, metadata["source_sha256"], risk_row["record_sha256"] and runtime.account_snapshot.record_hash, reconciliation["record_sha256"])
-            result = runtime.broker.prepare_and_suppress(intent=intent, market_evidence=market, tick_size=args.tick_size, lot_size=args.lot_size, at_utc=now)
-            _print({"command": "live-dry-run", "live_run_id": run_id, "order_intent_id": result.intent.order_intent_id, "state": result.state.value, "risk_accepted": bool(result.risk_decision.accepted), "risk_reasons": result.risk_decision.reasons, "network_reads_occurred": False, "network_writes_occurred": False, "external_write_suppressed": result.external_write_suppressed, "production_write_status": "disabled"})
+            intent = LiveOrderIntent(
+                run_id, runtime.manifest.manifest_id, market.series_identity, OrderSide(args.side),
+                args.quantity, args.reference_price or args.limit_price, args.limit_price, now,
+                market.evidence_id, market.evidence_sha256, metadata["source_sha256"],
+                runtime.account_snapshot.record_hash, reconciliation["record_sha256"],
+                instrument_metadata_source_id=metadata["source_id"],
+            )
+            result = runtime.broker.prepare_and_suppress(
+                intent=intent, market_evidence=market, at_utc=now,
+            )
+            _print({
+                "command": "live-dry-run", "live_run_id": run_id,
+                "order_intent_id": result.intent.order_intent_id, "state": result.state.value,
+                "risk_accepted": bool(result.risk_decision.accepted),
+                "risk_reasons": result.risk_decision.reasons,
+                "network_reads_occurred": False, "network_writes_occurred": False,
+                "external_write_suppressed": result.external_write_suppressed,
+                "production_write_status": "disabled",
+            })
             return 0 if result.risk_decision.accepted else 1
     except Exception as exc:
-        _print({"command": "live-dry-run", "status": "blocked", "blockers": [str(exc)], "network_reads_occurred": False, "network_writes_occurred": False, "production_write_status": "disabled"})
+        _print({
+            "command": "live-dry-run", "status": "blocked", "blockers": [str(exc)],
+            "network_reads_occurred": False, "network_writes_occurred": False,
+            "production_write_status": "disabled",
+        })
         return 2
-
-
 def status_main(argv=None):
     parser = _parser("Secure Eval live PostgreSQL status")
     args = parser.parse_args(argv)
@@ -179,20 +174,39 @@ def status_main(argv=None):
 
 
 def reconcile_main(argv=None):
-    parser = _parser("Secure Eval exact live reconciliation")
+    parser = _parser("Secure Eval imported reconciliation inspection (never operational)")
     parser.add_argument("--venue-observation-json", required=True)
     args = parser.parse_args(argv)
     try:
-        run_id = _uuid(args.live_run_id); payload = json.loads(Path(args.venue_observation_json).read_text(encoding="utf-8")); now = datetime.now(timezone.utc)
-        observed_at = datetime.fromisoformat(str(payload["observed_at_utc"]).replace("Z", "+00:00"))
-        venue = LiveVenueObservation(run_id, payload["account_fingerprint"], tuple(payload["orders"]), tuple(payload["fills"]), payload["balances"], payload["positions"], int(payload["sequence"]), observed_at, tuple(payload["response_hashes"]))
+        run_id = _uuid(args.live_run_id)
+        payload = json.loads(Path(args.venue_observation_json).read_text(encoding="utf-8"))
         with _connect() as connection:
-            repository = DurablePostgresLiveRepository(connection); reconciliation, _ = build_and_reconcile(repository=repository, live_run_id=run_id, venue_observation=venue, evaluated_at_utc=now)
-            _print({"command": "live-reconcile", "live_run_id": run_id, "reconciliation_id": reconciliation.reconciliation_id, "status": reconciliation.status.value, "differences": reconciliation.differences, "network_reads_occurred": False, "network_writes_occurred": False, "production_write_status": "disabled"}); return 0 if reconciliation.status.value == "reconciled" else 1
+            repository = DurablePostgresLiveRepository(connection)
+            local = repository.build_local_projection(
+                run_id, observed_at_utc=datetime.now(timezone.utc),
+            )
+        comparable = ("account_fingerprint", "orders", "fills", "balances", "positions")
+        differences = tuple(
+            {"field": field, "local": local[field], "imported": payload.get(field)}
+            for field in comparable if local[field] != payload.get(field)
+        )
+        _print({
+            "command": "live-reconcile", "live_run_id": run_id,
+            "status": "untrusted_fixture", "evidence_classification": "imported",
+            "differences": differences, "operational_authority_updated": False,
+            "network_reads_occurred": False, "network_writes_occurred": False,
+            "production_write_status": "disabled",
+        })
+        return 1
     except Exception as exc:
-        _print({"command": "live-reconcile", "status": "blocked", "blockers": [str(exc)], "network_reads_occurred": False, "network_writes_occurred": False, "production_write_status": "disabled"}); return 2
-
-
+        _print({
+            "command": "live-reconcile", "status": "blocked",
+            "evidence_classification": "imported", "blockers": [str(exc)],
+            "operational_authority_updated": False,
+            "network_reads_occurred": False, "network_writes_occurred": False,
+            "production_write_status": "disabled",
+        })
+        return 2
 def kill_main(argv=None):
     parser = _parser("Secure Eval durable live kill switch")
     parser.add_argument("--reason", default="manual")

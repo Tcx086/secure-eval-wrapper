@@ -4,7 +4,7 @@
 
 Phase 8A implements a PostgreSQL-authoritative, dry-run/read-only guarded-live foundation for OKX production Spot. Production order submission and production cancellation are unconditionally disabled. The implementation is not production-write enabled, not production proven, and does not claim that live trading is safe or profitable.
 
-The separate `secure_eval_wrapper.live` package does not change `PaperEnvironment`, `PaperBroker`, `PaperVenue`, simulated execution, or any migration from `0001` through `0021`. Live records use `execution.live_*` tables and never masquerade as paper or simulated records.
+The separate `secure_eval_wrapper.live` package does not change `PaperEnvironment`, `PaperBroker`, `PaperVenue`, simulated execution, or any migration from `0001` through `0023`. Live records use `execution.live_*` tables and never masquerade as paper or simulated records. Append-only migration `0024` adds the evidence, reconciliation, and metadata integrity controls described below.
 
 ## Provider and endpoint classification
 
@@ -47,8 +47,12 @@ Controls include:
 - independent environment, CLI, and exact short-lived approval gates, plus an unconditional Phase 8A prohibition;
 - a CI hard block that requires fake transport and prohibits credential loading and production network mutation;
 - exact endpoint operation catalog without an arbitrary-path request method;
+- collector-sealed operational evidence: caller-created dictionaries and generic observations are fixture-only and cannot authorize a run, reconciliation, recovery, or reset;
+- exact OKX response envelopes with purpose-specific endpoint sets, completion dispositions, canonical response hashes, request/response times, and fake-transport classification;
 - PostgreSQL-persisted preflight checks, approval, manifest, intent, risk, reservation, outbox, observations, reconciliation, kill switch, and summaries;
-- reuse of the Phase 7 validated market evidence and conservative risk-price calculation;
+- exact Phase 7 validated market-row/report/raw/finality/quarantine lineage and conservative risk-price calculation;
+- PostgreSQL-authoritative instrument metadata normalization; caller or CLI tick-size, lot-size, minimum-size, body, and hash values cannot become authority;
+- transaction-locked reconciliation and risk sequences so an incomplete or unknown view stops the run atomically;
 - query-by-original-client-order-ID, recent orders, open orders, fills, and account state before any recovery decision;
 - no blind retry after timeout or connection loss;
 - monotonic database triggers that prevent suppressed outboxes/projections and closed reservations from regressing;
@@ -56,7 +60,7 @@ Controls include:
 
 ## Operator preflight checklist
 
-1. Confirm the checked-out commit is the intended reviewed commit and migrations `0001` through `0022` match the catalog.
+1. Confirm the checked-out commit is the intended reviewed commit, migrations `0001` through `0023` match the immutable catalog, and migration `0024` is applied.
 2. Confirm PostgreSQL 16 is reachable and all `execution.live_*` audit tables are writable.
 3. Use a local credential source; do not place credentials in repository files, PostgreSQL, shell history, or command arguments.
 4. Verify API permissions explicitly. Unknown permissions block preflight. Any withdrawal, transfer, borrow, margin/leverage administration, or unrelated account administration permission blocks preflight.
@@ -79,7 +83,7 @@ secure-eval-live-reconcile
 secure-eval-live-kill
 ```
 
-A configured local operator integration must persist the start bundle before creating an intent. For each proposed order it normalizes price and quantity, evaluates shared risk authority, persists the exact intent/risk/reservation/outbox transaction, claims the outbox, and records `write_suppressed`. Dry-run output uses only `dry_run_prepared`, `dry_run_blocked`, `dry_run_suppressed`, or `pending_recovery`; it never claims an acknowledgement or fill.
+A configured local operator integration must persist the collector-produced start bundle before creating an intent. For each proposed order the repository obtains the persisted instrument metadata, normalizes price and quantity, evaluates shared risk authority, persists the exact intent/risk/reservation/outbox transaction, claims the outbox, and records `write_suppressed`. Dry-run output uses only `dry_run_prepared`, `dry_run_blocked`, `dry_run_suppressed`, or `pending_recovery`; it never claims an acknowledgement or fill.
 
 The low-reference/high-limit regression (`quantity=1`, `reference_price=100`, `limit_price=50000`, `maximum_order_notional=1000`) is blocked from transport planning because the persisted risk notional is `50000`.
 
@@ -87,7 +91,7 @@ The low-reference/high-limit regression (`quantity=1`, `reference_price=100`, `l
 
 Trigger on stale evidence, blocked or unknown reconciliation, unexpected order/fill, position or balance mismatch, unknown/unacknowledged order age, transport failure, clock skew, daily loss, drawdown, risk breach, manifest mismatch, permission mismatch, endpoint violation, or a production-write attempt in CI.
 
-A trigger rejects new intents and suppresses transport. Phase 8A may persist a dry-run cancel outbox, but it never sends an exchange cancellation, flattens positions, or creates market orders. Reset requires a new passed preflight and new short-lived approval.
+A trigger rejects new intents and suppresses transport. Phase 8A may persist a dry-run cancel outbox, but it never sends an exchange cancellation, flattens positions, or creates market orders. Reset requires post-trigger collector evidence, a purpose-specific `passed_for_reset` preflight, and a new short-lived reset approval. The reset returns the switch to `armed`, but a separate, newer `run_continue` preflight and approval are still mandatory before another intent can be prepared.
 
 ## Ambiguous-order recovery runbook
 
@@ -97,8 +101,14 @@ A trigger rejects new intents and suppresses transport. Phase 8A may persist a d
 4. Query open orders.
 5. Query fills.
 6. Query account configuration, balances, and positions.
-7. Persist one immutable observation bundle.
-8. Reconcile the exact bundle. Never mark rejected without explicit rejection evidence and never resend blindly.
+7. Persist the exact immutable endpoint-response bundle, including every request/response time, disposition, provider code, canonical response hash, and query sequence.
+8. Reconcile the exact bundle. A matching venue side effect is observed, an explicit nonzero provider response is rejected, a complete empty result is confirmed absent, and any missing, ambiguous, parser-failed, or rate-limited response is inconclusive. Never resend blindly.
+
+## Evidence and reconciliation authority
+
+Only evidence issued by the collectors in `secure_eval_wrapper.live.collector_evidence` is operational. A preflight bundle has an exact purpose (`run_start`, `run_continue`, or `kill_reset`) and the endpoint set required for that purpose. PostgreSQL recomputes canonical response-envelope hashes and verifies the complete graph of collector sources, response envelopes, Phase 7 market evidence, instrument metadata, checks, reports, and approvals before a run can start or continue.
+
+Reconciliation persists the same exact response bundle and input graph used by the engine. Its observation time, venue time, source sequence, local sequence, and resulting risk sequence are checked and advanced in one transaction. An incomplete or stale view becomes `unknown`; a blocked or unknown result stops the kill switch and run in the same transaction. Imported CLI JSON is explicitly an untrusted fixture and cannot update operational authority.
 
 ## Credential handling policy
 

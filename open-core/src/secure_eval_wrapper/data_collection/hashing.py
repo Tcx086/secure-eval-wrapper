@@ -14,6 +14,8 @@ from secure_eval_wrapper.data_collection.time_utils import require_utc_datetime
 
 
 def _canonical_json_default(value: object) -> object:
+    if isinstance(value, Mapping):
+        return dict(value)
     if isinstance(value, datetime):
         utc_value = require_utc_datetime(value, field_name="canonical JSON datetime")
         return utc_value.isoformat().replace("+00:00", "Z")

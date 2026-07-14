@@ -86,7 +86,7 @@ def content_boundary_findings(path: Path, text: str) -> list[str]:
                 break
         approved_endpoint_contract = path.as_posix().endswith((
             "paper/endpoints.py", "paper/venues/official_sandbox.py",
-            "live/endpoints.py", "live/venues/okx_live.py", "live/broker.py",
+            "live/endpoints.py", "live/collector_evidence.py", "live/venues/okx_live.py", "live/broker.py",
         ))
         endpoint_scan_text = text
         if path.as_posix().endswith("live/durable_repository.py"):

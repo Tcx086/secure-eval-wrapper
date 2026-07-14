@@ -173,6 +173,93 @@ def normalize_recovery_observation(
     )
 
 
+
+def normalize_verified_recovery_observation(
+    okx_bundle,
+    *,
+    expected_intent,
+    account_fingerprint: str,
+) -> LiveObservationBundle:
+    """Derive recovery outcome only from exact approved-adapter envelopes."""
+    from .collector_evidence import (
+        ObservationClassification,
+        QueryDisposition,
+        VerifiedOkxReadObservationBundle,
+    )
+
+    if not isinstance(okx_bundle, VerifiedOkxReadObservationBundle):
+        raise TypeError("operational recovery requires a collector-issued OKX bundle")
+    if (
+        okx_bundle.purpose != "recovery"
+        or okx_bundle.classification is not ObservationClassification.OPERATIONAL
+        or okx_bundle.account_fingerprint != account_fingerprint
+    ):
+        raise PermissionError("fixture/imported or cross-account recovery evidence is forbidden")
+    instrument = str(_intent_value(expected_intent, "instrument"))
+    client_order_id = str(_intent_value(expected_intent, "client_order_id"))
+    envelopes = {item.endpoint_kind: item for item in okx_bundle.envelopes}
+
+    def normalized(kind, default):
+        envelope = envelopes.get(kind)
+        return default if envelope is None or not envelope.completed else envelope.normalized_payload
+
+    queried = normalized("order_details", None)
+    recent = _rows(normalized("order_history", ()))
+    open_orders = _rows(normalized("pending_orders", ()))
+    fills = _rows(normalized("fills", ()))
+    matching_recent = tuple(row for row in recent if str(row.get("clOrdId", "")) == client_order_id)
+    matching_open = tuple(row for row in open_orders if str(row.get("clOrdId", "")) == client_order_id)
+    if queried is not None:
+        _validate_order(queried, instrument=instrument, client_order_id=client_order_id, expected_intent=expected_intent)
+    for row in matching_recent + matching_open:
+        _validate_order(row, instrument=instrument, client_order_id=client_order_id, expected_intent=expected_intent)
+    order_rows = ((queried,) if queried is not None else ()) + matching_recent + matching_open
+    order_ids = {str(row["ordId"]) for row in order_rows}
+    matching_fills = tuple(row for row in fills if str(row.get("clOrdId", "")) == client_order_id)
+    for fill in matching_fills:
+        _validate_fill(
+            fill,
+            instrument=instrument,
+            client_order_id=client_order_id,
+            order_ids=order_ids,
+            expected_intent=expected_intent,
+        )
+
+    if matching_fills:
+        outcome = LiveRecoveryOutcome.OBSERVED_EXTERNAL_FILL
+    elif order_rows:
+        outcome = LiveRecoveryOutcome.OBSERVED_EXTERNAL_ORDER
+    elif any(item.disposition is QueryDisposition.EXPLICIT_PROVIDER_REJECTION for item in okx_bundle.envelopes):
+        outcome = LiveRecoveryOutcome.PROVIDER_REJECTED
+    elif not okx_bundle.complete:
+        outcome = LiveRecoveryOutcome.INCONCLUSIVE
+    else:
+        outcome = LiveRecoveryOutcome.CONFIRMED_ABSENT
+
+    query_completed = max(item.query_completed_at_utc for item in okx_bundle.envelopes)
+    account = {
+        "account_fingerprint": account_fingerprint,
+        "query_timestamp_utc": query_completed,
+        "response_bundle_id": str(okx_bundle.bundle_id),
+        "endpoint_matrix_sha256": okx_bundle.endpoint_matrix_hash,
+        "response_hashes": {
+            item.endpoint_kind: item.canonical_response_hash
+            for item in okx_bundle.envelopes
+        },
+        "classification": okx_bundle.classification.value,
+    }
+    return LiveObservationBundle(
+        okx_bundle.live_run_id,
+        client_order_id,
+        queried,
+        recent,
+        open_orders,
+        fills,
+        account,
+        query_completed,
+        outcome,
+    )
+
 def query_first_recovery(*, live_run_id, venue, instrument: str, client_order_id: str, queried_at_utc, expected_intent=None, account_fingerprint: str | None = None):
     try:
         queried = venue.query_order(instrument=instrument, client_order_id=client_order_id)
@@ -182,12 +269,12 @@ def query_first_recovery(*, live_run_id, venue, instrument: str, client_order_id
         account = {"config": venue.read_account_config(), "balances": venue.read_balances(), "positions": venue.read_positions()}
     except Exception as exc:
         account = {
-            "provider_rejection": type(exc).__name__,
+            "transport_ambiguous": type(exc).__name__,
             "response_hash": sha256_payload({"type": type(exc).__name__, "message": str(exc)}),
             "account_fingerprint": account_fingerprint,
             "query_timestamp_utc": queried_at_utc,
         }
-        return LiveObservationBundle(live_run_id, client_order_id, None, (), (), (), account, queried_at_utc, LiveRecoveryOutcome.PROVIDER_REJECTED)
+        return LiveObservationBundle(live_run_id, client_order_id, None, (), (), (), account, queried_at_utc, LiveRecoveryOutcome.INCONCLUSIVE)
 
     account["account_fingerprint"] = account_fingerprint
     account["query_timestamp_utc"] = queried_at_utc
@@ -214,4 +301,7 @@ def query_first_recovery(*, live_run_id, venue, instrument: str, client_order_id
     return normalize_recovery_observation(provisional, expected_intent=expected_intent, account_fingerprint=account_fingerprint)
 
 
-__all__ = ["normalize_recovery_observation", "query_first_recovery"]
+__all__ = [
+    "normalize_recovery_observation", "normalize_verified_recovery_observation",
+    "query_first_recovery",
+]

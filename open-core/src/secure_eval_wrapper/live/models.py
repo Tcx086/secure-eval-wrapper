@@ -54,7 +54,14 @@ def _map(value: Mapping[str, object]) -> Mapping[str, object]:
 
 class LivePreflightStatus(str, Enum):
     PASSED = "passed"
+    PASSED_FOR_RESET = "passed_for_reset"
     BLOCKED = "blocked"
+
+class LivePreflightPurpose(str, Enum):
+    RUN_START = "run_start"
+    RUN_CONTINUE = "run_continue"
+    KILL_RESET = "kill_reset"
+
 
 
 class LiveOrderState(str, Enum):
@@ -204,6 +211,7 @@ class LivePreflightReport:
     warnings: tuple[str, ...]
     status: LivePreflightStatus
     report_id: UUID | None = None
+    purpose: LivePreflightPurpose = LivePreflightPurpose.RUN_START
 
     def __post_init__(self) -> None:
         for name in ("configuration_hash", "implementation_hash", "endpoint_catalog_hash", "credential_reference_hash", "account_snapshot_hash"):
@@ -211,19 +219,25 @@ class LivePreflightReport:
         object.__setattr__(self, "repository_commit_sha", _text(self.repository_commit_sha, "repository_commit_sha"))
         _utc(self.evaluated_at_utc, "evaluated_at_utc")
         object.__setattr__(self, "status", LivePreflightStatus(self.status)); object.__setattr__(self, "checks", tuple(self.checks))
+        object.__setattr__(self, "purpose", LivePreflightPurpose(self.purpose))
         expected_blockers = tuple(check.check_name for check in self.checks if check.required and not check.passed)
         if tuple(self.blockers) != expected_blockers:
             raise ValueError("preflight blockers do not match required failed checks")
-        if (self.status is LivePreflightStatus.PASSED) != (not self.blockers):
+        expected_status = (
+            LivePreflightStatus.PASSED_FOR_RESET
+            if self.purpose is LivePreflightPurpose.KILL_RESET and not self.blockers
+            else LivePreflightStatus.PASSED if not self.blockers else LivePreflightStatus.BLOCKED
+        )
+        if self.status is not expected_status:
             raise ValueError("preflight status does not match blockers")
-        expected = live_uuid("preflight-report", {"run": self.live_run_id, "configuration": self.configuration_hash, "checks": tuple(check.record_hash for check in self.checks)})
+        expected = live_uuid("preflight-report", {"run": self.live_run_id, "purpose": self.purpose, "configuration": self.configuration_hash, "checks": tuple(check.record_hash for check in self.checks)})
         if self.report_id is not None and self.report_id != expected:
             raise ValueError("preflight report identity mismatch")
         object.__setattr__(self, "report_id", expected)
 
     @property
     def record_hash(self) -> str:
-        return sha256_payload({"run": self.live_run_id, "configuration": self.configuration_hash, "implementation": self.implementation_hash, "commit": self.repository_commit_sha, "catalog": self.endpoint_catalog_hash, "credential": self.credential_reference_hash, "account": self.account_snapshot_hash, "at": self.evaluated_at_utc, "checks": tuple(check.record_hash for check in self.checks), "blockers": self.blockers, "warnings": self.warnings, "status": self.status})
+        return sha256_payload({"run": self.live_run_id, "purpose": self.purpose, "configuration": self.configuration_hash, "implementation": self.implementation_hash, "commit": self.repository_commit_sha, "catalog": self.endpoint_catalog_hash, "credential": self.credential_reference_hash, "account": self.account_snapshot_hash, "at": self.evaluated_at_utc, "checks": tuple(check.record_hash for check in self.checks), "blockers": self.blockers, "warnings": self.warnings, "status": self.status})
 
 
 @dataclass(frozen=True)
@@ -325,6 +339,7 @@ class LiveOrderIntent:
     instrument_metadata_hash: str
     account_snapshot_hash: str
     reconciliation_hash: str
+    instrument_metadata_source_id: UUID | None = None
     order_type: OrderType = OrderType.LIMIT
     time_in_force: TimeInForce = TimeInForce.GTC
     accounting_mode: AccountingMode = AccountingMode.SPOT
@@ -339,7 +354,7 @@ class LiveOrderIntent:
         _utc(self.created_at_utc, "created_at_utc")
         for name in ("market_evidence_hash", "instrument_metadata_hash", "account_snapshot_hash", "reconciliation_hash"):
             _hash(getattr(self, name), name)
-        payload = {"run": self.live_run_id, "manifest": self.manifest_id, "series": self.series_identity.series_identity_sha256, "side": self.side, "quantity": self.quantity, "limit": self.limit_price, "evidence": self.market_evidence_hash}
+        payload = {"run": self.live_run_id, "manifest": self.manifest_id, "series": self.series_identity.series_identity_sha256, "side": self.side, "quantity": self.quantity, "limit": self.limit_price, "evidence": self.market_evidence_hash, "metadata_source": self.instrument_metadata_source_id, "metadata_hash": self.instrument_metadata_hash}
         expected = live_uuid("order-intent", payload)
         if self.order_intent_id is not None and self.order_intent_id != expected:
             raise ValueError("live order intent identity mismatch")
@@ -465,17 +480,54 @@ class LiveReconciliation:
     input_bundle_hash: str
     differences: tuple[Mapping[str, object], ...]
     reconciliation_id: UUID | None = None
+    local_projection_as_of_utc: datetime | None = None
+    venue_observation_as_of_utc: datetime | None = None
+    query_started_at_utc: datetime | None = None
+    query_completed_at_utc: datetime | None = None
+    response_bundle_id: UUID | None = None
+    local_sequence: int | None = None
+    venue_sequence: int | None = None
+    producer_classification: str = "legacy_untrusted"
 
     def __post_init__(self) -> None:
         _utc(self.evaluated_at_utc, "evaluated_at_utc"); object.__setattr__(self, "status", LiveReconciliationStatus(self.status)); _hash(self.input_bundle_hash, "input_bundle_hash")
         expected = live_uuid("reconciliation", {"run": self.live_run_id, "at": self.evaluated_at_utc, "input": self.input_bundle_hash})
+        timestamps = (
+            self.local_projection_as_of_utc, self.venue_observation_as_of_utc,
+            self.query_started_at_utc, self.query_completed_at_utc,
+        )
+        if any(value is not None for value in timestamps):
+            if any(value is None for value in timestamps):
+                raise ValueError("operational reconciliation timestamps must be complete")
+            for name in (
+                "local_projection_as_of_utc", "venue_observation_as_of_utc",
+                "query_started_at_utc", "query_completed_at_utc",
+            ):
+                _utc(getattr(self, name), name)
+            if self.query_completed_at_utc < self.query_started_at_utc:
+                raise ValueError("reconciliation query completion precedes its start")
+        if self.producer_classification == "operational_collector":
+            if self.response_bundle_id is None or self.local_sequence is None or self.venue_sequence is None:
+                raise ValueError("operational reconciliation provenance is incomplete")
+            if min(self.local_sequence, self.venue_sequence) < 0:
+                raise ValueError("reconciliation sequences cannot be negative")
         if self.reconciliation_id is not None and self.reconciliation_id != expected:
             raise ValueError("reconciliation identity mismatch")
         object.__setattr__(self, "reconciliation_id", expected)
 
     @property
     def record_hash(self) -> str:
-        return sha256_payload({"run": self.live_run_id, "at": self.evaluated_at_utc, "status": self.status, "input": self.input_bundle_hash, "differences": self.differences})
+        return sha256_payload({
+            "run": self.live_run_id, "at": self.evaluated_at_utc, "status": self.status,
+            "input": self.input_bundle_hash, "differences": self.differences,
+            "local_as_of": self.local_projection_as_of_utc,
+            "venue_as_of": self.venue_observation_as_of_utc,
+            "query_started": self.query_started_at_utc,
+            "query_completed": self.query_completed_at_utc,
+            "response_bundle": self.response_bundle_id,
+            "local_sequence": self.local_sequence, "venue_sequence": self.venue_sequence,
+            "producer_classification": self.producer_classification,
+        })
 
 
 @dataclass(frozen=True)

@@ -43,49 +43,55 @@ class GuardedLiveBroker:
         *,
         intent: LiveOrderIntent,
         market_evidence,
-        tick_size,
-        lot_size,
         at_utc: datetime,
         risk_state=None,
         cli_enable_live_execution: bool = False,
         exact_confirmation_challenge_hash: str | None = None,
+        tick_size=None,
+        lot_size=None,
     ) -> DryRunResult:
-        """Caller risk state is deliberately ignored; PostgreSQL computes it transactionally."""
+        """PostgreSQL derives metadata normalization and the suppressed provider plan."""
+        if tick_size is not None or lot_size is not None:
+            raise ValueError("caller tick/lot values are not operational authority")
         persisted = self.repository.persisted_preflight(self.preflight_report.report_id)
-        if persisted is None or str(persisted["record_sha256"]) != self.preflight_report.record_hash or str(persisted["status"]) != "passed":
-            raise PermissionError("caller-provided preflight cannot replace the persisted passed report")
-        quantity = OkxProductionSpotAdapter.normalize_decimal(intent.quantity, lot_size)
-        price = OkxProductionSpotAdapter.normalize_decimal(intent.limit_price, tick_size)
-        normalized = replace(intent, quantity=quantity, limit_price=price, order_intent_id=None, client_order_id=None)
-        body = OkxProductionSpotAdapter.build_limit_order_body(
-            instrument=normalized.series_identity.provider_instrument_id,
-            side=normalized.side.value,
-            quantity=normalized.quantity,
-            limit_price=normalized.limit_price,
-            client_order_id=normalized.client_order_id,
-            tick_size=tick_size,
-            lot_size=lot_size,
-        )
-        request_hash = sha256_payload({"method": "POST", "path": "/api/v5/trade/order", "body": body})
+        if (
+            persisted is None
+            or str(persisted["record_sha256"]) != self.preflight_report.record_hash
+            or str(persisted["status"]) != "passed"
+            or str(persisted["purpose"]) not in ("run_start", "run_continue")
+            or str(persisted["authority_generation"]) != "collector_0024"
+        ):
+            raise PermissionError("caller-provided preflight cannot replace the persisted normal report")
         prepared = self.repository.prepare_operational_dry_run(
-            intent=normalized,
+            intent=intent,
             configuration=self.configuration,
             approval=self.approval,
             market_evidence=market_evidence,
-            request_body=body,
-            provider_request_hash=request_hash,
             created_at_utc=at_utc,
             caller_risk_state=risk_state,
         )
+        normalized = prepared["intent"]
         risk = prepared["risk_decision"]
         accepted = risk.accepted if hasattr(risk, "accepted") else bool(risk["accepted"])
         if not accepted:
             return DryRunResult(normalized, risk, None, LiveOrderState.DRY_RUN_BLOCKED, False, False)
-        plan = LiveTransportPlan(normalized.live_run_id, normalized.order_intent_id, "submit_limit_order", "POST", "/api/v5/trade/order", body, request_hash, at_utc, True)
+        plan = LiveTransportPlan(
+            normalized.live_run_id,
+            normalized.order_intent_id,
+            "submit_limit_order",
+            "POST",
+            "/api/v5/trade/order",
+            prepared["request_body"],
+            prepared["provider_request_hash"],
+            at_utc,
+            True,
+        )
         outbox_id = prepared["outbox_id"]
         if self.repository.dispatch_state(outbox_id) == "dry_run_suppressed":
             return DryRunResult(normalized, risk, plan, LiveOrderState.DRY_RUN_SUPPRESSED, False, True)
-        claimed = self.repository.claim_dispatch(worker_identity=self.worker_identity, at_utc=at_utc, outbox_id=outbox_id)
+        claimed = self.repository.claim_dispatch(
+            worker_identity=self.worker_identity, at_utc=at_utc, outbox_id=outbox_id,
+        )
         if claimed is None or claimed[0] != outbox_id:
             raise RuntimeError("new dry-run outbox could not be claimed")
         authority = evaluate_live_write_authority(
@@ -97,9 +103,11 @@ class GuardedLiveBroker:
         )
         if authority.allowed:
             raise AssertionError("Phase 8A live write authority can never be allowed")
-        self.repository.suppress_claimed_dispatch(outbox_id=outbox_id, claim_token=claimed[1], worker_identity=self.worker_identity, at_utc=at_utc)
+        self.repository.suppress_claimed_dispatch(
+            outbox_id=outbox_id, claim_token=claimed[1],
+            worker_identity=self.worker_identity, at_utc=at_utc,
+        )
         return DryRunResult(normalized, risk, plan, LiveOrderState.DRY_RUN_SUPPRESSED, False, True)
-
     def submit_order(self, *args, **kwargs):
         raise PermissionError("Phase 8A exposes no production submit operation")
 
