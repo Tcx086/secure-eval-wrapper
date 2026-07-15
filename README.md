@@ -6,7 +6,7 @@ A public, auditable, and reproducible framework for building crypto trading syst
 
 The project is developed in explicit, auditable phases. Architecture, PostgreSQL foundations, public market data, public alpha, and standardized signals are complete. Deterministic simulated execution and event-driven backtesting are complete after local PostgreSQL 16 and independent GitHub Actions validation.
 
-> **Current status:** Phases 0-7 are completed checkpoints. Phase 8A is accepted; the Phase 8B authenticated read-only proof is implemented and pending independent audit. Production submit/cancel and external production FIX remain disabled and unreachable.
+> **Current status:** Phases 0-7 are completed checkpoints. Phase 8A and the Phase 8B authenticated read-only proof implementation are independently audited and accepted; the optional real local authenticated proof has not yet been executed. Production submit/cancel and external production FIX remain disabled and unreachable.
 
 ## Why this project exists
 
@@ -73,7 +73,7 @@ Signals are not fills. Phase 5 backtests create order intents, pass them through
 | 5 | Simulated Execution and Event-Driven Backtesting | Completed; PostgreSQL and CI validated |
 | 6 | Monitoring and strictly simulated FIX 4.4-compatible profile | Completed; first-independent-audit repairs accepted |
 | 7 | Paper Trading | Completed through fifth independent audit |
-| 8 | Guarded Live Execution | Phase 8A accepted; Phase 8B authenticated read-only proof implemented pending audit; production writes disabled |
+| 8 | Guarded Live Execution | Phase 8A and Phase 8B implementation accepted; real authenticated proof not yet executed; production writes disabled |
 | 9 | Reporting and Public Delivery | Future |
 
 The authoritative progress records are:
@@ -339,7 +339,7 @@ The intended principle is simple: **make the infrastructure inspectable without 
 
 Phases 3 and 4 are complete and auditable: public alphas produce continuous point-in-time `AlphaValue` records, and standardized signals apply deterministic ranking, thresholding, combination, conflict, and confidence rules with PostgreSQL lineage.
 
-Phase 5 simulated execution and backtesting is complete through its fourth independent audit. Phase 6 monitoring and the strictly simulated FIX API are complete. Phase 7 safe paper trading is complete through its fifth independent audit. Phase 8A is an accepted PostgreSQL-authoritative guarded-live dry-run/read-only foundation. Phase 8B adds an explicit authenticated read-only proof and is pending independent audit; production order and cancellation transport remains unconditionally disabled.
+Phase 5 simulated execution and backtesting is complete through its fourth independent audit. Phase 6 monitoring and the strictly simulated FIX API are complete. Phase 7 safe paper trading is complete through its fifth independent audit. Phase 8A is an accepted PostgreSQL-authoritative guarded-live dry-run/read-only foundation. The Phase 8B explicit authenticated read-only proof implementation is independently audited and accepted, while its optional real local authenticated proof has not yet been executed; production order and cancellation transport remains unconditionally disabled.
 
 ## Disclaimer
 
