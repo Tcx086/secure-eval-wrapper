@@ -215,7 +215,7 @@ BEGIN
             '/api/v5/account/balance',
             '/api/v5/public/instruments?instId='||NEW.instrument_id||'&instType=SPOT',
             '/api/v5/trade/orders-pending?instId='||NEW.instrument_id||'&instType=SPOT',
-            '/api/v5/account/positions?instType=SPOT',
+            '/api/v5/account/positions',
             '/api/v5/public/time'
        ) THEN
         RAISE EXCEPTION 'authenticated read-only proof endpoint matrix is not the exact six GETs';
@@ -261,6 +261,10 @@ BEGIN
     SELECT jsonb_array_length(raw_response_jsonb->'data') INTO observed_position_count
     FROM execution.live_okx_response_envelopes
     WHERE response_bundle_id=NEW.response_bundle_id AND endpoint_kind='positions';
+    IF observed_position_count IS DISTINCT FROM 0 THEN
+        RAISE EXCEPTION 'authenticated read-only proof requires an empty positions response';
+    END IF;
+
     SELECT jsonb_array_length(raw_response_jsonb->'data') INTO observed_open_order_count
     FROM execution.live_okx_response_envelopes
     WHERE response_bundle_id=NEW.response_bundle_id AND endpoint_kind='pending_orders';

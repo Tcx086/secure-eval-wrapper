@@ -207,6 +207,7 @@ def normalize_verified_recovery_observation(
     recent = _rows(normalized("order_history", ()))
     open_orders = _rows(normalized("pending_orders", ()))
     fills = _rows(normalized("fills", ()))
+    positions = _rows(normalized("positions", ()))
     matching_recent = tuple(row for row in recent if str(row.get("clOrdId", "")) == client_order_id)
     matching_open = tuple(row for row in open_orders if str(row.get("clOrdId", "")) == client_order_id)
     if queried is not None:
@@ -233,6 +234,8 @@ def normalize_verified_recovery_observation(
         outcome = LiveRecoveryOutcome.PROVIDER_REJECTED
     elif not okx_bundle.complete:
         outcome = LiveRecoveryOutcome.INCONCLUSIVE
+    elif positions:
+        outcome = LiveRecoveryOutcome.INCONCLUSIVE
     else:
         outcome = LiveRecoveryOutcome.CONFIRMED_ABSENT
 
@@ -247,6 +250,7 @@ def normalize_verified_recovery_observation(
             for item in okx_bundle.envelopes
         },
         "classification": okx_bundle.classification.value,
+        "disallowed_position_count": len(positions),
     }
     return LiveObservationBundle(
         okx_bundle.live_run_id,

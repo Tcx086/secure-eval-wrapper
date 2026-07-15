@@ -53,7 +53,7 @@ def expected_preflight_request_paths(instrument: str) -> tuple[str, ...]:
         _ENDPOINT_PATHS["balances"],
         f'{_ENDPOINT_PATHS["instrument_metadata"]}?instId={instrument}&instType=SPOT',
         f'{_ENDPOINT_PATHS["pending_orders"]}?instId={instrument}&instType=SPOT',
-        f'{_ENDPOINT_PATHS["positions"]}?instType=SPOT',
+        _ENDPOINT_PATHS["positions"],
         _ENDPOINT_PATHS["venue_time"],
     )
 

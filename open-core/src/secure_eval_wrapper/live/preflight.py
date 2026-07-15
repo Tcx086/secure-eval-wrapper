@@ -486,15 +486,9 @@ def collect_operational_preflight_evidence(
         }
         for row in balances["details"]
     }
-    normalized_positions = {
-        str(row["instId"]): {
-            "quantity": Decimal(str(row["quantity"])),
-            "average_price": Decimal(str(row["average_price"])),
-            "unrealized_pnl": Decimal(str(row["unrealized_pnl"])),
-        }
-        for row in positions
-        if Decimal(str(row["quantity"])) != 0
-    }
+    # The OKX account positions endpoint does not return SPOT holdings. Every documented
+    # row is MARGIN or a derivative and is disallowed exposure evidence, never a Spot position.
+    normalized_positions = {}
     if (
         normalized_balances != dict(account_snapshot.balances)
         or normalized_positions != dict(account_snapshot.positions)
@@ -615,8 +609,9 @@ def collect_operational_preflight_evidence(
             "provider_response_hash": balance_envelope.canonical_response_hash,
         }, balance_envelope.canonical_response_hash, okx_bundle.parser_version),
         issued("positions", "okx_read_only_adapter", bundle_identity, {
-            "derivative_count": 0, "short_count": sum(Decimal(str(row["quantity"])) < 0 for row in positions),
-            "margin_count": 0, "provider_response_hash": positions_envelope.canonical_response_hash,
+            "derivative_count": sum(row["provider_position_type"] in {"SWAP", "FUTURES", "OPTION", "EVENTS"} for row in positions),
+            "short_count": sum(Decimal(str(row["quantity"])) < 0 for row in positions),
+            "margin_count": sum(row["provider_position_type"] == "MARGIN" for row in positions), "provider_response_hash": positions_envelope.canonical_response_hash,
         }, positions_envelope.canonical_response_hash, okx_bundle.parser_version),
         issued("open_orders", "okx_read_only_adapter", bundle_identity, {
             "enumerated": True, "count": len(open_orders),

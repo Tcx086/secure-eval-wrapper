@@ -8,7 +8,7 @@ The separate `secure_eval_wrapper.live` package does not change `PaperEnvironmen
 
 ## Provider and endpoint classification
 
-The provider scope is exactly OKX production SPOT with `tdMode=cash`, `ordType=limit`, side `buy` or `sell`, and GTC semantics. The adapter was verified on 2026-07-13 against the [official OKX V5 API guide](https://www.okx.com/docs-v5/en/).
+The provider scope is exactly OKX production SPOT with `tdMode=cash`, `ordType=limit`, side `buy` or `sell`, and GTC semantics. The adapter and unparameterized account-positions contract were verified on 2026-07-15 against the [official OKX V5 API guide](https://www.okx.com/docs-v5/en/).
 
 Public reads:
 
@@ -76,22 +76,24 @@ Phase 8B requires one exact operator request; there are no CLI options for an AP
 secure-eval-live-preflight --live-run-id <new-uuid> --configuration-hash <sha256> --read-only-network-preflight --credential-source environment --expected-account-fingerprint <16-hex> --expected-reviewed-sha <40-hex-git-sha> --instrument BTC-USDT
 ```
 
-Without `--read-only-network-preflight`, the command stops before PostgreSQL, credential, or network access. CI stops even earlier. Credential material can be loaded only after PostgreSQL migration `0026`, immutable configuration, OKX production selection, current endpoint and adapter hashes, disabled production writes, reviewed repository identity, expected account fingerprint, allowed instrument, and exact credential-source policy have all passed.
+Without `--read-only-network-preflight`, the command stops before PostgreSQL, credential, or network access. CI stops even earlier. Credential material can be loaded only after PostgreSQL migration `0026`, immutable configuration, OKX production selection, current endpoint and adapter hashes, disabled production writes, reviewed repository identity, expected account fingerprint, allowed instrument, and exact credential-source policy have all passed. This standalone proof credential gate does not claim execution kill-switch authority; Phase 8A live-run kill-switch enforcement is unchanged.
 
-The collector then performs exactly these six GETs, with no arbitrary method or path:
+The collector then performs exactly these six GETs, in order, with no arbitrary method or path:
 
 - `GET /api/v5/account/config`
 - `GET /api/v5/account/balance`
-- `GET /api/v5/account/positions?instType=SPOT`
-- `GET /api/v5/trade/orders-pending?instId=<instrument>&instType=SPOT`
-- `GET /api/v5/public/time`
 - `GET /api/v5/public/instruments?instId=<instrument>&instType=SPOT`
+- `GET /api/v5/trade/orders-pending?instId=<instrument>&instType=SPOT`
+- `GET /api/v5/account/positions`
+- `GET /api/v5/public/time`
 
-Account configuration is always first. Any provider permission set other than exact `read_only`—including any `trade` or `withdraw` capability—stops after that first response. The remaining reads prove Spot/cash mode with borrowing disabled, currency names and aggregate counts, position and pending-order counts, venue time and skew, and one live Spot instrument.
+Account configuration is always first. Any provider permission set other than exact `read_only`—including any `trade` or `withdraw` capability—stops after that first response. The positions endpoint is deliberately unparameterized because OKX documents only `MARGIN`, `SWAP`, `FUTURES`, `OPTION`, and `EVENTS` position types. A successful Phase 8B proof requires a completed `code=0` response with an empty `data` array and `position_count=0`; any position row or parser failure blocks the proof before persistence. The remaining reads prove Spot/cash mode with borrowing disabled, currency names and aggregate counts, zero positions, pending-order count, venue time and skew, and one live Spot instrument.
 
 Raw UIDs, balances, positions, orders, and response payloads remain only in the existing private PostgreSQL response-envelope tables. The public proof contains the reviewed and observed repository SHA, configuration hash, provider implementation hash, endpoint catalog hash, response hashes, short account fingerprint and main/subaccount classification, exact permission sets and paths, timestamps and skew, currency names/counts, position/order counts, instrument identity/state, blockers/warnings, six-read count, zero-write fact, disabled production-write status, and a database-checked record hash. It contains no full UID, balance value, API credential, authorization header, or signed request.
 
 Migration `0026` is necessary because `0022` through `0025` could retain exact private response bundles but had no standalone, reloadable public proof tied to a distinct operator request. The new table binds proof session, bundle, configuration, credential reference, account, repository identity, endpoint matrix, response-derived aggregates, fake/operational transport classification, and canonical record hash. It is append-only and transactionally replay-safe. Automated tests use fake transport and can produce only `fixture_passed`; the production CLI rejects fixture authority. No real credentials or OKX orders were used to implement or validate Phase 8B.
+
+Under normal runtime and database roles, PostgreSQL recomputes response hashes and public proof fields, rejects incomplete bundles, rejects cross-run or cross-account attachment, prevents proof mutation, and prevents fake transport from being promoted to operational proof. PostgreSQL cannot independently prove that a physical network request occurred against an attacker with unrestricted authoritative database-write access; normal roles must not bypass these constraints, and Phase 8B makes no stronger attestation claim.
 ## Operator preflight checklist
 
 1. Confirm the checked-out commit is the intended reviewed commit, migrations `0001` through `0025` match the immutable catalog, and migration `0026` is applied.
@@ -102,7 +104,7 @@ Migration `0026` is necessary because `0022` through `0025` could retain exact p
 6. Confirm account mode is Spot/cash, borrowing and margin are disabled, and no disallowed positions exist.
 7. Enumerate existing open orders, balances, available/reserved amounts, and positions.
 8. Verify venue time, validated PostgreSQL market evidence, price currency, instrument status, tick size, lot size, minimum size, and notional bounds.
-9. Require recent successful reconciliation and an armed PostgreSQL kill switch.
+9. For a Phase 8A live-run preflight, require recent successful reconciliation and an armed PostgreSQL kill switch. The standalone Phase 8B proof does not substitute a literal success value for that execution gate.
 10. Review the pre-run risk summary. A caller Boolean cannot replace a persisted passed preflight.
 
 ## Dry-run runbook

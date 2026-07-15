@@ -96,8 +96,26 @@ class ExactOkxTransport:
             "/api/v5/trade/order": {"code": "0", "data": []},
         }
         responses.update(self.overrides)
-        path = url.removeprefix("https://www.okx.com").split("?", 1)[0]
-        value = responses[path]
+        path_with_query = url.removeprefix("https://www.okx.com")
+        fixed_paths = {
+            "/api/v5/account/config",
+            "/api/v5/account/balance",
+            "/api/v5/account/positions",
+            "/api/v5/trade/orders-pending?instId=BTC-USDT&instType=SPOT",
+            "/api/v5/trade/orders-history?instId=BTC-USDT&instType=SPOT",
+            "/api/v5/trade/fills-history?instId=BTC-USDT&instType=SPOT",
+            "/api/v5/public/time",
+            "/api/v5/public/instruments?instId=BTC-USDT&instType=SPOT",
+        }
+        order_query_is_exact = (
+            path_with_query.startswith("/api/v5/trade/order?clOrdId=")
+            and "&instId=BTC-USDT" in path_with_query
+            and path_with_query.count("&") == 1
+        )
+        if path_with_query not in fixed_paths and not order_query_is_exact:
+            raise PermissionError("test transport rejects non-exact OKX request paths")
+        path = path_with_query.split("?", 1)[0]
+        value = responses.get(path_with_query, responses[path])
         if isinstance(value, BaseException):
             raise value
         return value
@@ -399,7 +417,7 @@ class OkxAndBoundaryTests(unittest.TestCase):
         positions_payload = {
             "code": "0",
             "data": [{
-                "instId": "BTC-USDT", "instType": "SPOT", "pos": "1",
+                "instId": "BTC-USDT-SWAP", "instType": "SWAP", "pos": "1",
                 "avgPx": "100", "upl": "2", "uTime": ts,
             }],
         }
@@ -420,7 +438,19 @@ class OkxAndBoundaryTests(unittest.TestCase):
         self.assertEqual(len(OkxProductionSpotAdapter.parse_instruments(instrument_payload, expected_instrument="BTC-USDT")), 1)
         self.assertEqual(OkxProductionSpotAdapter.parse_account_config(account_payload)["account_mode"], "spot_cash")
         self.assertEqual(OkxProductionSpotAdapter.parse_balances(balances_payload)["total_equity"], Decimal("1000"))
-        self.assertEqual(len(OkxProductionSpotAdapter.parse_positions(positions_payload)), 1)
+        for position_type in ("MARGIN", "SWAP", "FUTURES", "OPTION", "EVENTS"):
+            with self.subTest(position_type=position_type):
+                positions_payload["data"][0]["instType"] = position_type
+                parsed_positions = OkxProductionSpotAdapter.parse_positions(positions_payload)
+                self.assertEqual(parsed_positions[0]["provider_position_type"], position_type)
+                self.assertEqual(
+                    parsed_positions[0]["exposure_classification"],
+                    "disallowed_non_spot_position",
+                )
+                self.assertTrue(parsed_positions[0]["is_disallowed_exposure"])
+        positions_payload["data"][0]["instType"] = "SPOT"
+        with self.assertRaises(ValueError):
+            OkxProductionSpotAdapter.parse_positions(positions_payload)
         self.assertEqual(OkxProductionSpotAdapter.parse_order_details(order_payload, expected_instrument="BTC-USDT", expected_client_order_id="client1")["ordId"], "o1")
         self.assertEqual(len(OkxProductionSpotAdapter.parse_pending_orders(order_payload, expected_instrument="BTC-USDT")), 1)
         self.assertEqual(len(OkxProductionSpotAdapter.parse_order_history(order_payload, expected_instrument="BTC-USDT")), 1)
@@ -481,6 +511,10 @@ class OkxAndBoundaryTests(unittest.TestCase):
     def test_signature_is_deterministic_without_exposing_material(self):
         provider = InjectedLocalCredentialProvider("placeholder-key", "placeholder-secret", "placeholder-passphrase", expected_account_fingerprint=ACCOUNT_FINGERPRINT)
         gates = {"authenticated_read_only_preflight_requested": True, "read_only_preflight": True, "provider_selected": True, "production_environment": True, "endpoint_catalog_valid": True, "configuration_valid": True, "production_writes_disabled": True, "kill_switch_armed": True, "postgresql_available": True, "repository_identity_verified": True, "expected_account_fingerprint_present": True}
+        without_kill_authority = dict(gates)
+        without_kill_authority.pop("kill_switch_armed")
+        with self.assertRaises(PermissionError):
+            provider.load(gates=without_kill_authority)
         with patch.dict(os.environ, {"CI": "false", "GITHUB_ACTIONS": "false"}, clear=False): material = provider.load(gates=gates)
         headers = signed_headers(credential_material=material, method="GET", request_path="/api/v5/account/balance", timestamp="2026-07-13T03:00:00.000Z")
         self.assertEqual(headers, signed_headers(credential_material=material, method="GET", request_path="/api/v5/account/balance", timestamp="2026-07-13T03:00:00.000Z"))
@@ -575,6 +609,59 @@ class ExactOperationalEvidenceRegressionTests(unittest.TestCase):
         )
         self.assertTrue(bundle.complete)
         self.assertIs(observed.outcome, LiveRecoveryOutcome.CONFIRMED_ABSENT)
+    def test_documented_non_spot_positions_block_reconciliation_and_recovery(self):
+        timestamp = str(int(T0.timestamp() * 1000))
+        positions_response = {
+            "code": "0",
+            "data": [{
+                "instId": "BTC-USDT-SWAP",
+                "instType": "SWAP",
+                "pos": "1",
+                "avgPx": "100",
+                "upl": "2",
+                "uTime": timestamp,
+            }],
+        }
+        run = uuid4()
+        snapshot = account(run)
+        local = LiveLocalProjection(
+            run,
+            snapshot.account_fingerprint,
+            (),
+            (),
+            dict(snapshot.balances),
+            {},
+            1,
+            T0,
+            (snapshot.snapshot_id,),
+        )
+        reconciliation, exact_input = reconcile_live(
+            local_projection=local,
+            okx_bundle=exact_okx_bundle(
+                run,
+                "reconciliation",
+                overrides={"/api/v5/account/positions": positions_response},
+            ),
+            evaluated_at_utc=T0,
+            freshness_seconds=30,
+            maximum_clock_skew_seconds=5,
+        )
+        self.assertIs(reconciliation.status, LiveReconciliationStatus.BLOCKED)
+        self.assertIn("disallowed_positions", {row["field"] for row in reconciliation.differences})
+        self.assertEqual(len(exact_input["venue"]["disallowed_positions"]), 1)
+        recovery = normalize_verified_recovery_observation(
+            exact_okx_bundle(
+                uuid4(),
+                "recovery",
+                client_order_id="client1",
+                overrides={"/api/v5/account/positions": positions_response},
+            ),
+            expected_intent=self.expected(),
+            account_fingerprint=ACCOUNT_FINGERPRINT,
+        )
+        self.assertIs(recovery.outcome, LiveRecoveryOutcome.INCONCLUSIVE)
+        self.assertEqual(recovery.account_observation["disallowed_position_count"], 1)
+
 
     def test_response_payloads_are_defensively_frozen(self):
         response = {"code": "0", "data": [{

@@ -8,6 +8,7 @@ from datetime import timedelta
 from unittest.mock import patch
 from uuid import uuid4
 
+from secure_eval_wrapper.live.collector_evidence import expected_preflight_request_paths
 from secure_eval_wrapper.live.credentials import InjectedLocalCredentialProvider
 from secure_eval_wrapper.live.identity import RuntimeRepositoryIdentity
 from secure_eval_wrapper.live.readonly_preflight import (
@@ -68,6 +69,18 @@ def provider():
         expected_account_fingerprint=ACCOUNT_FINGERPRINT,
     )
 
+class GateRecordingProvider(InjectedLocalCredentialProvider):
+    def __init__(self):
+        super().__init__(
+            "placeholder-key", "placeholder-secret", "placeholder-passphrase",
+            expected_account_fingerprint=ACCOUNT_FINGERPRINT,
+        )
+        self.phase8b_gates = None
+
+    def load_for_authenticated_readonly_preflight(self, *, gates):
+        self.phase8b_gates = dict(gates)
+        return super().load_for_authenticated_readonly_preflight(gates=gates)
+
 
 class AuthenticatedReadOnlyPreflightTests(unittest.TestCase):
     def setUp(self):
@@ -87,7 +100,7 @@ class AuthenticatedReadOnlyPreflightTests(unittest.TestCase):
         self.ci_environment.start()
         self.addCleanup(self.ci_environment.stop)
 
-    def run_proof(self, *, permission="read_only", uid=OKX_UID):
+    def run_proof(self, *, permission="read_only", uid=OKX_UID, credential_source=None):
         configuration = local_configuration()
         repository = RecordingRepository(configuration)
         transport = CountingTransport(at=T0, uid=uid, perm=permission)
@@ -107,7 +120,7 @@ class AuthenticatedReadOnlyPreflightTests(unittest.TestCase):
             expected_account_fingerprint=ACCOUNT_FINGERPRINT,
             expected_reviewed_sha=COMMIT,
             instrument="BTC-USDT",
-            credential_provider=provider(),
+            credential_provider=credential_source or provider(),
             adapter_factory=factory,
             identity_resolver=lambda: RuntimeRepositoryIdentity(COMMIT, "git_checkout"),
         )
@@ -148,6 +161,13 @@ class AuthenticatedReadOnlyPreflightTests(unittest.TestCase):
         self.assertEqual(adapter.network_reads, 6)
         self.assertEqual(adapter.network_writes, 0)
         self.assertEqual(len(transport.calls), 6)
+        observed_paths = tuple(
+            url.removeprefix("https://www.okx.com") for url in transport.calls
+        )
+        self.assertEqual(observed_paths, expected_preflight_request_paths("BTC-USDT"))
+        self.assertEqual(observed_paths[4], "/api/v5/account/positions")
+        self.assertNotIn("?", observed_paths[4])
+        self.assertNotIn("/api/v5/account/positions?instType=SPOT", observed_paths)
         self.assertEqual(len(repository.persisted), 1)
         payload = proof.public_payload()
         encoded = json.dumps(payload, sort_keys=True)
@@ -177,6 +197,78 @@ class AuthenticatedReadOnlyPreflightTests(unittest.TestCase):
         payload["network_writes_occurred"] = "false"
         with self.assertRaises(TypeError):
             AuthenticatedReadOnlyProof.from_public_payload(payload)
+
+    def test_old_positions_path_is_rejected_by_transport_and_proof_contract(self):
+        transport = CountingTransport(at=T0)
+        with self.assertRaises(PermissionError):
+            transport.execute(
+                method="GET",
+                url="https://www.okx.com/api/v5/account/positions?instType=SPOT",
+                headers={},
+                body=b"",
+            )
+        proof, _, _, _ = self.run_proof()
+        old_paths = list(proof.queried_paths)
+        old_paths[4] = "/api/v5/account/positions?instType=SPOT"
+        with self.assertRaises(ValueError):
+            replace(proof, queried_paths=tuple(old_paths), record_hash=None)
+
+    def test_nonempty_documented_position_blocks_proof_and_persists_nothing(self):
+        timestamp = str(int(T0.timestamp() * 1000))
+        transport = CountingTransport(
+            at=T0,
+            overrides={
+                "/api/v5/account/positions": {
+                    "code": "0",
+                    "data": [{
+                        "instId": "BTC-USDT-SWAP",
+                        "instType": "SWAP",
+                        "pos": "1",
+                        "avgPx": "100",
+                        "upl": "2",
+                        "uTime": timestamp,
+                    }],
+                },
+            },
+        )
+        adapter = self.assert_transport_rejected(transport)
+        self.assertEqual(adapter.network_reads, 6)
+        self.assertEqual(adapter.network_writes, 0)
+        self.assertEqual(
+            transport.calls[4],
+            "https://www.okx.com/api/v5/account/positions",
+        )
+
+    def test_phase8b_credential_gate_has_no_literal_kill_authority_and_requires_every_gate(self):
+        credential_source = GateRecordingProvider()
+        self.run_proof(credential_source=credential_source)
+        gates = credential_source.phase8b_gates
+        self.assertIsNotNone(gates)
+        self.assertNotIn("kill_switch_armed", gates)
+        self.assertEqual(
+            set(gates),
+            {
+                "authenticated_read_only_preflight_requested",
+                "read_only_preflight",
+                "provider_selected",
+                "production_environment",
+                "endpoint_catalog_valid",
+                "configuration_valid",
+                "production_writes_disabled",
+                "postgresql_available",
+                "repository_identity_verified",
+                "expected_account_fingerprint_present",
+            },
+        )
+        self.assertTrue(all(gates.values()))
+        for gate_name in gates:
+            with self.subTest(gate=gate_name):
+                blocked = provider()
+                missing_gate = dict(gates)
+                missing_gate[gate_name] = False
+                with self.assertRaises(PermissionError):
+                    blocked.load_for_authenticated_readonly_preflight(gates=missing_gate)
+                self.assertEqual(blocked.load_count, 0)
 
     def test_trade_or_withdraw_permission_stops_after_account_config(self):
         for permission in ("trade", "withdraw", "read_only,trade", "read_only,withdraw"):

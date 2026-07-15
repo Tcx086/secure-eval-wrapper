@@ -174,6 +174,8 @@ class AuthenticatedReadOnlyProof:
             raise ValueError("balance currency count does not match its names")
         if min(self.balance_currency_count, self.position_count, self.open_order_count) < 0:
             raise ValueError("proof aggregate counts cannot be negative")
+        if self.position_count != 0:
+            raise PermissionError("authenticated read-only proof requires an empty positions response")
         if not self.instrument_id or self.instrument_state != "live":
             raise PermissionError("proof requires a live Spot instrument")
         if self.network_read_count != 6 or not self.network_reads_occurred:
@@ -320,6 +322,10 @@ def build_authenticated_readonly_proof(
         raise PermissionError("OKX account-config permission normalization is not exact")
     if not isinstance(balances, Mapping) or not isinstance(instruments, tuple) or len(instruments) != 1:
         raise ValueError("OKX balance or instrument response shape is not exact")
+    if not isinstance(positions, tuple):
+        raise ValueError("OKX positions response shape is not exact")
+    if positions:
+        raise PermissionError("authenticated read-only proof is blocked by nonempty position evidence")
     instrument_row = instruments[0]
     if instrument_row.get("instrument") != instrument or instrument_row.get("instrument_state") != "live":
         raise PermissionError("requested Spot instrument is not live in the exact response")
@@ -425,7 +431,7 @@ def run_authenticated_readonly_preflight(
     identity = identity_resolver()
     if identity.observed_commit_sha != expected_reviewed_sha:
         raise PermissionError("runtime repository SHA does not match the expected reviewed SHA")
-    material = credential_provider.load(gates={
+    material = credential_provider.load_for_authenticated_readonly_preflight(gates={
         "authenticated_read_only_preflight_requested": True,
         "read_only_preflight": True,
         "provider_selected": configuration.provider == "okx",
@@ -433,7 +439,6 @@ def run_authenticated_readonly_preflight(
         "endpoint_catalog_valid": True,
         "configuration_valid": True,
         "production_writes_disabled": not configuration.production_write_enabled,
-        "kill_switch_armed": True,
         "postgresql_available": True,
         "repository_identity_verified": True,
         "expected_account_fingerprint_present": True,

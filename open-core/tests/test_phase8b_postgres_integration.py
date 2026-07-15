@@ -6,6 +6,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
+from unittest.mock import patch
 
 from secure_eval_wrapper.data_collection.hashing import sha256_payload
 from secure_eval_wrapper.live.durable_repository import (
@@ -14,8 +15,13 @@ from secure_eval_wrapper.live.durable_repository import (
     _public_payload,
 )
 from secure_eval_wrapper.live.identity import RuntimeRepositoryIdentity
+from secure_eval_wrapper.live.credentials import InjectedLocalCredentialProvider
 from secure_eval_wrapper.live.models import LiveCredentialReference, live_uuid
-from secure_eval_wrapper.live.readonly_preflight import build_authenticated_readonly_proof
+from secure_eval_wrapper.live.readonly_preflight import (
+    build_authenticated_readonly_proof,
+    run_authenticated_readonly_preflight,
+)
+from secure_eval_wrapper.live.venues.okx_live import OkxProductionSpotAdapter
 
 from test_phase8_guarded_live import (
     ACCOUNT_FINGERPRINT,
@@ -23,6 +29,7 @@ from test_phase8_guarded_live import (
     T0,
     config,
     exact_okx_bundle,
+    ExactOkxTransport,
 )
 
 RUN = os.environ.get("RUN_POSTGRES_INTEGRATION", "").lower() == "true"
@@ -122,6 +129,78 @@ class Phase8BPostgresTests(unittest.TestCase):
             cursor.execute(f"SELECT count(*) AS count FROM execution.{table}")
             return cursor.fetchone()["count"]
 
+    def assert_runtime_response_rejected(self, positions_response):
+        session = uuid4()
+        transport = ExactOkxTransport(
+            at=T0,
+            overrides={"/api/v5/account/positions": positions_response},
+        )
+        adapter_box = []
+
+        def adapter_factory(material):
+            adapter = OkxProductionSpotAdapter(
+                transport=transport,
+                credential_material=material,
+                clock=lambda: T0,
+            )
+            adapter_box.append(adapter)
+            return adapter
+
+        credential_provider = InjectedLocalCredentialProvider(
+            "placeholder-key",
+            "placeholder-secret",
+            "placeholder-passphrase",
+            expected_account_fingerprint=ACCOUNT_FINGERPRINT,
+        )
+        ci_environment = {
+            "CI": "false",
+            "GITHUB_ACTIONS": "false",
+            "GITLAB_CI": "false",
+            "TF_BUILD": "false",
+            "JENKINS_URL": "",
+            "BUILDKITE": "false",
+            "CIRCLECI": "false",
+        }
+        with patch.dict(os.environ, ci_environment, clear=False):
+            with self.assertRaises((PermissionError, ValueError)):
+                run_authenticated_readonly_preflight(
+                    repository=self.repository,
+                    proof_session_id=session,
+                    configuration_hash=self.configuration.configuration_hash,
+                    expected_account_fingerprint=ACCOUNT_FINGERPRINT,
+                    expected_reviewed_sha=COMMIT,
+                    instrument="BTC-USDT",
+                    credential_provider=credential_provider,
+                    adapter_factory=adapter_factory,
+                    identity_resolver=lambda: RuntimeRepositoryIdentity(COMMIT, "git_checkout"),
+                )
+        self.connection.rollback()
+        self.assertEqual(self.count("live_authenticated_readonly_proofs"), 0)
+        self.assertEqual(self.count("live_okx_response_bundles"), 0)
+        self.assertEqual(self.count("live_credential_references"), 0)
+        self.assertEqual(adapter_box[0].network_reads, 6)
+        self.assertEqual(adapter_box[0].network_writes, 0)
+
+    def test_nonempty_positions_response_creates_no_postgresql_proof_row(self):
+        timestamp = str(int(T0.timestamp() * 1000))
+        self.assert_runtime_response_rejected({
+            "code": "0",
+            "data": [{
+                "instId": "BTC-USDT-SWAP",
+                "instType": "SWAP",
+                "pos": "1",
+                "avgPx": "100",
+                "upl": "2",
+                "uTime": timestamp,
+            }],
+        })
+
+    def test_positions_parser_failure_creates_no_postgresql_proof_row(self):
+        self.assert_runtime_response_rejected({
+            "code": "0",
+            "data": [{"instType": "SWAP"}],
+        })
+
     def test_migration_0026_catalog_and_phase8b_table_are_installed(self):
         migration = (
             Path(__file__).resolve().parents[1]
@@ -144,6 +223,10 @@ class Phase8BPostgresTests(unittest.TestCase):
         )
         self.assertIn("public_proof_jsonb", columns)
         self.assertIn("record_sha256", columns)
+        migration_sql = migration.read_text(encoding="utf-8")
+        self.assertIn("'/api/v5/account/positions'", migration_sql)
+        self.assertNotIn("/api/v5/account/positions?instType=SPOT", migration_sql)
+        self.assertIn("observed_position_count IS DISTINCT FROM 0", migration_sql)
 
     def test_atomic_persistence_exact_replay_reload_and_conflict(self):
         proof, bundle, credential = self.context()
