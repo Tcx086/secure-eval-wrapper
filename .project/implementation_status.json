@@ -4,7 +4,7 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-14T17:13:08Z",
+  "updated_at_utc": "2026-07-14T23:55:43Z",
   "current_phase": "phase_8_guarded_live_execution",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
@@ -380,10 +380,11 @@
         "Add append-only migration 0023, real PostgreSQL-backed live CLIs, typed new-process reconstruction, exact OKX read and response validation, authoritative reconciliation, direct-SQL immutability guards, 21 dedicated offline regressions, 25 dedicated PostgreSQL regressions, and clean plus seeded migration verification while keeping production writes unreachable",
         "Add append-only migration 0024 with collector-sealed operational evidence, exact OKX response-envelope provenance, Phase 7 market lineage, PostgreSQL-authoritative instrument metadata, atomic reconciliation and risk sequencing, distinct kill-reset and run-continue authority, exact recovery classification, and 29 dedicated offline plus 29 dedicated PostgreSQL regressions, clean and seeded migration verification, and immutable 0001-0023 proof while keeping production writes unreachable",
         "Repair the final Phase 8A identity blockers with exact-UID-derived OKX account fingerprints, collector-derived runtime repository identity, fail-closed cross-account and forged-SHA rejection before authority persistence, and unchanged migrations 0001 through 0024 while production writes remain unreachable",
-        "Add append-only migration 0025 with exact OKX perm parsing, response-authoritative Phase 8A read-only credential policy, bundle/envelope/credential permission provenance, direct-SQL and restart fail-closed enforcement, focused offline and PostgreSQL attacks, and immutable 0001-0024 proof while production writes remain unreachable"
+        "Add append-only migration 0025 with exact OKX perm parsing, response-authoritative Phase 8A read-only credential policy, bundle/envelope/credential permission provenance, direct-SQL and restart fail-closed enforcement, focused offline and PostgreSQL attacks, and immutable 0001-0024 proof while production writes remain unreachable",
+        "Independently audit and accept Phase 8A at merge commit 18316f7462d4bbb9732308598f6aec743ebba0a3 after final-main GitHub Actions run 29373677324 passed all six jobs: Ubuntu Python 3.11 job 87222447626, Ubuntu Python 3.12 job 87222447618, Ubuntu Python 3.13 job 87222447670, Windows Python 3.12 job 87222447634, PostgreSQL 16 integration job 87222447656, and public/private and runtime boundary job 87222447616",
+        "Verify immutable migrations 0001 through 0025 and confirm that Phase 8A used no real credentials and performed no production orders or production cancellations"
       ],
       "todo": [
-        "Complete independent Phase 8A security, PostgreSQL concurrency, recovery, and public/private boundary audits",
         "Optionally prove authenticated read-only preflight in a controlled local environment without persisting credentials",
         "Design and independently audit a separate Phase 8B/8C production-write checkpoint before considering any write enablement",
         "Keep production orders and cancellations disabled until a later explicitly approved phase"
