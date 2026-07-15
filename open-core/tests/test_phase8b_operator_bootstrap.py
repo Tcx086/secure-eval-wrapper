@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from secure_eval_wrapper.live.bootstrap import (
+    BootstrapOperationError,
     BootstrapSafetyError,
     EXPECTED_MIGRATION_CATALOG,
     Phase8BOperatorBootstrap,
@@ -132,6 +133,50 @@ class Phase8BOperatorBootstrapOfflineTests(unittest.TestCase):
             )
         self.assertFalse(service.created)
         self.assertFalse(service.migrated)
+
+    def test_initialize_failure_reports_exact_last_completed_stage(self):
+        base = {
+            "plan_hash": "b" * 64,
+            "blockers": [],
+            "database_creation_required": True,
+            "migrations_required": True,
+            "database_identity_sha256": "d" * 64,
+        }
+        service = _NoDatabaseBootstrap([base, base])
+        service._database_reference = lambda: (False, None, "d" * 64)
+        service._create_database = lambda: (_ for _ in ()).throw(
+            RuntimeError("injected create failure")
+        )
+        with self.assertRaises(BootstrapOperationError) as raised:
+            service.initialize(
+                expected_reviewed_sha=SHA,
+                account_fingerprint=FINGERPRINT,
+                instrument="BTC-USDT",
+                previous_plan_hash="b" * 64,
+                confirm_readonly_bootstrap=True,
+            )
+        self.assertEqual(raised.exception.last_completed_stage, "plan_revalidated")
+        self.assertEqual(str(raised.exception), "local_postgresql_operation_failed")
+        self.assertFalse(service.created)
+        self.assertFalse(service.migrated)
+
+        class _FailingCliBootstrap(_FakeCliBootstrap):
+            def initialize(self, **kwargs):
+                raise BootstrapOperationError(
+                    "public_safe_failure", last_completed_stage="schema_verified"
+                )
+
+        output = io.StringIO()
+        argv = [
+            "initialize", "--expected-reviewed-sha", SHA,
+            "--account-fingerprint", FINGERPRINT, "--instrument", "BTC-USDT",
+            "--plan-hash", "b" * 64, "--confirm-readonly-bootstrap",
+        ]
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(main(argv, bootstrap_factory=_FailingCliBootstrap), 2)
+        payload = json.loads(output.getvalue())
+        self.assertEqual(payload["last_completed_stage"], "schema_verified")
+        self.assertEqual(payload["error"], "public_safe_failure")
 
     def test_wrong_plan_hash_and_plan_state_change_fail_before_mutation(self):
         base = {"plan_hash": "b" * 64, "blockers": [], "database_creation_required": True, "migrations_required": True, "database_identity_sha256": "d" * 64}

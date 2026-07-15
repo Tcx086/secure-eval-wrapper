@@ -70,8 +70,10 @@ def _target(args) -> PostgresAdminTarget:
     )
 
 
-def _failure_payload(message: str) -> dict[str, object]:
-    return {
+def _failure_payload(
+    message: str, *, last_completed_stage: str | None = None
+) -> dict[str, object]:
+    result: dict[str, object] = {
         "status": "failed_closed",
         "error": message,
         "credentials_accessed": False,
@@ -79,6 +81,9 @@ def _failure_payload(message: str) -> dict[str, object]:
         "network_writes_occurred": False,
         "real_proof_executed": False,
     }
+    if last_completed_stage is not None:
+        result["last_completed_stage"] = last_completed_stage
+    return result
 
 
 def main(argv=None, *, bootstrap_factory=Phase8BOperatorBootstrap) -> int:
@@ -108,7 +113,14 @@ def main(argv=None, *, bootstrap_factory=Phase8BOperatorBootstrap) -> int:
                 instrument=args.instrument,
             )
     except (BootstrapSafetyError, ValueError) as exc:
-        print(json.dumps(_failure_payload(str(exc)), sort_keys=True, separators=(",", ":")))
+        print(json.dumps(
+            _failure_payload(
+                str(exc),
+                last_completed_stage=getattr(exc, "last_completed_stage", None),
+            ),
+            sort_keys=True,
+            separators=(",", ":"),
+        ))
         return 2
     except Exception:
         print(json.dumps(

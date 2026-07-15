@@ -102,6 +102,14 @@ class BootstrapSafetyError(PermissionError):
     """A public-safe, fail-closed bootstrap refusal."""
 
 
+class BootstrapOperationError(BootstrapSafetyError):
+    """A public-safe bootstrap refusal with exact completed-stage provenance."""
+
+    def __init__(self, message: str, *, last_completed_stage: str) -> None:
+        super().__init__(message)
+        self.last_completed_stage = last_completed_stage
+
+
 @dataclass(frozen=True)
 class PostgresAdminTarget:
     database: str = DEFAULT_DATABASE
@@ -620,10 +628,43 @@ class Phase8BOperatorBootstrap:
         previous_plan_hash: str,
         confirm_readonly_bootstrap: bool,
     ) -> dict[str, object]:
+        progress = ["not_started"]
+        try:
+            return self._initialize_confirmed(
+                expected_reviewed_sha=expected_reviewed_sha,
+                account_fingerprint=account_fingerprint,
+                instrument=instrument,
+                previous_plan_hash=previous_plan_hash,
+                confirm_readonly_bootstrap=confirm_readonly_bootstrap,
+                progress=progress,
+            )
+        except BootstrapOperationError:
+            raise
+        except (BootstrapSafetyError, ValueError) as exc:
+            raise BootstrapOperationError(
+                str(exc), last_completed_stage=progress[0]
+            ) from exc
+        except Exception as exc:
+            raise BootstrapOperationError(
+                "local_postgresql_operation_failed",
+                last_completed_stage=progress[0],
+            ) from exc
+
+    def _initialize_confirmed(
+        self,
+        *,
+        expected_reviewed_sha: str,
+        account_fingerprint: str,
+        instrument: str,
+        previous_plan_hash: str,
+        confirm_readonly_bootstrap: bool,
+        progress: list[str],
+    ) -> dict[str, object]:
         if not confirm_readonly_bootstrap:
             raise BootstrapSafetyError(f"initialization requires exact {CONFIRMATION_FLAG} confirmation")
         if not isinstance(previous_plan_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", previous_plan_hash):
             raise BootstrapSafetyError("previous plan hash must be an exact lowercase SHA-256")
+        progress[0] = "confirmation_validated"
 
         first = self.plan(
             expected_reviewed_sha=expected_reviewed_sha,
@@ -644,11 +685,14 @@ class Phase8BOperatorBootstrap:
         _, _, immediate_database_identity = self._database_reference()
         if immediate_database_identity != current["database_identity_sha256"]:
             raise BootstrapSafetyError("database identity changed between plan and apply")
+        progress[0] = "plan_revalidated"
 
         if current["database_creation_required"]:
             self._create_database()
+        progress[0] = "database_ready"
         if current["migrations_required"]:
             self._apply_all_migrations()
+        progress[0] = "migrations_ready"
 
         configuration = phase8b_authenticated_readonly_configuration(
             account_fingerprint, instrument
@@ -656,6 +700,16 @@ class Phase8BOperatorBootstrap:
         pre_persist = self.inspect(expected_configuration=configuration)
         if pre_persist.catalog_state != "exact_0001_0026" or pre_persist.blockers:
             raise BootstrapSafetyError("post-migration catalog is not safe for configuration persistence")
+        schema_connection = self._connect(self.target.database, read_only=True)
+        try:
+            schema_contract = self._schema_contract(schema_connection)
+        finally:
+            schema_connection.close()
+        if not all(schema_contract.values()):
+            raise BootstrapSafetyError(
+                "Phase 8 schema contract failed before configuration persistence"
+            )
+        progress[0] = "schema_verified"
         connection = self._connect(self.target.database, read_only=False)
         try:
             repository = DurablePostgresLiveRepository(connection)
@@ -663,6 +717,7 @@ class Phase8BOperatorBootstrap:
                 configuration=configuration,
                 created_at_utc=self._clock(),
             )
+            progress[0] = "configuration_persisted"
         finally:
             connection.close()
 
@@ -673,7 +728,8 @@ class Phase8BOperatorBootstrap:
         )
         if not result["ready_for_operator_authorization"]:
             raise BootstrapSafetyError("configuration persisted but final verification failed closed")
-        return {
+        progress[0] = "verification_completed"
+        result_core = {
             "command": "secure-eval-live-bootstrap initialize",
             "version": BOOTSTRAP_VERSION,
             "target_database": self.target.database,
@@ -697,12 +753,16 @@ class Phase8BOperatorBootstrap:
             "network_reads_occurred": result["network_reads_occurred"],
             "network_writes_occurred": result["network_writes_occurred"],
             "real_proof_executed": result["real_proof_executed"],
-            "bootstrap_record_hash": result["bootstrap_record_hash"],
+        }
+        return {
+            **result_core,
+            "bootstrap_record_hash": sha256_payload(result_core),
         }
 
 
 __all__ = [
-    "BOOTSTRAP_VERSION", "BootstrapSafetyError", "CONFIRMATION_FLAG", "DEFAULT_DATABASE",
+    "BOOTSTRAP_VERSION", "BootstrapOperationError", "BootstrapSafetyError",
+    "CONFIRMATION_FLAG", "DEFAULT_DATABASE",
     "EXPECTED_MIGRATION_CATALOG", "LATEST_MIGRATION", "DatabaseInspection",
     "Phase8BOperatorBootstrap", "PostgresAdminTarget", "verify_local_migration_files",
 ]

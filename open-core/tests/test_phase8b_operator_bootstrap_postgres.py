@@ -5,11 +5,14 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime, timezone
+from unittest.mock import patch
 from uuid import uuid4
 
 from secure_eval_wrapper.data_collection.hashing import sha256_payload
 from secure_eval_wrapper.live.bootstrap import (
+    BootstrapOperationError,
     BootstrapSafetyError,
+    EXPECTED_MIGRATION_CATALOG,
     LATEST_MIGRATION,
     Phase8BOperatorBootstrap,
     PostgresAdminTarget,
@@ -156,6 +159,11 @@ class Phase8BOperatorBootstrapPostgresTests(unittest.TestCase):
             "production_write_enabled", "credentials_accessed", "network_reads_occurred",
             "network_writes_occurred", "real_proof_executed", "bootstrap_record_hash",
         })
+        result_core = {
+            key: value for key, value in result.items() if key != "bootstrap_record_hash"
+        }
+        self.assertEqual(result["bootstrap_record_hash"], sha256_payload(result_core))
+        self.assertNotEqual(result["bootstrap_record_hash"], result["configuration_hash"])
         verification = self.verification_result
         self.assertTrue(verification["ready_for_operator_authorization"])
         self.assertTrue(verification["migration_hashes_verified"])
@@ -189,6 +197,31 @@ class Phase8BOperatorBootstrapPostgresTests(unittest.TestCase):
                     self.persist(fail_at=fail_at)
                 self.connection.rollback()
                 self.assertEqual(self.count(), 0)
+
+    def test_schema_contract_is_verified_before_configuration_insert(self):
+        plan_result = self.service.plan(
+            expected_reviewed_sha=SHA,
+            account_fingerprint=FINGERPRINT,
+            instrument="BTC-USDT",
+        )
+        incomplete_contract = {
+            "phase8_tables_verified": True,
+            "phase8_indexes_verified": False,
+            "phase8_triggers_verified": True,
+        }
+        with patch.object(
+            self.service, "_schema_contract", return_value=incomplete_contract
+        ):
+            with self.assertRaises(BootstrapOperationError) as raised:
+                self.service.initialize(
+                    expected_reviewed_sha=SHA,
+                    account_fingerprint=FINGERPRINT,
+                    instrument="BTC-USDT",
+                    previous_plan_hash=plan_result["plan_hash"],
+                    confirm_readonly_bootstrap=True,
+                )
+        self.assertEqual(raised.exception.last_completed_stage, "migrations_ready")
+        self.assertEqual(self.count(), 0)
 
     def test_stale_hashes_and_nonfactory_overrides_fail_before_insert(self):
         for attacked in (
@@ -253,6 +286,64 @@ class Phase8BOperatorBootstrapPostgresTests(unittest.TestCase):
             results = tuple(executor.map(lambda _: worker(), range(2)))
         self.assertEqual(results[0], results[1])
         self.assertEqual(self.count(), 1)
+
+    def test_concurrent_conflicting_creation_fails_closed(self):
+        conflicting = phase8a_dry_run_configuration(
+            account_fingerprint=FINGERPRINT,
+            endpoint_catalog_hash=endpoint_catalog_hash(),
+            provider_implementation_hash=OKX_PRODUCTION_SPOT_ADAPTER_IMPLEMENTATION_HASH,
+        )
+
+        def worker(configuration):
+            connection = self.connector(
+                **self.target.connection_kwargs(self.database, read_only=False)
+            )
+            try:
+                repository = DurablePostgresLiveRepository(connection)
+                try:
+                    identifier = repository.persist_guarded_live_configuration_snapshot(
+                        configuration=configuration,
+                        created_at_utc=datetime(2026, 7, 15, tzinfo=timezone.utc),
+                    )
+                except Exception as exc:
+                    return "error", type(exc).__name__
+                return "ok", str(identifier)
+            finally:
+                connection.close()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            outcomes = tuple(executor.map(worker, (self.configuration, conflicting)))
+        self.assertEqual({outcome[0] for outcome in outcomes}, {"ok", "error"})
+        self.assertIn(("error", "PermissionError"), outcomes)
+        self.assertEqual(self.count(), 1)
+
+    def test_altered_database_migration_hash_is_rejected_and_never_overwritten(self):
+        migration_id = next(iter(EXPECTED_MIGRATION_CATALOG))
+        expected_hash = EXPECTED_MIGRATION_CATALOG[migration_id]
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE audit.schema_migrations SET sha256=%s WHERE migration_id=%s",
+                ("f" * 64, migration_id),
+            )
+        self.connection.commit()
+        try:
+            plan_result = self.service.plan(
+                expected_reviewed_sha=SHA,
+                account_fingerprint=FINGERPRINT,
+                instrument="BTC-USDT",
+            )
+            self.assertEqual(plan_result["catalog_state"], "hash_or_filename_mismatch")
+            self.assertIn(
+                "immutable_migration_catalog_mismatch", plan_result["blockers"]
+            )
+            self.assertEqual(self.count(), 0)
+        finally:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE audit.schema_migrations SET sha256=%s WHERE migration_id=%s",
+                    (expected_hash, migration_id),
+                )
+            self.connection.commit()
 
     def test_unsafe_existing_application_rows_block_plan_without_overwrite(self):
         with self.connection.cursor() as cursor:
