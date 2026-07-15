@@ -70,6 +70,23 @@ def provider():
 
 
 class AuthenticatedReadOnlyPreflightTests(unittest.TestCase):
+    def setUp(self):
+        self.ci_environment = patch.dict(
+            os.environ,
+            {
+                "CI": "false",
+                "GITHUB_ACTIONS": "false",
+                "GITLAB_CI": "false",
+                "TF_BUILD": "false",
+                "JENKINS_URL": "",
+                "BUILDKITE": "false",
+                "CIRCLECI": "false",
+            },
+            clear=False,
+        )
+        self.ci_environment.start()
+        self.addCleanup(self.ci_environment.stop)
+
     def run_proof(self, *, permission="read_only", uid=OKX_UID):
         configuration = local_configuration()
         repository = RecordingRepository(configuration)
