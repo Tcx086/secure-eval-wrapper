@@ -4,7 +4,7 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-15T00:22:00Z",
+  "updated_at_utc": "2026-07-15T18:55:51Z",
   "current_phase": "phase_8_guarded_live_execution",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
@@ -388,12 +388,16 @@
         "Restrict Phase 8B proof to the exact ordered six account-config, balance, Spot-instrument, pending-order, unparameterized account-positions, and venue-time GETs; require the positions data array to be empty, reject trade or withdraw immediately after account config, and keep all writes and account powers unreachable",
         "Persist raw responses only in the private PostgreSQL evidence boundary and publish only configuration, provider-implementation, endpoint-catalog, and response-derived hashes, short identity, permission, endpoint, time/skew, currency-name/count, position/order count, instrument, blocker/warning, and truthful network facts",
         "Add append-only migration 0026 because 0022-0025 lacked a standalone replay-safe proof record; enforce the exact unparameterized positions path, the zero-position rule, graph derivation, fake-versus-operational classification, immutability, rollback, replay, reload, and direct-SQL fixture-promotion rejection",
-        "Complete focused fake-transport offline and PostgreSQL 16 Phase 8B validation without real credentials, account identifiers, raw private exports, production orders, or production cancellations; implementation remains pending independent audit",
-        "Repair the Phase 8B audit findings by removing the unsupported instType=SPOT positions parameter, requiring an empty completed positions response, normalizing documented non-Spot position types as disallowed exposure, removing literal kill-switch success from the standalone proof credential gate, and documenting the normal-role direct-SQL guarantee without claiming resistance to an unrestricted authoritative database writer"
+        "Complete focused fake-transport offline and PostgreSQL 16 Phase 8B validation without real credentials, account identifiers, raw private exports, production orders, or production cancellations while production writes remain disabled",
+        "Repair the Phase 8B audit findings by removing the unsupported instType=SPOT positions parameter, requiring an empty completed positions response, normalizing documented non-Spot position types as disallowed exposure, removing literal kill-switch success from the standalone proof credential gate, and documenting the normal-role direct-SQL guarantee without claiming resistance to an unrestricted authoritative database writer",
+        "Independently audit and accept the Phase 8B implementation delivered by PR #5, candidate head c3d5dc4b7f4d91d752f2dc2c06aba2078a896180, and merge commit 9b23c71a31a6e4183c23b7504618ebff158fee1e after final-main Actions run 29441539059 passed all six jobs: Ubuntu Python 3.11 job 87441507235, Ubuntu Python 3.12 job 87441507210, Ubuntu Python 3.13 job 87441507245, Windows Python 3.12 job 87441507224, PostgreSQL 16 integration job 87441507309, and public/private and runtime boundary job 87441507243",
+        "Verify migration 0026 SHA-256 698772fb68c5c4981256682d064c3be641193ab10c8dbf55e1a5b390ca7c504a, keep migrations 0001 through 0026 immutable, and accept only the exact ordered six authenticated read-only GETs for account config, balance, one Spot instrument, pending orders, unparameterized positions, and venue time with an empty-positions and position_count=0 success rule",
+        "Confirm that Phase 8B implementation and audit used no real credentials and performed no authenticated OKX request, production order, or production cancellation; the real local authenticated proof remains unexecuted and production writes remain disabled and unreachable"
       ],
       "todo": [
-        "Independently audit Phase 8B and, only after acceptance, optionally execute one controlled local authenticated read-only proof with operator-owned environment credentials that are never persisted",
-        "Design and independently audit a separate future Phase 8C production-write checkpoint before considering any write enablement",
+        "Optionally execute exactly one controlled local authenticated read-only proof with operator-owned environment credentials that are never persisted, only after the separate exact operator authorization",
+        "Independently review the resulting redacted proof before accepting the operational Phase 8B checkpoint",
+        "Do not design Phase 8C until the operational Phase 8B checkpoint is separately accepted",
         "Keep production orders and cancellations disabled until a later explicitly approved phase"
       ]
     },

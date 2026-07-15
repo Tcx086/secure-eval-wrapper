@@ -1,8 +1,8 @@
-# Guarded Live Execution (Phase 8A accepted; Phase 8B pending audit)
+# Guarded Live Execution (Phase 8A accepted; Phase 8B implementation accepted)
 
 ## Status and safety boundary
 
-Phase 8A implements a PostgreSQL-authoritative, dry-run/read-only guarded-live foundation for OKX production Spot and is an accepted checkpoint. Phase 8B implements an explicit authenticated read-only proof path and is pending independent audit. Production order submission and production cancellation are unconditionally disabled. The implementation is not production-write enabled, not production proven, and does not claim that live trading is safe or profitable.
+Phase 8A implements a PostgreSQL-authoritative, dry-run/read-only guarded-live foundation for OKX production Spot and is an accepted checkpoint. The Phase 8B explicit authenticated read-only proof implementation is independently audited and accepted; the optional real local authenticated proof has not yet been executed. Production order submission and production cancellation are unconditionally disabled. The implementation is not production-write enabled, not production proven, and does not claim that live trading is safe or profitable.
 
 The separate `secure_eval_wrapper.live` package does not change `PaperEnvironment`, `PaperBroker`, `PaperVenue`, simulated execution, or any migration from `0001` through `0025`. Live records use `execution.live_*` tables and never masquerade as paper or simulated records. Append-only migration `0026` adds a standalone authenticated read-only proof record without enabling production writes.
 
@@ -93,6 +93,8 @@ Raw UIDs, balances, positions, orders, and response payloads remain only in the 
 
 Migration `0026` is necessary because `0022` through `0025` could retain exact private response bundles but had no standalone, reloadable public proof tied to a distinct operator request. The new table binds proof session, bundle, configuration, credential reference, account, repository identity, endpoint matrix, response-derived aggregates, fake/operational transport classification, and canonical record hash. It is append-only and transactionally replay-safe. Automated tests use fake transport and can produce only `fixture_passed`; the production CLI rejects fixture authority. No real credentials or OKX orders were used to implement or validate Phase 8B.
 
+The accepted implementation checkpoint is PR `#5`, candidate head `c3d5dc4b7f4d91d752f2dc2c06aba2078a896180`, merge commit `9b23c71a31a6e4183c23b7504618ebff158fee1e`, and final-main Actions run `29441539059`, whose six jobs all passed. Migration `0026` has SHA-256 `698772fb68c5c4981256682d064c3be641193ab10c8dbf55e1a5b390ca7c504a`; migrations `0001` through `0026` are immutable. No real credential was loaded and no authenticated OKX request, production order, or production cancellation occurred during implementation or audit.
+
 Under normal runtime and database roles, PostgreSQL recomputes response hashes and public proof fields, rejects incomplete bundles, rejects cross-run or cross-account attachment, prevents proof mutation, and prevents fake transport from being promoted to operational proof. PostgreSQL cannot independently prove that a physical network request occurred against an attacker with unrestricted authoritative database-write access; normal roles must not bypass these constraints, and Phase 8B makes no stronger attestation claim.
 ## Operator preflight checklist
 
@@ -154,6 +156,6 @@ Allowed sources are process environment, operating-system credential store, or a
 
 - No production order or cancellation proof exists or is allowed in Phase 8.
 - No CLI implicitly loads credentials or performs network reads; authenticated reads require the complete explicit Phase 8B invocation and all gates.
-- Authenticated read-only preflight is implemented but remains pending independent audit and has not been run with real credentials by this project change.
+- Authenticated read-only preflight implementation is independently audited and accepted but has not been run with real credentials by this project change.
 - No withdrawals, transfers, subaccount transfers, borrowing, leverage, margin, derivatives, perpetuals, futures, options, automatic flattening, or production FIX capability exists.
-- Phase 8A is independently audited and accepted at its final-main checkpoint. Phase 8B is implemented and pending independent audit, Phase 8 remains in progress, and a separate future checkpoint is required before any write enablement can be considered.
+- Phase 8A and the Phase 8B implementation are independently audited and accepted at their final-main checkpoints. The Phase 8B real local authenticated proof is not yet executed, Phase 8 remains in progress, and Phase 8C must not be designed until the operational Phase 8B checkpoint is separately accepted.
