@@ -16,7 +16,11 @@ from secure_eval_wrapper.live.authorities import LiveEvidenceSource, LiveVenueOb
 from secure_eval_wrapper.paper.models import PaperMarketDataEvidence
 from secure_eval_wrapper.storage.postgres.config import load_postgres_config
 
+from .credentials import EnvironmentLiveCredentialProvider, redact
 from .durable_repository import DurablePostgresLiveRepository, _public_payload
+from .gates import common_ci_indicators
+from .readonly_preflight import run_authenticated_readonly_preflight
+from .venues.okx_live import OkxProductionSpotAdapter, UrllibReadOnlyTransport
 from .models import LiveOrderIntent
 from .preflight import LivePreflightEngine, collect_migration_catalog_source, collect_postgresql_probe_sources
 from .reconciliation import build_and_reconcile
@@ -52,31 +56,87 @@ def _uuid(value: str) -> UUID:
 
 
 def preflight_main(argv=None):
-    parser = _parser("Secure Eval live preflight collector gate")
+    parser = _parser("Secure Eval explicit authenticated read-only OKX preflight")
     parser.add_argument("--read-only-network-preflight", action="store_true")
+    parser.add_argument("--credential-source", choices=("environment",))
+    parser.add_argument("--expected-account-fingerprint")
+    parser.add_argument("--expected-reviewed-sha")
+    parser.add_argument("--instrument")
     args = parser.parse_args(argv)
+    adapter_holder = []
     try:
+        if not args.read_only_network_preflight:
+            raise PermissionError(
+                "explicit --read-only-network-preflight is required; no socket or credential access occurred"
+            )
+        required = {
+            "--configuration-hash": args.configuration_hash,
+            "--credential-source": args.credential_source,
+            "--expected-account-fingerprint": args.expected_account_fingerprint,
+            "--expected-reviewed-sha": args.expected_reviewed_sha,
+            "--instrument": args.instrument,
+        }
+        missing = [name for name, value in required.items() if not value]
+        if missing:
+            raise ValueError("missing explicit authenticated read-only arguments: " + ", ".join(missing))
+        if args.credential_source != "environment":
+            raise PermissionError("the CLI accepts only the environment credential source")
+        if common_ci_indicators():
+            raise PermissionError(
+                "authenticated production network preflight is prohibited in CI before PostgreSQL access"
+            )
         run_id = _uuid(args.live_run_id)
+        provider = EnvironmentLiveCredentialProvider(
+            expected_account_fingerprint=args.expected_account_fingerprint
+        )
+
+        def adapter_factory(material):
+            adapter = OkxProductionSpotAdapter(
+                transport=UrllibReadOnlyTransport(), credential_material=material
+            )
+            adapter_holder.append(adapter)
+            return adapter
+
         with _connect() as connection:
             repository = DurablePostgresLiveRepository(connection)
-            runtime = reconstruct_live_runtime(repository=repository, live_run_id=run_id)
-            if args.configuration_hash and args.configuration_hash != runtime.configuration.configuration_hash:
-                raise PermissionError("requested configuration hash does not match PostgreSQL")
-            if not args.read_only_network_preflight:
-                raise PermissionError(
-                    "fresh account, position, open-order, venue-time, and instrument responses "
-                    "must be recollected by the approved read-only adapter; historical source rows "
-                    "are never reused"
-                )
-            raise PermissionError(
-                "no credential material is loaded implicitly; provide an explicit local-only "
-                "credential integration to the approved read-only collector"
+            proof = run_authenticated_readonly_preflight(
+                repository=repository,
+                proof_session_id=run_id,
+                configuration_hash=args.configuration_hash,
+                expected_account_fingerprint=args.expected_account_fingerprint,
+                expected_reviewed_sha=args.expected_reviewed_sha,
+                instrument=args.instrument,
+                credential_provider=provider,
+                adapter_factory=adapter_factory,
             )
+            if proof.status != "passed" or proof.evidence_classification != "operational_collector":
+                raise PermissionError("the CLI cannot publish fixture preflight authority")
+            _print({
+                "command": "live-preflight",
+                "provider": "okx",
+                "environment": "production",
+                "queried_endpoint_count": len(proof.queried_paths),
+                "private_evidence_persisted": proof.private_evidence_storage == "postgresql",
+                **proof.public_payload(),
+            })
+            return 0
     except Exception as exc:
+        adapter = adapter_holder[-1] if adapter_holder else None
+        reads = 0 if adapter is None else adapter.network_reads
+        writes = 0 if adapter is None else adapter.network_writes
         _print({
-            "command": "live-preflight", "status": "blocked", "blockers": [str(exc)],
+            "command": "live-preflight",
+            "provider": "okx",
+            "environment": "production",
+            "queried_endpoint_count": reads,
+            "private_evidence_persisted": False,
+            "status": "blocked",
+            "blockers": [redact(str(exc))],
+            "authorization_mode": "AUTHENTICATED READ-ONLY",
             "evidence_classification": "no_stale_reuse",
-            "network_reads_occurred": False, "network_writes_occurred": False,
+            "network_read_count": reads,
+            "network_reads_occurred": reads > 0,
+            "network_writes_occurred": writes > 0,
             "production_write_status": "disabled",
         })
         return 2

@@ -102,7 +102,7 @@ def _permissions(value: object) -> tuple[tuple[str, ...], tuple[str, ...]]:
 
 
 class OkxProductionSpotAdapter(GuardedLiveVenue):
-    provider_implementation_hash = sha256_payload({"adapter": "okx-production-spot", "version": 3, "writes": "phase8a-unreachable"})
+    provider_implementation_hash = sha256_payload({"adapter": "okx-production-spot", "version": 4, "writes": "phase8b-unreachable", "authenticated_readonly_preflight": "exact-six-gets"})
 
     def __init__(self, *, transport, credential_material=None, clock=None) -> None:
         self.transport = transport
@@ -392,6 +392,13 @@ class OkxProductionSpotAdapter(GuardedLiveVenue):
         if not account_envelope.completed or not isinstance(account_envelope.normalized_payload, Mapping):
             raise PermissionError("OKX account identity cannot be derived from an incomplete account-config response")
         account_config = account_envelope.normalized_payload
+        if (
+            tuple(account_config.get("provider_permissions", ())) != ("read_only",)
+            or tuple(account_config.get("normalized_permissions", ())) != ("read",)
+        ):
+            raise PermissionError(
+                "authenticated read-only preflight requires the exact OKX permission set read_only"
+            )
         observed_account_fingerprint = derive_okx_account_fingerprint(account_config.get("uid"))
         if expected_account_fingerprint is not None:
             validate_okx_account_fingerprint(expected_account_fingerprint, field_name="expected_account_fingerprint")

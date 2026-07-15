@@ -179,13 +179,13 @@ def operational_evidence(run, cfg, snap, cred, market, reconciliation, kill, *, 
     expected_hashes = {
         migration_id: digest
         for migration_id, digest in observed_hashes.items()
-        if migration_id[:4] <= "0024"
+        if migration_id[:4] <= "0025"
     }
     account_config = dict(bundle.envelope("account_config").normalized_payload)
     observed_subaccount_fingerprint = bundle.account_fingerprint if account_config.get("is_subaccount") is True else None
     payloads = {
         "repository": {"observed_commit_sha": COMMIT, "expected_reviewed_sha": COMMIT, "identity_source": RUNTIME_IDENTITY.identity_source, "resolver_version": RUNTIME_IDENTITY.resolver_version, "implementation_hash": cfg.provider_implementation_hash},
-        "migration_catalog": {"catalog_clean": True, "latest_migration": "0025", "immutable_0001_0024": True, "expected_hashes_0001_0024": expected_hashes, "observed_hashes": observed_hashes},
+        "migration_catalog": {"catalog_clean": True, "latest_migration": "0026", "immutable_0001_0025": True, "expected_hashes_0001_0025": expected_hashes, "observed_hashes": observed_hashes},
         "postgresql_probe": {"available": True, "transaction_probe": True, "fake_transport": True},
         "audit_rollback_probe": {"write_succeeded": True, "rollback_verified": True},
         "credential_reference": {"reference_id": str(cred.reference_id), "record_hash": cred.record_hash, "credential_material_present": False},
@@ -480,7 +480,7 @@ class OkxAndBoundaryTests(unittest.TestCase):
 
     def test_signature_is_deterministic_without_exposing_material(self):
         provider = InjectedLocalCredentialProvider("placeholder-key", "placeholder-secret", "placeholder-passphrase", expected_account_fingerprint=ACCOUNT_FINGERPRINT)
-        gates = {"read_only_preflight": True, "provider_selected": True, "production_environment": True, "endpoint_catalog_valid": True, "configuration_valid": True, "production_writes_disabled": True, "kill_switch_armed": True, "postgresql_available": True}
+        gates = {"authenticated_read_only_preflight_requested": True, "read_only_preflight": True, "provider_selected": True, "production_environment": True, "endpoint_catalog_valid": True, "configuration_valid": True, "production_writes_disabled": True, "kill_switch_armed": True, "postgresql_available": True, "repository_identity_verified": True, "expected_account_fingerprint_present": True}
         with patch.dict(os.environ, {"CI": "false", "GITHUB_ACTIONS": "false"}, clear=False): material = provider.load(gates=gates)
         headers = signed_headers(credential_material=material, method="GET", request_path="/api/v5/account/balance", timestamp="2026-07-13T03:00:00.000Z")
         self.assertEqual(headers, signed_headers(credential_material=material, method="GET", request_path="/api/v5/account/balance", timestamp="2026-07-13T03:00:00.000Z"))

@@ -147,11 +147,11 @@ class DurablePostgresLiveRepository:
             ("live_run_id", "bundle_purpose", "producer_classification", "collector_kind",
              "collector_version", "parser_version", "account_fingerprint",
              "query_started_at_utc", "query_completed_at_utc", "venue_observed_at_utc",
-             "endpoint_matrix_sha256", "normalized_payload_sha256"),
+             "endpoint_matrix_sha256", "normalized_payload_sha256", "transport_is_fake"),
             (bundle.live_run_id, bundle.purpose, bundle.classification.value, bundle.collector_kind,
              bundle.collector_version, bundle.parser_version, bundle.account_fingerprint,
              min(starts), max(completions), bundle.venue_observed_at_utc,
-             bundle.endpoint_matrix_hash, bundle.normalized_payload_hash),
+             bundle.endpoint_matrix_hash, bundle.normalized_payload_hash, bundle.transport_is_fake),
             bundle.record_hash,
         )
         for envelope in bundle.envelopes:
@@ -180,6 +180,145 @@ class DurablePostgresLiveRepository:
                     raise LiveConflictError("conflicting OKX response envelope replay")
         return bundle.bundle_id
 
+    def authenticated_readonly_storage_available(self) -> bool:
+        row = self._fetchone(
+            "SELECT to_regclass('execution.live_authenticated_readonly_proofs') IS NOT NULL AS table_ready,"
+            "EXISTS (SELECT 1 FROM audit.schema_migrations "
+            "WHERE migration_id='0026_phase8b_authenticated_readonly_preflight') AS migration_ready"
+        )
+        return bool(row and row["table_ready"] and row["migration_ready"])
+
+    def load_guarded_live_configuration(self, configuration_hash: str):
+        from .readonly_preflight import guarded_configuration_from_json
+
+        row = self._fetchone(
+            "SELECT * FROM execution.live_configuration_snapshots WHERE configuration_sha256=%s",
+            (configuration_hash,),
+        )
+        if row is None:
+            raise LookupError("guarded live configuration was not found in PostgreSQL")
+        payload = dict(_json_value(row["configuration_jsonb"]))
+        configuration = guarded_configuration_from_json(payload)
+        if (
+            configuration.configuration_hash != row["configuration_sha256"]
+            or sha256_payload(payload) != row["record_sha256"]
+            or not row["dry_run"]
+            or not row["read_only_preflight"]
+            or row["production_write_enabled"]
+        ):
+            raise PermissionError("PostgreSQL guarded live configuration integrity check failed")
+        return configuration
+
+    def persist_authenticated_readonly_proof(
+        self,
+        *,
+        proof,
+        bundle,
+        credential_reference,
+        configuration,
+        created_at_utc,
+        fail_at=None,
+    ):
+        from .readonly_preflight import AuthenticatedReadOnlyProof
+
+        if not isinstance(proof, AuthenticatedReadOnlyProof):
+            raise TypeError("authenticated read-only persistence requires a typed proof")
+        if not isinstance(bundle, VerifiedOkxReadObservationBundle):
+            raise TypeError("authenticated read-only persistence requires a verified OKX bundle")
+        if (
+            proof.proof_session_id != bundle.live_run_id
+            or proof.response_bundle_id != bundle.bundle_id
+            or proof.configuration_hash != configuration.configuration_hash
+            or proof.credential_reference_id != credential_reference.reference_id
+            or proof.account_fingerprint != bundle.account_fingerprint
+            or credential_reference.account_fingerprint != proof.account_fingerprint
+            or not credential_reference.loaded
+            or credential_reference.permission_summary != ("read",)
+            or bundle.purpose != "preflight"
+            or not bundle.complete
+        ):
+            raise ValueError("authenticated read-only proof graph is inconsistent")
+        with self.transaction():
+            self._lock_run(proof.proof_session_id)
+            stored_configuration = self._fetchone(
+                "SELECT record_sha256 FROM execution.live_configuration_snapshots "
+                "WHERE configuration_sha256=%s FOR SHARE",
+                (proof.configuration_hash,),
+            )
+            if stored_configuration is None:
+                raise PermissionError("proof configuration is not PostgreSQL authority")
+            self._persist_okx_bundle(bundle)
+            if fail_at == "bundle":
+                raise RuntimeError("injected authenticated read-only bundle failure")
+            self._strict_insert(
+                "execution.live_credential_references", "credential_reference_id",
+                credential_reference.reference_id,
+                (
+                    "provider", "alias", "source_type", "account_fingerprint", "loaded",
+                    "verified_at_utc", "permission_summary_jsonb", "created_at_utc",
+                ),
+                (
+                    credential_reference.provider, credential_reference.alias,
+                    credential_reference.source_type, credential_reference.account_fingerprint,
+                    credential_reference.loaded, credential_reference.verified_at_utc,
+                    _public_payload(credential_reference.permission_summary), created_at_utc,
+                ),
+                credential_reference.record_hash,
+            )
+            if fail_at == "credential":
+                raise RuntimeError("injected authenticated read-only credential failure")
+            self._strict_insert(
+                "execution.live_authenticated_readonly_proofs", "proof_id", proof.proof_id,
+                (
+                    "proof_session_id", "response_bundle_id", "configuration_sha256",
+                    "credential_reference_id", "expected_reviewed_sha", "observed_repository_sha",
+                    "repository_identity_source", "account_fingerprint", "credential_source",
+                    "provider_permissions_jsonb", "normalized_permissions_jsonb", "instrument_id",
+                    "query_started_at_utc", "query_completed_at_utc", "venue_time_at_utc",
+                    "clock_skew_milliseconds", "network_read_count", "evidence_classification",
+                    "status", "public_proof_jsonb", "created_at_utc",
+                ),
+                (
+                    proof.proof_session_id, proof.response_bundle_id, proof.configuration_hash,
+                    proof.credential_reference_id, proof.expected_reviewed_sha,
+                    proof.observed_repository_sha, proof.repository_identity_source,
+                    proof.account_fingerprint, proof.credential_source,
+                    _public_payload(proof.provider_permissions),
+                    _public_payload(proof.normalized_permissions), proof.instrument_id,
+                    proof.query_started_at_utc, proof.query_completed_at_utc,
+                    proof.venue_time_at_utc, proof.clock_skew_milliseconds,
+                    proof.network_read_count, proof.evidence_classification, proof.status,
+                    _public_payload(proof.public_payload()), created_at_utc,
+                ),
+                proof.record_hash,
+            )
+            if fail_at == "proof":
+                raise RuntimeError("injected authenticated read-only proof failure")
+        return proof.proof_id
+
+    def load_authenticated_readonly_proof(self, proof_id):
+        from .readonly_preflight import AuthenticatedReadOnlyProof
+
+        row = self._fetchone(
+            "SELECT p.public_proof_jsonb,p.record_sha256,b.record_sha256 AS bundle_record_sha256,"
+            "c.record_sha256 AS credential_record_sha256,s.record_sha256 AS configuration_record_sha256 "
+            "FROM execution.live_authenticated_readonly_proofs p "
+            "JOIN execution.live_okx_response_bundles b "
+            "ON b.response_bundle_id=p.response_bundle_id AND b.live_run_id=p.proof_session_id "
+            "JOIN execution.live_credential_references c "
+            "ON c.credential_reference_id=p.credential_reference_id "
+            "JOIN execution.live_configuration_snapshots s "
+            "ON s.configuration_sha256=p.configuration_sha256 WHERE p.proof_id=%s",
+            (proof_id,),
+        )
+        if row is None:
+            raise LookupError("authenticated read-only proof was not found")
+        proof = AuthenticatedReadOnlyProof.from_public_payload(
+            dict(_json_value(row["public_proof_jsonb"]))
+        )
+        if proof.record_hash != row["record_sha256"]:
+            raise PermissionError("authenticated read-only proof reload hash mismatch")
+        return proof
     @staticmethod
     def _validate_start_bundle(*, configuration, credential_reference, account_snapshot, report, approval, manifest, kill_switch, evidence, okx_bundle):
         run = report.live_run_id

@@ -1,10 +1,10 @@
-# Guarded Live Execution (Phase 8A)
+# Guarded Live Execution (Phase 8A accepted; Phase 8B pending audit)
 
 ## Status and safety boundary
 
-Phase 8A implements a PostgreSQL-authoritative, dry-run/read-only guarded-live foundation for OKX production Spot. Production order submission and production cancellation are unconditionally disabled. The implementation is not production-write enabled, not production proven, and does not claim that live trading is safe or profitable.
+Phase 8A implements a PostgreSQL-authoritative, dry-run/read-only guarded-live foundation for OKX production Spot and is an accepted checkpoint. Phase 8B implements an explicit authenticated read-only proof path and is pending independent audit. Production order submission and production cancellation are unconditionally disabled. The implementation is not production-write enabled, not production proven, and does not claim that live trading is safe or profitable.
 
-The separate `secure_eval_wrapper.live` package does not change `PaperEnvironment`, `PaperBroker`, `PaperVenue`, simulated execution, or any migration from `0001` through `0024`. Live records use `execution.live_*` tables and never masquerade as paper or simulated records. Append-only migration `0025` adds exact OKX credential-permission authority without enabling production writes.
+The separate `secure_eval_wrapper.live` package does not change `PaperEnvironment`, `PaperBroker`, `PaperVenue`, simulated execution, or any migration from `0001` through `0025`. Live records use `execution.live_*` tables and never masquerade as paper or simulated records. Append-only migration `0026` adds a standalone authenticated read-only proof record without enabling production writes.
 
 ## Provider and endpoint classification
 
@@ -68,9 +68,33 @@ Controls include:
 - monotonic database triggers that prevent suppressed outboxes/projections and closed reservations from regressing;
 - public-safe redaction and short account fingerprints.
 
+## Phase 8B authenticated read-only proof
+
+Phase 8B requires one exact operator request; there are no CLI options for an API key, secret, passphrase, HTTP method, path, body, or caller-supplied response. A representative invocation is:
+
+```text
+secure-eval-live-preflight --live-run-id <new-uuid> --configuration-hash <sha256> --read-only-network-preflight --credential-source environment --expected-account-fingerprint <16-hex> --expected-reviewed-sha <40-hex-git-sha> --instrument BTC-USDT
+```
+
+Without `--read-only-network-preflight`, the command stops before PostgreSQL, credential, or network access. CI stops even earlier. Credential material can be loaded only after PostgreSQL migration `0026`, immutable configuration, OKX production selection, current endpoint and adapter hashes, disabled production writes, reviewed repository identity, expected account fingerprint, allowed instrument, and exact credential-source policy have all passed.
+
+The collector then performs exactly these six GETs, with no arbitrary method or path:
+
+- `GET /api/v5/account/config`
+- `GET /api/v5/account/balance`
+- `GET /api/v5/account/positions?instType=SPOT`
+- `GET /api/v5/trade/orders-pending?instId=<instrument>&instType=SPOT`
+- `GET /api/v5/public/time`
+- `GET /api/v5/public/instruments?instId=<instrument>&instType=SPOT`
+
+Account configuration is always first. Any provider permission set other than exact `read_only`—including any `trade` or `withdraw` capability—stops after that first response. The remaining reads prove Spot/cash mode with borrowing disabled, currency names and aggregate counts, position and pending-order counts, venue time and skew, and one live Spot instrument.
+
+Raw UIDs, balances, positions, orders, and response payloads remain only in the existing private PostgreSQL response-envelope tables. The public proof contains the reviewed and observed repository SHA, configuration hash, provider implementation hash, endpoint catalog hash, response hashes, short account fingerprint and main/subaccount classification, exact permission sets and paths, timestamps and skew, currency names/counts, position/order counts, instrument identity/state, blockers/warnings, six-read count, zero-write fact, disabled production-write status, and a database-checked record hash. It contains no full UID, balance value, API credential, authorization header, or signed request.
+
+Migration `0026` is necessary because `0022` through `0025` could retain exact private response bundles but had no standalone, reloadable public proof tied to a distinct operator request. The new table binds proof session, bundle, configuration, credential reference, account, repository identity, endpoint matrix, response-derived aggregates, fake/operational transport classification, and canonical record hash. It is append-only and transactionally replay-safe. Automated tests use fake transport and can produce only `fixture_passed`; the production CLI rejects fixture authority. No real credentials or OKX orders were used to implement or validate Phase 8B.
 ## Operator preflight checklist
 
-1. Confirm the checked-out commit is the intended reviewed commit, migrations `0001` through `0024` match the immutable catalog, and migration `0025` is applied.
+1. Confirm the checked-out commit is the intended reviewed commit, migrations `0001` through `0025` match the immutable catalog, and migration `0026` is applied.
 2. Confirm PostgreSQL 16 is reachable and all `execution.live_*` audit tables are writable.
 3. Use a local credential source; do not place credentials in repository files, PostgreSQL, shell history, or command arguments.
 4. Verify that the exact account-config response reports only `perm=read_only`. Any `trade`, `withdraw`, unknown, malformed, duplicate, or whitespace-ambiguous value blocks preflight.
@@ -83,7 +107,7 @@ Controls include:
 
 ## Dry-run runbook
 
-The default CLI commands are intentionally non-operational and socket-free:
+The default CLI commands remain socket-free unless an explicitly gated operation is requested. `secure-eval-live-preflight` performs authenticated reads only when every Phase 8B flag and gate passes; all other commands remain non-operational:
 
 ```text
 secure-eval-live-preflight
@@ -126,8 +150,8 @@ Allowed sources are process environment, operating-system credential store, or a
 
 ## Known limitations
 
-- No production order or cancellation proof exists or is allowed in Phase 8A.
-- The public-safe CLIs do not implicitly load credentials or perform network reads.
-- Authenticated read-only preflight is optional and must be wired by a local operator integration.
+- No production order or cancellation proof exists or is allowed in Phase 8.
+- No CLI implicitly loads credentials or performs network reads; authenticated reads require the complete explicit Phase 8B invocation and all gates.
+- Authenticated read-only preflight is implemented but remains pending independent audit and has not been run with real credentials by this project change.
 - No withdrawals, transfers, subaccount transfers, borrowing, leverage, margin, derivatives, perpetuals, futures, options, automatic flattening, or production FIX capability exists.
-- Phase 8A is independently audited and accepted at its final-main checkpoint, while Phase 8 remains in progress. The authenticated read-only Phase 8B proof and later independently audited checkpoints are required before any write enablement can be considered.
+- Phase 8A is independently audited and accepted at its final-main checkpoint. Phase 8B is implemented and pending independent audit, Phase 8 remains in progress, and a separate future checkpoint is required before any write enablement can be considered.

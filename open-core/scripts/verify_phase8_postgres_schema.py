@@ -4,6 +4,7 @@ import json
 import os
 
 TABLES = {
+"live_authenticated_readonly_proofs":{"proof_id","proof_session_id","response_bundle_id","configuration_sha256","credential_reference_id","expected_reviewed_sha","observed_repository_sha","account_fingerprint","instrument_id","clock_skew_milliseconds","network_read_count","evidence_classification","status","public_proof_jsonb","record_sha256"},
 "live_configuration_snapshots":{"configuration_snapshot_id","configuration_sha256","dry_run","production_write_enabled","record_sha256"},
 "live_credential_references":{"credential_reference_id","account_fingerprint","permission_summary_jsonb","record_sha256"},
 "live_account_snapshots":{"account_snapshot_id","live_run_id","available_equity","reserved_equity","record_sha256"},
@@ -40,8 +41,8 @@ TABLES = {
 "live_pre_run_summaries":{"summary_id","live_run_id","public_summary_jsonb","evidence_ids"},
 "live_post_run_summaries":{"summary_id","live_run_id","external_write_attempted","external_write_suppressed"},
 }
-INDEXES = {"idx_live_preflight_sources_run_kind","idx_live_risk_state_day","idx_live_reservation_balance","idx_live_dispatch_claimable","idx_live_recovery_claims","idx_live_okx_bundle_run_purpose","idx_live_metadata_run_instrument","idx_live_recovery_query_matrix"}
-TRIGGERS = {"trg_guard_live_preflight_authority","trg_guard_live_manifest_chain","trg_live_approval_consumption","trg_live_intent_mutation","trg_live_dispatch_request_immutable","trg_live_cancel_request_immutable","trg_live_dispatch_monotonic","trg_live_reservation_monotonic","trg_live_projection_monotonic","trg_live_collector_source","trg_guard_live_okx_response_payload_hash","trg_validate_live_okx_bundle_matrix","trg_validate_live_okx_envelope_matrix","trg_validate_live_preflight_graph","trg_validate_live_0024_source_details","trg_validate_live_0025_credential_permission_source","trg_validate_live_0025_permission_report","trg_guard_live_0024_reconciliation","trg_validate_live_0024_reconciliation_exact","trg_guard_live_0024_intent_metadata","trg_guard_live_0024_outbox_metadata","trg_validate_live_0024_recovery_outcome","trg_guard_live_0024_kill_reset"}
+INDEXES = {"idx_live_preflight_sources_run_kind","idx_live_risk_state_day","idx_live_reservation_balance","idx_live_dispatch_claimable","idx_live_recovery_claims","idx_live_okx_bundle_run_purpose","idx_live_metadata_run_instrument","idx_live_recovery_query_matrix","idx_live_authenticated_readonly_account_time"}
+TRIGGERS = {"trg_guard_live_preflight_authority","trg_guard_live_manifest_chain","trg_live_approval_consumption","trg_live_intent_mutation","trg_live_dispatch_request_immutable","trg_live_cancel_request_immutable","trg_live_dispatch_monotonic","trg_live_reservation_monotonic","trg_live_projection_monotonic","trg_live_collector_source","trg_guard_live_okx_response_payload_hash","trg_validate_live_okx_bundle_matrix","trg_validate_live_okx_envelope_matrix","trg_validate_live_preflight_graph","trg_validate_live_0024_source_details","trg_validate_live_0025_credential_permission_source","trg_validate_live_0025_permission_report","trg_guard_live_0024_reconciliation","trg_validate_live_0024_reconciliation_exact","trg_guard_live_0024_intent_metadata","trg_guard_live_0024_outbox_metadata","trg_validate_live_0024_recovery_outcome","trg_guard_live_0024_kill_reset","trg_validate_live_authenticated_readonly_proof","trg_live_authenticated_readonly_proofs_immutable"}
 
 
 def main():
@@ -61,7 +62,7 @@ def main():
             cursor.execute("SELECT count(*) FROM execution.live_transport_attempts WHERE external_write_attempted OR successful_write"); unsafe_transport = cursor.fetchone()[0]
             cursor.execute("SELECT count(*) FROM execution.live_order_intents WHERE state NOT IN ('dry_run_prepared','dry_run_blocked','dry_run_suppressed','pending_recovery','unexpected_external_side_effect','incident_blocked')"); unsafe_state = cursor.fetchone()[0]
             if any((unsafe_config, unsafe_manifest, unsafe_transport, unsafe_state)): raise RuntimeError("Phase 8A hard-prohibition catalog contains unsafe rows")
-        print("OK: Phase 8A repaired catalog " + json.dumps({"table_count": len(TABLES), "index_count": len(INDEXES), "trigger_count": len(TRIGGERS), "production_writes": 0}, sort_keys=True))
+        print("OK: Phase 8B authenticated read-only catalog " + json.dumps({"table_count": len(TABLES), "index_count": len(INDEXES), "trigger_count": len(TRIGGERS), "production_writes": 0}, sort_keys=True))
     finally:
         connection.close()
 

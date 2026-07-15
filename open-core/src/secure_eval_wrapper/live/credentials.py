@@ -82,7 +82,19 @@ class LiveCredentialProvider(ABC):
 
 
 def _validate_load_gates(gates: Mapping[str, bool]) -> None:
-    required = ("read_only_preflight", "provider_selected", "production_environment", "endpoint_catalog_valid", "configuration_valid", "production_writes_disabled", "kill_switch_armed", "postgresql_available")
+    required = (
+        "authenticated_read_only_preflight_requested",
+        "read_only_preflight",
+        "provider_selected",
+        "production_environment",
+        "endpoint_catalog_valid",
+        "configuration_valid",
+        "production_writes_disabled",
+        "kill_switch_armed",
+        "postgresql_available",
+        "repository_identity_verified",
+        "expected_account_fingerprint_present",
+    )
     missing = [name for name in required if gates.get(name) is not True]
     if missing:
         raise PermissionError("credential loading blocked before all read-only gates pass")

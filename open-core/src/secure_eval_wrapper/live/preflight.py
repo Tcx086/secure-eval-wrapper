@@ -198,7 +198,7 @@ class LivePreflightEngine:
         add("endpoint_catalog", configuration.endpoint_catalog_hash == endpoint_catalog_hash(), "endpoint catalog hash must match code", ("repository",))
         add("repository_commit_identity", repository_identity_valid and observed_commit_sha == expected_reviewed_sha and identity_source in {"git_checkout", "build_metadata", "verified_ci"} and resolver_version == REPOSITORY_IDENTITY_RESOLVER_VERSION, "resolved repository commit must match the independently reviewed SHA", ("repository",))
         add("implementation_hash", repository.get("implementation_hash") == implementation_hash == configuration.provider_implementation_hash, "provider implementation hash must match", ("repository",))
-        add("clean_migration_catalog", bool(migrations.get("catalog_clean")) and migrations.get("latest_migration") == "0025" and bool(migrations.get("immutable_0001_0024")), "migration 0025 and immutable 0001-0024 history must be collector-verified", ("migration_catalog",))
+        add("clean_migration_catalog", bool(migrations.get("catalog_clean")) and migrations.get("latest_migration") == "0026" and bool(migrations.get("immutable_0001_0025")), "migration 0026 and immutable 0001-0025 history must be collector-verified", ("migration_catalog",))
         add("postgresql_authority", bool(postgresql.get("available")) and bool(postgresql.get("transaction_probe")), "PostgreSQL availability and transaction probes must pass", ("postgresql_probe",))
         add("audit_tables_writable", bool(audit_probe.get("write_succeeded")) and bool(audit_probe.get("rollback_verified")), "audit-table write and rollback probes must pass", ("audit_rollback_probe",))
         add("credential_reference", str(credential_source.get("reference_id")) == str(credential_reference.reference_id) and credential_source.get("record_hash") == credential_reference.record_hash, "persisted credential identity and hash must match", ("credential_reference",))
@@ -318,18 +318,18 @@ def collect_migration_catalog_source(*, connection, live_run_id, collected_at_ut
     expected_hashes = {
         path.stem: hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
         for path in sorted(migration_root.glob("*.sql"))
-        if path.name[:4].isdigit() and path.name[:4] <= "0024"
+        if path.name[:4].isdigit() and path.name[:4] <= "0025"
     }
-    observed_immutable = {key: value for key, value in actual.items() if key[:4] <= "0024"}
-    immutable = observed_immutable == expected_hashes and len(expected_hashes) == 24
+    observed_immutable = {key: value for key, value in actual.items() if key[:4] <= "0025"}
+    immutable = observed_immutable == expected_hashes and len(expected_hashes) == 25
     latest = max((key[:4] for key in actual), default="")
-    catalog_hash = sha256_payload({"observed": actual, "expected_0001_0024": expected_hashes})
+    catalog_hash = sha256_payload({"observed": actual, "expected_0001_0025": expected_hashes})
     return _collector_source(
         "migration_catalog", live_run_id=live_run_id, collected_at_utc=collected_at_utc,
         collector_kind="repository_migration_catalog", source_record_identity=catalog_hash,
-        catalog_clean=immutable and latest == "0025", latest_migration=latest,
-        immutable_0001_0024=immutable, observed_hashes=actual,
-        expected_hashes_0001_0024=expected_hashes, catalog_hash=catalog_hash,
+        catalog_clean=immutable and latest == "0026", latest_migration=latest,
+        immutable_0001_0025=immutable, observed_hashes=actual,
+        expected_hashes_0001_0025=expected_hashes, catalog_hash=catalog_hash,
     )
 
 

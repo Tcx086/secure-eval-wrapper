@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "secure-eval-wrapper"
-version = "0.8.0"
+version = "0.8.1"
 description = "Public-safe crypto research, simulation, paper, and guarded-live dry-run framework"
 readme = "README.md"
 requires-python = ">=3.11"
