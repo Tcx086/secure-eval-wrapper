@@ -8,7 +8,9 @@ from typing import Mapping
 
 from secure_eval_wrapper.data_collection.hashing import sha256_payload
 
+from .endpoints import endpoint_catalog_hash
 from .identity import validate_okx_account_fingerprint
+from .provider_identity import OKX_PRODUCTION_SPOT_ADAPTER_IMPLEMENTATION_HASH
 
 
 def _text(value: str, name: str) -> str:
@@ -136,6 +138,27 @@ class GuardedLiveConfiguration:
         return MappingProxyType({name: getattr(self, name) for name in names})
 
 
+def guarded_configuration_from_json(
+    payload: Mapping[str, object],
+) -> GuardedLiveConfiguration:
+    """Reconstruct a typed configuration without importing provider runtime code."""
+    values = dict(payload)
+    for name in (
+        "maximum_order_notional", "maximum_position_notional", "maximum_gross_exposure",
+        "maximum_net_exposure", "maximum_daily_submitted_notional",
+        "maximum_daily_realized_loss", "maximum_drawdown", "maximum_fee_bps",
+        "maximum_adverse_slippage_bps", "maximum_reference_price_deviation_bps",
+    ):
+        values[name] = Decimal(str(values[name]))
+    for name in (
+        "allowed_instruments", "allowed_instrument_types", "allowed_settlement_assets",
+        "allowed_order_types", "credential_source_policy",
+    ):
+        values[name] = tuple(values[name])
+    values.setdefault("maximum_transport_failures", 3)
+    return GuardedLiveConfiguration(**values)
+
+
 def phase8a_dry_run_configuration(
     *,
     account_fingerprint: str,
@@ -162,4 +185,37 @@ def phase8a_dry_run_configuration(
     )
 
 
-__all__ = ["GuardedLiveConfiguration", "phase8a_dry_run_configuration"]
+def phase8b_authenticated_readonly_configuration(
+    account_fingerprint: str,
+    instrument: str,
+) -> GuardedLiveConfiguration:
+    """Build the one fixed, conservative Phase 8B operator-bootstrap profile."""
+    if instrument != "BTC-USDT":
+        raise ValueError("Phase 8B operator bootstrap permits only the exact BTC-USDT spot instrument")
+    d = Decimal
+    return GuardedLiveConfiguration(
+        provider="okx", environment="production", account_fingerprint=account_fingerprint,
+        subaccount_fingerprint=None, allowed_instruments=(instrument,),
+        allowed_instrument_types=("spot",), allowed_settlement_assets=("USDT",),
+        base_currency="USDT", allowed_order_types=("limit",), maximum_order_notional=d("100"),
+        maximum_position_notional=d("250"), maximum_gross_exposure=d("500"),
+        maximum_net_exposure=d("500"), maximum_open_order_count=2,
+        maximum_daily_submitted_notional=d("1000"), maximum_daily_realized_loss=d("50"),
+        maximum_drawdown=d("50"), maximum_orders_per_minute=2,
+        maximum_cancellations_per_minute=3, market_data_freshness_seconds=30,
+        account_snapshot_freshness_seconds=30, reconciliation_freshness_seconds=30,
+        maximum_unknown_order_duration_seconds=30,
+        maximum_unacknowledged_order_duration_seconds=15, maximum_run_duration_seconds=300,
+        maximum_clock_skew_seconds=5, maximum_transport_failures=2, maximum_fee_bps=d("20"),
+        maximum_adverse_slippage_bps=d("50"), maximum_reference_price_deviation_bps=d("250"),
+        cancel_open_orders_on_kill=False, credential_source_policy=("environment",),
+        endpoint_catalog_hash=endpoint_catalog_hash(),
+        provider_implementation_hash=OKX_PRODUCTION_SPOT_ADAPTER_IMPLEMENTATION_HASH,
+    )
+
+__all__ = [
+    "GuardedLiveConfiguration",
+    "guarded_configuration_from_json",
+    "phase8a_dry_run_configuration",
+    "phase8b_authenticated_readonly_configuration",
+]

@@ -9,7 +9,7 @@ Every future functional PR must update both files in the same change:
 
 Completed work must be listed under `Completed`. Everything not done must remain under `Todo`.
 
-Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarded-live dry-run/read-only runtime is accepted; the Phase 8B authenticated read-only proof implementation is independently audited and accepted, while the real local authenticated proof has not yet been executed. Production writes remain disabled and unreachable, Phase 8 is not complete, and Phase 9 remains todo.
+Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarded-live dry-run/read-only runtime and the Phase 8B authenticated read-only proof implementation are accepted; the dedicated local operator bootstrap is implemented pending independent audit, while the real local authenticated proof has not been executed. Production writes remain disabled and unreachable, Phase 8 is not complete, and Phase 9 remains todo.
 
 ## Non-Negotiable Constraints
 - PostgreSQL is the only authoritative storage layer.
@@ -339,7 +339,7 @@ Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarde
 - [x] Verify immutable migrations `0001` through `0025` and confirm that Phase 8A used no real credentials and performed no production orders or production cancellations.
 - [x] Merge the Phase 8A acceptance status as PR `#4` at `3fe4736832954b01a75906917af41a9bc55745d6`, establishing the sole Phase 8B baseline after main run `29377882425` passed all six jobs: Ubuntu Python 3.11 job `87235016240`, Ubuntu Python 3.12 job `87235016311`, Ubuntu Python 3.13 job `87235016296`, Windows Python 3.12 job `87235016261`, PostgreSQL 16 integration job `87235016225`, and public/private and runtime boundary job `87235016288`.
 
-### Phase 8B: explicit authenticated read-only proof (implementation independently audited and accepted)
+### Phase 8B: explicit authenticated read-only proof (proof accepted; operator bootstrap implemented pending independent audit)
 
 - [x] Implement an explicit CLI-only authenticated read-only OKX production Spot preflight with required configuration hash, environment credential source, expected account fingerprint, expected reviewed SHA, and instrument; the no-flag path is socket-free and CI is blocked before PostgreSQL, repository identity, credential, or transport access.
 - [x] Restrict the proof operation to the exact ordered six GETs for account configuration, balances, one Spot instrument, pending orders, unparameterized account positions, and venue time; require the positions data array to be empty, reject `trade` or `withdraw` immediately after the first account-config response, and keep all write/account-power methods unreachable.
@@ -350,6 +350,7 @@ Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarde
 - [x] Independently audit and accept the Phase 8B implementation delivered by PR `#5`, candidate head `c3d5dc4b7f4d91d752f2dc2c06aba2078a896180`, and merge commit `9b23c71a31a6e4183c23b7504618ebff158fee1e`; final-main Actions run `29441539059` passed all six jobs: Ubuntu Python 3.11 job `87441507235`, Ubuntu Python 3.12 job `87441507210`, Ubuntu Python 3.13 job `87441507245`, Windows Python 3.12 job `87441507224`, PostgreSQL 16 integration job `87441507309`, and public/private and runtime boundary job `87441507243`.
 - [x] Verify migration `0026` SHA-256 `698772fb68c5c4981256682d064c3be641193ab10c8dbf55e1a5b390ca7c504a`, keep migrations `0001` through `0026` immutable, and accept only the exact ordered authenticated read-only GETs: `/api/v5/account/config`, `/api/v5/account/balance`, `/api/v5/public/instruments?instId=<INSTRUMENT>&instType=SPOT`, `/api/v5/trade/orders-pending?instId=<INSTRUMENT>&instType=SPOT`, `/api/v5/account/positions`, and `/api/v5/public/time`; a successful proof requires an empty positions response and `position_count=0`.
 - [x] Confirm that implementation and audit used no real credentials and performed no authenticated OKX request, production order, or production cancellation; the real local authenticated proof remains unexecuted and production writes remain disabled and unreachable.
+- [x] Implement the dedicated `secure-eval-live-bootstrap` inspect/plan/initialize/verify workflow with pinned immutable migration hashes, exact repository/database/plan identity, an explicit read-only confirmation, the fixed conservative BTC-USDT Spot configuration factory, typed atomic PostgreSQL persistence, public-safe verification, offline attack coverage, and isolated PostgreSQL tests; this operator bootstrap remains pending independent audit and has not accessed credentials, OKX, or the existing operator database.
 
 ## Todo
 
@@ -359,6 +360,7 @@ Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarde
 
 
 ### Phase 8: guarded live execution (remaining)
+- [ ] Independently audit and accept the dedicated Phase 8B local operator bootstrap before using it for operator authorization.
 - [ ] Optionally execute exactly one controlled local authenticated read-only proof with operator-owned environment credentials that are never persisted, only after the separate exact operator authorization.
 - [ ] Independently review the resulting redacted proof before accepting the operational Phase 8B checkpoint.
 - [ ] Do not design Phase 8C until the operational Phase 8B checkpoint is separately accepted.

@@ -15,7 +15,7 @@ from secure_eval_wrapper.storage.postgres.alpha_signal_base import _json_param
 
 from .authorities import LiveRuntimeRiskState, OperationalPreflightEvidence, VerifiedOperationalSource
 from .collector_evidence import VerifiedOkxReadObservationBundle
-from .credentials import normalize_expected_permission_summary, redact, validate_permission_summary
+from .safety_policy import normalize_expected_permission_summary, redact, validate_permission_summary
 from .models import (
     LiveKillState,
     LiveOrderState,
@@ -29,7 +29,7 @@ from .models import (
 from .reservations import calculate_live_reservation
 from .risk import evaluate_live_risk
 from .recovery import normalize_verified_recovery_observation
-from .venues.okx_live import OkxProductionSpotAdapter
+from .provider_identity import OKX_PRODUCTION_SPOT_ADAPTER_IMPLEMENTATION_HASH
 
 
 class LiveConflictError(RuntimeError):
@@ -189,7 +189,7 @@ class DurablePostgresLiveRepository:
         return bool(row and row["table_ready"] and row["migration_ready"])
 
     def load_guarded_live_configuration(self, configuration_hash: str):
-        from .readonly_preflight import guarded_configuration_from_json
+        from .configuration import guarded_configuration_from_json
 
         row = self._fetchone(
             "SELECT * FROM execution.live_configuration_snapshots WHERE configuration_sha256=%s",
@@ -208,6 +208,94 @@ class DurablePostgresLiveRepository:
         ):
             raise PermissionError("PostgreSQL guarded live configuration integrity check failed")
         return configuration
+
+    def persist_guarded_live_configuration_snapshot(
+        self,
+        *,
+        configuration,
+        created_at_utc,
+        fail_at=None,
+    ):
+        """Persist the exact Phase 8B bootstrap configuration as immutable authority."""
+        from datetime import datetime
+
+        from .configuration import (
+            GuardedLiveConfiguration,
+            phase8b_authenticated_readonly_configuration,
+        )
+
+        if type(configuration) is not GuardedLiveConfiguration:
+            raise TypeError("configuration persistence requires exact GuardedLiveConfiguration")
+        if not isinstance(created_at_utc, datetime) or created_at_utc.tzinfo is None:
+            raise ValueError("created_at_utc must be a timezone-aware datetime")
+        if len(configuration.allowed_instruments) != 1:
+            raise ValueError("Phase 8B bootstrap requires one exact instrument")
+        expected = phase8b_authenticated_readonly_configuration(
+            configuration.account_fingerprint,
+            configuration.allowed_instruments[0],
+        )
+        if configuration != expected:
+            raise PermissionError("configuration is not the exact current Phase 8B bootstrap profile")
+
+        payload = {
+            name: getattr(configuration, name)
+            for name in configuration.__dataclass_fields__
+        }
+        record_hash = sha256_payload(payload)
+        if record_hash != configuration.configuration_hash:
+            raise PermissionError("configuration hash derivation mismatch")
+        configuration_id = live_uuid(
+            "configuration", {"hash": configuration.configuration_hash}
+        )
+
+        with self.transaction():
+            self._execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                ("phase8b-bootstrap:" + configuration.account_fingerprint,),
+            )
+            existing = self._fetchall(
+                "SELECT configuration_snapshot_id,configuration_sha256,record_sha256 "
+                "FROM execution.live_configuration_snapshots "
+                "WHERE account_fingerprint=%s FOR UPDATE",
+                (configuration.account_fingerprint,),
+            )
+            if existing:
+                if len(existing) != 1 or (
+                    existing[0]["configuration_snapshot_id"] != configuration_id
+                    or existing[0]["configuration_sha256"] != configuration.configuration_hash
+                    or existing[0]["record_sha256"] != record_hash
+                ):
+                    raise LiveConflictError(
+                        "account already has a different guarded live configuration"
+                    )
+                if self.load_guarded_live_configuration(configuration.configuration_hash) != configuration:
+                    raise PermissionError("exact configuration replay failed typed reload")
+                return configuration_id
+            if fail_at == "before_insert":
+                raise RuntimeError("injected configuration failure before insert")
+            self._strict_insert(
+                "execution.live_configuration_snapshots",
+                "configuration_snapshot_id",
+                configuration_id,
+                (
+                    "configuration_sha256", "provider", "environment",
+                    "account_fingerprint", "dry_run", "read_only_preflight",
+                    "production_write_enabled", "configuration_jsonb", "created_at_utc",
+                ),
+                (
+                    configuration.configuration_hash, configuration.provider,
+                    configuration.environment, configuration.account_fingerprint,
+                    configuration.dry_run, configuration.read_only_preflight,
+                    configuration.production_write_enabled, _public_payload(payload),
+                    created_at_utc,
+                ),
+                record_hash,
+            )
+            if fail_at == "after_insert":
+                raise RuntimeError("injected configuration failure after insert")
+            if self.load_guarded_live_configuration(configuration.configuration_hash) != configuration:
+                raise PermissionError("persisted configuration failed exact typed reload")
+        return configuration_id
 
     def persist_authenticated_readonly_proof(
         self,
@@ -389,7 +477,7 @@ class DurablePostgresLiveRepository:
             manifest.initial_account_snapshot_id == account_snapshot.snapshot_id,
             manifest.initial_account_snapshot_hash == account_snapshot.record_hash,
             manifest.credential_reference_hash == credential_reference.record_hash,
-            manifest.implementation_hash == report.implementation_hash == configuration.provider_implementation_hash,
+            manifest.implementation_hash == report.implementation_hash == configuration.provider_implementation_hash == OKX_PRODUCTION_SPOT_ADAPTER_IMPLEMENTATION_HASH,
             kill_switch.state is LiveKillState.ARMED,
             manifest.dry_run and not manifest.production_write_enabled,
         )
@@ -865,6 +953,8 @@ class DurablePostgresLiveRepository:
         created_at_utc, fail_at=None, caller_risk_state=None,
     ):
         """Derive metadata normalization, risk, reservation, body, and hash under one lock."""
+        from .venues.okx_live import OkxProductionSpotAdapter
+
         del caller_risk_state
         with self.transaction():
             self._lock_run(intent.live_run_id)
@@ -1763,6 +1853,8 @@ class DurablePostgresLiveRepository:
         return self._fetchone("SELECT r.live_run_id,r.state,r.dry_run,r.production_write_enabled,r.started_at_utc,r.completed_at_utc,k.state AS kill_state,k.reason AS kill_reason,m.manifest_id,m.configuration_sha256,m.approval_id,m.preflight_report_id FROM execution.live_runs r JOIN execution.live_run_manifests m ON m.manifest_id=r.manifest_id JOIN execution.live_kill_switches k ON k.live_run_id=r.live_run_id WHERE r.live_run_id=%s", (live_run_id,))
 
     def reconstruct(self, live_run_id):
+        from .venues.okx_live import OkxProductionSpotAdapter
+
         run = self._fetchone("SELECT * FROM execution.live_runs WHERE live_run_id=%s", (live_run_id,))
         manifest = self._fetchone("SELECT * FROM execution.live_run_manifests WHERE live_run_id=%s", (live_run_id,))
         if run is None or manifest is None: raise LookupError("live run cannot be reconstructed")

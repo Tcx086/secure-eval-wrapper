@@ -12,7 +12,7 @@ from secure_eval_wrapper.data_collection.hashing import sha256_payload
 from secure_eval_wrapper.data_collection.time_utils import require_utc_datetime
 
 from .collector_evidence import VerifiedOkxReadObservationBundle, expected_preflight_request_paths
-from .configuration import GuardedLiveConfiguration
+from .configuration import GuardedLiveConfiguration, guarded_configuration_from_json
 from .credentials import LiveCredentialProvider
 from .endpoints import endpoint_catalog_hash
 from .gates import common_ci_indicators
@@ -59,33 +59,6 @@ def _at(value: object) -> datetime:
         datetime.fromisoformat(str(value).replace("Z", "+00:00")),
         field_name="proof timestamp",
     )
-
-
-def guarded_configuration_from_json(payload: Mapping[str, object]) -> GuardedLiveConfiguration:
-    values = dict(payload)
-    for name in (
-        "maximum_order_notional",
-        "maximum_position_notional",
-        "maximum_gross_exposure",
-        "maximum_net_exposure",
-        "maximum_daily_submitted_notional",
-        "maximum_daily_realized_loss",
-        "maximum_drawdown",
-        "maximum_fee_bps",
-        "maximum_adverse_slippage_bps",
-        "maximum_reference_price_deviation_bps",
-    ):
-        values[name] = Decimal(str(values[name]))
-    for name in (
-        "allowed_instruments",
-        "allowed_instrument_types",
-        "allowed_settlement_assets",
-        "allowed_order_types",
-        "credential_source_policy",
-    ):
-        values[name] = tuple(values[name])
-    values.setdefault("maximum_transport_failures", 3)
-    return GuardedLiveConfiguration(**values)
 
 
 @dataclass(frozen=True)

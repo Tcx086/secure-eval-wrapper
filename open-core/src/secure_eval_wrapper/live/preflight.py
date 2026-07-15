@@ -18,7 +18,7 @@ from .authorities import (
     _issue_verified_source,
 )
 from .collector_evidence import VerifiedOkxReadObservationBundle
-from .credentials import normalize_expected_permission_summary
+from .safety_policy import normalize_expected_permission_summary
 from .endpoints import endpoint_catalog_hash
 from .gates import common_ci_indicators
 from .identity import REPOSITORY_IDENTITY_RESOLVER_VERSION, RepositoryIdentityError, resolve_runtime_repository_identity, validate_git_commit_sha
