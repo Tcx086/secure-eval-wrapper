@@ -1243,6 +1243,9 @@ ALLOWED_DATA_MIGRATIONS = {
         r"\bUPDATE\s+ON\s+execution\.live_preflight_sources\b.*?;",
         r"\bUPDATE\s+ON\s+execution\.live_preflight_reports\b.*?;",
     ),
+    "0026_phase8b_authenticated_readonly_preflight.sql": (
+        r"\bUPDATE\s+OR\s+DELETE\s+ON\s+execution\.live_authenticated_readonly_proofs\b.*?;",
+    ),
 }
 
 class CatalogClient(Protocol):

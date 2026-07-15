@@ -52,15 +52,8 @@ def _venue_payload(bundle: VerifiedOkxReadObservationBundle) -> dict:
         }
         for row in balance["details"]
     }
-    position_map = {
-        str(row["instId"]): {
-            "quantity": str(row["quantity"]),
-            "average_price": str(row["average_price"]),
-            "unrealized_pnl": str(row["unrealized_pnl"]),
-        }
-        for row in positions
-        if Decimal(str(row["quantity"])) != 0
-    }
+    disallowed_positions = tuple(_plain(row) for row in positions)
+    position_map = {}
     return {
         "live_run_id": bundle.live_run_id,
         "account_fingerprint": bundle.account_fingerprint,
@@ -68,6 +61,7 @@ def _venue_payload(bundle: VerifiedOkxReadObservationBundle) -> dict:
         "fills": tuple(_plain(row) for row in fills),
         "balances": balances,
         "positions": position_map,
+        "disallowed_positions": disallowed_positions,
         "sequence": bundle.venue_sequence,
         "observed_at_utc": bundle.venue_observed_at_utc,
         "response_bundle_id": bundle.bundle_id,
@@ -128,6 +122,13 @@ def reconcile_live(
     else:
         venue = _venue_payload(okx_bundle)
         differences_list = []
+        if venue["disallowed_positions"]:
+            differences_list.append({
+                "field": "disallowed_positions",
+                "local": (),
+                "venue": venue["disallowed_positions"],
+                "material": True,
+            })
         for field in ("orders", "fills", "balances", "positions", "account_fingerprint"):
             if local[field] != venue[field]:
                 differences_list.append({

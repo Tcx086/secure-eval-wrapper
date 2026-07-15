@@ -33,6 +33,7 @@ from test_phase8_guarded_live import (
 
 RUN = os.environ.get("RUN_POSTGRES_INTEGRATION", "").lower() == "true"
 TABLES = (
+    "live_authenticated_readonly_proofs",
     "live_recovery_query_completions", "live_reconciliation_input_bundles",
     "live_instrument_metadata_sources", "live_market_source_bindings",
     "live_okx_response_envelopes", "live_okx_response_bundles",

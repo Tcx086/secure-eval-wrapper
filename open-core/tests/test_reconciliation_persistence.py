@@ -258,7 +258,7 @@ class ReconciliationPersistenceTests(unittest.TestCase):
         verifier.inspect_migrations(migrations)
         self.assertEqual(
             migrations[-1].filename,
-            "0025_phase8a_okx_credential_permission_authority.sql",
+            "0026_phase8b_authenticated_readonly_preflight.sql",
         )
         self.assertIn("reconciliation_results", verifier.REQUIRED_TABLES["data_quality"])
         self.assertIn(

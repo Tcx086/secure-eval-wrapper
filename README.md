@@ -6,7 +6,7 @@ A public, auditable, and reproducible framework for building crypto trading syst
 
 The project is developed in explicit, auditable phases. Architecture, PostgreSQL foundations, public market data, public alpha, and standardized signals are complete. Deterministic simulated execution and event-driven backtesting are complete after local PostgreSQL 16 and independent GitHub Actions validation.
 
-> **Current status:** Phase 6 monitoring and strictly simulated FIX is complete. Phase 7 safe paper trading is in progress with an offline internal venue and gated official demo adapter; live execution and external production FIX remain unimplemented.
+> **Current status:** Phases 0-7 are completed checkpoints. Phase 8A is accepted; the Phase 8B authenticated read-only proof is implemented and pending independent audit. Production submit/cancel and external production FIX remain disabled and unreachable.
 
 ## Why this project exists
 
@@ -73,7 +73,7 @@ Signals are not fills. Phase 5 backtests create order intents, pass them through
 | 5 | Simulated Execution and Event-Driven Backtesting | Completed; PostgreSQL and CI validated |
 | 6 | Monitoring and strictly simulated FIX 4.4-compatible profile | Completed; first-independent-audit repairs accepted |
 | 7 | Paper Trading | Completed through fifth independent audit |
-| 8 | Guarded Live Execution | Phase 8A in progress; dry-run/read-only, production writes disabled |
+| 8 | Guarded Live Execution | Phase 8A accepted; Phase 8B authenticated read-only proof implemented pending audit; production writes disabled |
 | 9 | Reporting and Public Delivery | Future |
 
 The authoritative progress records are:
@@ -339,7 +339,7 @@ The intended principle is simple: **make the infrastructure inspectable without 
 
 Phases 3 and 4 are complete and auditable: public alphas produce continuous point-in-time `AlphaValue` records, and standardized signals apply deterministic ranking, thresholding, combination, conflict, and confidence rules with PostgreSQL lineage.
 
-Phase 5 simulated execution and backtesting is complete through its fourth independent audit. Phase 6 monitoring and the strictly simulated FIX API are complete. Phase 7 safe paper trading is complete through its fifth independent audit. Phase 8A now provides a separate PostgreSQL-authoritative guarded-live dry-run/read-only foundation; production order and cancellation transport remains unconditionally disabled.
+Phase 5 simulated execution and backtesting is complete through its fourth independent audit. Phase 6 monitoring and the strictly simulated FIX API are complete. Phase 7 safe paper trading is complete through its fifth independent audit. Phase 8A is an accepted PostgreSQL-authoritative guarded-live dry-run/read-only foundation. Phase 8B adds an explicit authenticated read-only proof and is pending independent audit; production order and cancellation transport remains unconditionally disabled.
 
 ## Disclaimer
 
@@ -353,6 +353,6 @@ The public framework includes deterministic point-in-time monitoring and a stric
 
 `secure-eval-paper-internal` runs the complete deterministic, socket-free paper lifecycle with acknowledgement, partial fills, cancellation, timeout recovery, reconciliation, and kill handling. External OKX demo support is separately gated and uses only the immutable official-demo route/header contract. See [Safe Paper Trading](docs/SAFE_PAPER_TRADING.md). Paper authority remains separate from Phase 8 live records.
 
-## Phase 8A guarded live dry-run
+## Phase 8 guarded live dry-run and authenticated read-only proof
 
-`secure-eval-live-preflight`, `secure-eval-live-dry-run`, `secure-eval-live-status`, `secure-eval-live-reconcile`, and `secure-eval-live-kill` are safe, socket-free defaults. The underlying architecture can persist exact production request plans and query read-only provider evidence, but Phase 8A always records the write as suppressed and never calls production submit or cancel. See [Guarded Live Execution](docs/GUARDED_LIVE_EXECUTION.md).
+`secure-eval-live-dry-run`, `secure-eval-live-status`, `secure-eval-live-reconcile`, and `secure-eval-live-kill` remain safe, write-free commands. `secure-eval-live-preflight` is socket-free without its explicit Phase 8B network flag; with every reviewed configuration, identity, fingerprint, credential-source, PostgreSQL, and CI gate satisfied, it can issue only the exact six catalogued OKX GETs and persist a public-safe proof. No Phase 8 command calls production submit or cancel. See [Guarded Live Execution](docs/GUARDED_LIVE_EXECUTION.md).

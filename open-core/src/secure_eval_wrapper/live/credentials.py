@@ -80,14 +80,52 @@ class LiveCredentialProvider(ABC):
     def load(self, *, gates: Mapping[str, bool]) -> LiveCredentialMaterial:
         raise NotImplementedError
 
+    def load_for_authenticated_readonly_preflight(
+        self, *, gates: Mapping[str, bool]
+    ) -> LiveCredentialMaterial:
+        raise NotImplementedError
+
 
 def _validate_load_gates(gates: Mapping[str, bool]) -> None:
-    required = ("read_only_preflight", "provider_selected", "production_environment", "endpoint_catalog_valid", "configuration_valid", "production_writes_disabled", "kill_switch_armed", "postgresql_available")
+    required = (
+        "authenticated_read_only_preflight_requested",
+        "read_only_preflight",
+        "provider_selected",
+        "production_environment",
+        "endpoint_catalog_valid",
+        "configuration_valid",
+        "production_writes_disabled",
+        "kill_switch_armed",
+        "postgresql_available",
+        "repository_identity_verified",
+        "expected_account_fingerprint_present",
+    )
     missing = [name for name in required if gates.get(name) is not True]
     if missing:
         raise PermissionError("credential loading blocked before all read-only gates pass")
     if common_ci_indicators():
         raise PermissionError("production credentials cannot be loaded in CI")
+
+def _validate_authenticated_readonly_load_gates(gates: Mapping[str, bool]) -> None:
+    """Validate the standalone Phase 8B proof gates without claiming execution kill authority."""
+    required = (
+        "authenticated_read_only_preflight_requested",
+        "read_only_preflight",
+        "provider_selected",
+        "production_environment",
+        "endpoint_catalog_valid",
+        "configuration_valid",
+        "production_writes_disabled",
+        "postgresql_available",
+        "repository_identity_verified",
+        "expected_account_fingerprint_present",
+    )
+    missing = [name for name in required if gates.get(name) is not True]
+    if missing:
+        raise PermissionError("credential loading blocked before all authenticated read-only gates pass")
+    if common_ci_indicators():
+        raise PermissionError("production credentials cannot be loaded in CI")
+
 
 
 class EnvironmentLiveCredentialProvider(LiveCredentialProvider):
@@ -101,6 +139,11 @@ class EnvironmentLiveCredentialProvider(LiveCredentialProvider):
         _validate_load_gates(gates); self.load_count += 1
         return LiveCredentialMaterial(os.environ.get(self.key_variable, ""), os.environ.get(self.secret_variable, ""), os.environ.get(self.passphrase_variable, ""))
 
+    def load_for_authenticated_readonly_preflight(self, *, gates: Mapping[str, bool]) -> LiveCredentialMaterial:
+        _validate_authenticated_readonly_load_gates(gates); self.load_count += 1
+        return LiveCredentialMaterial(os.environ.get(self.key_variable, ""), os.environ.get(self.secret_variable, ""), os.environ.get(self.passphrase_variable, ""))
+
+
 
 class InjectedLocalCredentialProvider(LiveCredentialProvider):
     """Explicit local injection boundary used by offline tests and operator integrations."""
@@ -112,6 +155,9 @@ class InjectedLocalCredentialProvider(LiveCredentialProvider):
 
     def load(self, *, gates: Mapping[str, bool]) -> LiveCredentialMaterial:
         _validate_load_gates(gates); self.load_count += 1; return LiveCredentialMaterial(*self._values)
+
+    def load_for_authenticated_readonly_preflight(self, *, gates: Mapping[str, bool]) -> LiveCredentialMaterial:
+        _validate_authenticated_readonly_load_gates(gates); self.load_count += 1; return LiveCredentialMaterial(*self._values)
 
 
 __all__ = ["redact", "normalize_expected_permission_summary", "validate_permission_summary", "LiveCredentialMaterial", "LiveCredentialProvider", "EnvironmentLiveCredentialProvider", "InjectedLocalCredentialProvider"]

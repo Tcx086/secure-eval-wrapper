@@ -44,6 +44,20 @@ _ENDPOINT_PATHS = {
 }
 
 
+def expected_preflight_request_paths(instrument: str) -> tuple[str, ...]:
+    """Return the exact ordered Phase 8B request-path contract."""
+    if not isinstance(instrument, str) or not instrument or instrument != instrument.upper():
+        raise ValueError("instrument must be an explicit uppercase OKX Spot instrument")
+    return (
+        _ENDPOINT_PATHS["account_config"],
+        _ENDPOINT_PATHS["balances"],
+        f'{_ENDPOINT_PATHS["instrument_metadata"]}?instId={instrument}&instType=SPOT',
+        f'{_ENDPOINT_PATHS["pending_orders"]}?instId={instrument}&instType=SPOT',
+        _ENDPOINT_PATHS["positions"],
+        _ENDPOINT_PATHS["venue_time"],
+    )
+
+
 def _freeze_json(value):
     if isinstance(value, Mapping):
         return MappingProxyType({str(key): _freeze_json(item) for key, item in value.items()})
@@ -261,4 +275,5 @@ def _issue_okx_bundle(**kwargs: object) -> VerifiedOkxReadObservationBundle:
 __all__ = [
     "ObservationClassification", "QueryDisposition",
     "VerifiedOkxResponseEnvelope", "VerifiedOkxReadObservationBundle",
+    "expected_preflight_request_paths",
 ]

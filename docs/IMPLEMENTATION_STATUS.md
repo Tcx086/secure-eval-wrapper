@@ -9,7 +9,7 @@ Every future functional PR must update both files in the same change:
 
 Completed work must be listed under `Completed`. Everything not done must remain under `Todo`.
 
-Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarded-live dry-run/read-only runtime is independently audited and accepted at the final-main checkpoint; production writes remain disabled, Phase 8 is not complete, and Phase 9 remains todo.
+Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarded-live dry-run/read-only runtime is independently audited and accepted at the final-main checkpoint; Phase 8B authenticated read-only proof is implemented and pending independent audit; production writes remain disabled, Phase 8 is not complete, and Phase 9 remains todo.
 
 ## Non-Negotiable Constraints
 - PostgreSQL is the only authoritative storage layer.
@@ -337,6 +337,16 @@ Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarde
 - [x] Add append-only migration `0025` with exact OKX `perm` parsing, response-authoritative Phase 8A read-only credential policy, bundle/envelope/credential permission provenance, direct-SQL and restart fail-closed enforcement, focused offline and PostgreSQL attacks, and immutable `0001`-`0024` proof while production writes remain unreachable.
 - [x] Independently audit and accept Phase 8A at merge commit `18316f7462d4bbb9732308598f6aec743ebba0a3` after final-main GitHub Actions run `29373677324` passed all six jobs: Ubuntu Python 3.11 job `87222447626`, Ubuntu Python 3.12 job `87222447618`, Ubuntu Python 3.13 job `87222447670`, Windows Python 3.12 job `87222447634`, PostgreSQL 16 integration job `87222447656`, and public/private and runtime boundary job `87222447616`.
 - [x] Verify immutable migrations `0001` through `0025` and confirm that Phase 8A used no real credentials and performed no production orders or production cancellations.
+- [x] Merge the Phase 8A acceptance status as PR `#4` at `3fe4736832954b01a75906917af41a9bc55745d6`, establishing the sole Phase 8B baseline after main run `29377882425` passed all six jobs: Ubuntu Python 3.11 job `87235016240`, Ubuntu Python 3.12 job `87235016311`, Ubuntu Python 3.13 job `87235016296`, Windows Python 3.12 job `87235016261`, PostgreSQL 16 integration job `87235016225`, and public/private and runtime boundary job `87235016288`.
+
+### Phase 8B: explicit authenticated read-only proof (implemented; pending independent audit)
+
+- [x] Implement an explicit CLI-only authenticated read-only OKX production Spot preflight with required configuration hash, environment credential source, expected account fingerprint, expected reviewed SHA, and instrument; the no-flag path is socket-free and CI is blocked before PostgreSQL, repository identity, credential, or transport access.
+- [x] Restrict the proof operation to the exact ordered six GETs for account configuration, balances, one Spot instrument, pending orders, unparameterized account positions, and venue time; require the positions data array to be empty, reject `trade` or `withdraw` immediately after the first account-config response, and keep all write/account-power methods unreachable.
+- [x] Persist raw response envelopes only inside the existing private PostgreSQL evidence boundary and publish only configuration, provider-implementation, endpoint-catalog, and response-derived hashes, short fingerprint, account classification, permission sets, endpoint paths, timestamps/skew, currency names and counts, position/order counts, instrument identity/state, blockers/warnings, and truthful network read/write facts.
+- [x] Add append-only migration `0026` because migrations `0022`-`0025` had private bundles but no standalone replay-safe proof record; enforce configuration/credential/account/run bindings, the exact unparameterized positions path, the zero-position rule, response derivation, fake-versus-operational classification, append-only immutability, transaction rollback, idempotent replay, restart reload, and direct-SQL fixture-promotion rejection.
+- [x] Complete focused fake-transport offline and PostgreSQL 16 validation without real credentials, account identifiers, raw private exports, production orders, or production cancellations; Phase 8B remains pending independent audit and production writes remain disabled.
+- [x] Repair the Phase 8B audit findings by removing the unsupported `instType=SPOT` positions parameter, requiring an empty completed positions response, normalizing documented non-Spot position types as disallowed exposure, removing literal kill-switch success from the standalone proof credential gate, and documenting the normal-role direct-SQL guarantee without claiming resistance to an unrestricted authoritative database writer.
 
 ## Todo
 
@@ -346,8 +356,8 @@ Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarde
 
 
 ### Phase 8: guarded live execution (remaining)
-- [ ] Optionally prove authenticated read-only preflight in a controlled local environment without persisting credentials.
-- [ ] Design and independently audit a separate Phase 8B/8C production-write checkpoint before considering any write enablement.
+- [ ] Independently audit Phase 8B and, only after acceptance, optionally execute one controlled local authenticated read-only proof with operator-owned environment credentials that are never persisted.
+- [ ] Design and independently audit a separate future Phase 8C production-write checkpoint before considering any write enablement.
 - [ ] Keep production orders and cancellations disabled until a later explicitly approved phase.
 
 ### Phase 9: reporting + public delivery

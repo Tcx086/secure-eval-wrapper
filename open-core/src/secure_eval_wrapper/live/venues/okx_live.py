@@ -26,6 +26,8 @@ _OKX_PERMISSION_NORMALIZATION = {
 }
 
 
+_OKX_DOCUMENTED_POSITION_TYPES = frozenset({"MARGIN", "SWAP", "FUTURES", "OPTION", "EVENTS"})
+
 class UrllibReadOnlyTransport:
     is_fake = False
 
@@ -102,7 +104,7 @@ def _permissions(value: object) -> tuple[tuple[str, ...], tuple[str, ...]]:
 
 
 class OkxProductionSpotAdapter(GuardedLiveVenue):
-    provider_implementation_hash = sha256_payload({"adapter": "okx-production-spot", "version": 3, "writes": "phase8a-unreachable"})
+    provider_implementation_hash = sha256_payload({"adapter": "okx-production-spot", "version": 5, "writes": "phase8b-unreachable", "authenticated_readonly_preflight": "exact-six-gets-unparameterized-positions"})
 
     def __init__(self, *, transport, credential_material=None, clock=None) -> None:
         self.transport = transport
@@ -214,8 +216,19 @@ class OkxProductionSpotAdapter(GuardedLiveVenue):
         parsed = []
         for row in _data(payload):
             _required(row, ("instId", "instType", "pos", "avgPx", "upl", "uTime"))
-            if row["instType"] != "SPOT": raise ValueError("OKX positions include a non-Spot position")
-            parsed.append({**row, "quantity": _number(row["pos"]), "average_price": _number(row["avgPx"], nonnegative=True), "unrealized_pnl": _number(row["upl"]), "updated_at_utc": _milliseconds(row["uTime"])})
+            position_type = str(row["instType"])
+            if position_type not in _OKX_DOCUMENTED_POSITION_TYPES:
+                raise ValueError("OKX position response contains an undocumented position type")
+            parsed.append({
+                **row,
+                "provider_position_type": position_type,
+                "exposure_classification": "disallowed_non_spot_position",
+                "is_disallowed_exposure": True,
+                "quantity": _number(row["pos"]),
+                "average_price": _number(row["avgPx"], nonnegative=True),
+                "unrealized_pnl": _number(row["upl"]),
+                "updated_at_utc": _milliseconds(row["uTime"]),
+            })
         return tuple(parsed)
 
     @staticmethod
@@ -280,7 +293,7 @@ class OkxProductionSpotAdapter(GuardedLiveVenue):
     def read_ticker(self, *, instrument: str): return self.parse_ticker(self._read(LiveOperation.PUBLIC_TICKER, {"instId": instrument}), expected_instrument=instrument)
     def read_account_config(self): return self.parse_account_config(self._read(LiveOperation.ACCOUNT_CONFIG))
     def read_balances(self): return self.parse_balances(self._read(LiveOperation.BALANCES))
-    def read_positions(self): return self.parse_positions(self._read(LiveOperation.POSITIONS, {"instType": "SPOT"}))
+    def read_positions(self): return self.parse_positions(self._read(LiveOperation.POSITIONS))
     def query_order(self, *, instrument: str, client_order_id: str): return self.parse_order_details(self._read(LiveOperation.ORDER_DETAILS, {"instId": instrument, "clOrdId": client_order_id}), expected_instrument=instrument, expected_client_order_id=client_order_id)
     def recent_orders(self, *, instrument: str): return self.parse_order_history(self._read(LiveOperation.RECENT_ORDERS, {"instType": "SPOT", "instId": instrument}), expected_instrument=instrument)
     def open_orders(self, *, instrument: str): return self.parse_pending_orders(self._read(LiveOperation.OPEN_ORDERS, {"instType": "SPOT", "instId": instrument}), expected_instrument=instrument)
@@ -352,7 +365,7 @@ class OkxProductionSpotAdapter(GuardedLiveVenue):
             ),
             "positions": lambda: self._capture(
                 endpoint_kind="positions", operation=LiveOperation.POSITIONS,
-                query={"instType": "SPOT"}, parser=self.parse_positions,
+                query=None, parser=self.parse_positions,
             ),
             "pending_orders": lambda: self._capture(
                 endpoint_kind="pending_orders", operation=LiveOperation.OPEN_ORDERS,
@@ -380,7 +393,7 @@ class OkxProductionSpotAdapter(GuardedLiveVenue):
             ),
         }
         required = {
-            "preflight": ("account_config", "balances", "positions", "pending_orders", "venue_time", "instrument_metadata"),
+            "preflight": ("account_config", "balances", "instrument_metadata", "pending_orders", "positions", "venue_time"),
             "reconciliation": ("account_config", "balances", "positions", "pending_orders", "order_history", "fills", "venue_time"),
             "recovery": ("account_config", "balances", "positions", "pending_orders", "order_history", "fills", "order_details"),
         }.get(purpose)
@@ -392,6 +405,13 @@ class OkxProductionSpotAdapter(GuardedLiveVenue):
         if not account_envelope.completed or not isinstance(account_envelope.normalized_payload, Mapping):
             raise PermissionError("OKX account identity cannot be derived from an incomplete account-config response")
         account_config = account_envelope.normalized_payload
+        if (
+            tuple(account_config.get("provider_permissions", ())) != ("read_only",)
+            or tuple(account_config.get("normalized_permissions", ())) != ("read",)
+        ):
+            raise PermissionError(
+                "authenticated read-only preflight requires the exact OKX permission set read_only"
+            )
         observed_account_fingerprint = derive_okx_account_fingerprint(account_config.get("uid"))
         if expected_account_fingerprint is not None:
             validate_okx_account_fingerprint(expected_account_fingerprint, field_name="expected_account_fingerprint")

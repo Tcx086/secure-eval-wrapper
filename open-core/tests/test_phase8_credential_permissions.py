@@ -91,14 +91,14 @@ class ExactOkxCredentialPermissionTests(unittest.TestCase):
 
     def test_phase8a_rejects_every_actual_trade_or_withdraw_set_before_database(self):
         for permission in ("read_only,withdraw", "read_only,trade", "trade", "withdraw"):
-            with self.subTest(permission=permission), self.assertRaises(OperationalPreflightError):
+            with self.subTest(permission=permission), self.assertRaises((PermissionError, OperationalPreflightError)):
                 collect_before_database(
                     response_permission=permission,
                     expected_permissions=("read",),
                 )
 
     def test_caller_read_only_claim_cannot_hide_actual_withdraw(self):
-        with self.assertRaises(OperationalPreflightError):
+        with self.assertRaises((PermissionError, OperationalPreflightError)):
             collect_before_database(
                 response_permission="read_only,withdraw",
                 expected_permissions=("read",),
