@@ -197,6 +197,7 @@ class Phase8BOperatorBootstrapPostgresTests(unittest.TestCase):
         self.assertNotEqual(
             verification["bootstrap_record_hash"], verification["configuration_hash"]
         )
+        self.persist()
         repeated = self.service.verify(
             expected_reviewed_sha=SHA,
             account_fingerprint=FINGERPRINT,
@@ -205,7 +206,6 @@ class Phase8BOperatorBootstrapPostgresTests(unittest.TestCase):
         self.assertEqual(
             verification["bootstrap_record_hash"], repeated["bootstrap_record_hash"]
         )
-        self.persist()
 
     def test_configuration_persistence_is_atomic_idempotent_and_exactly_reloadable(self):
         expected_id = live_uuid(
