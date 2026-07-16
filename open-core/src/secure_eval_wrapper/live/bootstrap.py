@@ -1114,13 +1114,14 @@ class Phase8BOperatorBootstrap:
             self._require_same_reference(active_reference, before_persist)
             connection = self._connect(self.target.database, read_only=False)
             try:
-                self._verify_target_connection_identity(connection, active_reference)
-                repository = DurablePostgresLiveRepository(connection)
-                snapshot_id = repository.persist_guarded_live_configuration_snapshot(
-                    configuration=configuration,
-                    created_at_utc=self._clock(),
-                )
-                progress[0] = "configuration_persisted"
+                with connection.transaction():
+                    self._verify_target_connection_identity(connection, active_reference)
+                    repository = DurablePostgresLiveRepository(connection)
+                    snapshot_id = repository.persist_guarded_live_configuration_snapshot(
+                        configuration=configuration,
+                        created_at_utc=self._clock(),
+                    )
+                    progress[0] = "configuration_persisted"
             finally:
                 connection.close()
 
