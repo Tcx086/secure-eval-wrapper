@@ -142,8 +142,8 @@ Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarde
 - [x] Add unambiguous provider instrument identities that separate Spot, perpetual swaps, and dated futures.
 - [x] Verify and document current official public endpoint, request, response, pagination, limit, and authentication contracts.
 - [x] Implement Binance and OKX public Spot trade collection through injectable transports.
-- [x] Implement Binance USDÃƒÂ¢Ã¢â‚¬Å“Ã‹â€ -M and OKX SWAP public funding history.
-- [x] Implement Binance Spot/USDÃƒÂ¢Ã¢â‚¬Å“Ã‹â€ -M and OKX SPOT/SWAP public instrument metadata.
+- [x] Implement Binance USDÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€¹Ã¢â‚¬Â -M and OKX SWAP public funding history.
+- [x] Implement Binance Spot/USDÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€¹Ã¢â‚¬Â -M and OKX SPOT/SWAP public instrument metadata.
 - [x] Add deterministic normalization, validation reports, accepted/rejected gates, and quarantine for all three data types.
 - [x] Add PostgreSQL trade/funding persistence, immutable instrument metadata versions, conflict hashes, reads, indexes, constraints, and foreign-key verification.
 - [x] Add provider-neutral typed trade, funding, and instrument pipelines with fail-fast, partial, warning, and one-transaction persistence semantics.
@@ -352,6 +352,7 @@ Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarde
 - [x] Confirm that implementation and audit used no real credentials and performed no authenticated OKX request, production order, or production cancellation; the real local authenticated proof remains unexecuted and production writes remain disabled and unreachable.
 - [x] Implement the dedicated `secure-eval-live-bootstrap` inspect/plan/initialize/verify workflow with pinned immutable migration hashes, exact repository/database/plan identity, an explicit read-only confirmation, the fixed conservative BTC-USDT Spot configuration factory, typed atomic PostgreSQL persistence, public-safe verification, offline attack coverage, and isolated PostgreSQL tests; this operator bootstrap remains pending independent audit and has not accessed credentials, OKX, or the existing operator database.
 - [x] Harden bootstrap failure provenance with the exact last completed stage, require the complete Phase 8 schema contract before configuration insertion, derive the bootstrap result hash independently, and add altered-catalog plus concurrent-conflict regressions without changing migrations `0001` through `0026`.
+- [x] Repair the dedicated bootstrap audit boundary with literal loopback-only PostgreSQL targets, dedicated database naming, server current-user/cluster/version/OID-bound plans, true persistent-object emptiness inspection, one target-wide full-operation advisory lock, one global configuration singleton, independently derived verify hashes, and real two-fingerprint plus full-initialize concurrency regressions; keep migrations `0001` through `0026` immutable and production writes unreachable.
 
 ## Todo
 

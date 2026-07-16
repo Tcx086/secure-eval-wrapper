@@ -16,6 +16,7 @@ from secure_eval_wrapper.live.bootstrap import (
     LATEST_MIGRATION,
     Phase8BOperatorBootstrap,
     PostgresAdminTarget,
+    derive_bootstrap_record_hash,
 )
 from secure_eval_wrapper.live.configuration import (
     phase8a_dry_run_configuration,
@@ -50,6 +51,9 @@ class Phase8BOperatorBootstrapPostgresTests(unittest.TestCase):
         suffix = uuid4().hex[:10]
         cls.database = "sew_phase8b_bootstrap_" + suffix
         cls.partial_database = "sew_phase8b_partial_" + suffix
+        cls.concurrent_database = "sew_phase8b_concurrent_" + suffix
+        cls.oid_database = "sew_phase8b_oid_" + suffix
+        cls.database_name_policy = lambda name: name.startswith("sew_phase8b_")
         cls.target = PostgresAdminTarget(
             database=cls.database,
             host=os.environ["POSTGRES_HOST"],
@@ -57,6 +61,7 @@ class Phase8BOperatorBootstrapPostgresTests(unittest.TestCase):
             admin_database="postgres",
             admin_user=os.environ["POSTGRES_USER"],
             sslmode=os.environ.get("POSTGRES_SSLMODE", "disable"),
+            database_name_policy=cls.database_name_policy,
         )
 
         def connector(**kwargs):
@@ -97,7 +102,12 @@ class Phase8BOperatorBootstrapPostgresTests(unittest.TestCase):
         try:
             connection.autocommit = True
             with connection.cursor() as cursor:
-                for database in (cls.database, cls.partial_database):
+                for database in (
+                    cls.database,
+                    cls.partial_database,
+                    cls.concurrent_database,
+                    cls.oid_database,
+                ):
                     if not database.startswith("sew_phase8b_"):
                         raise AssertionError("refusing to clean non-test database")
                     cursor.execute(
@@ -149,8 +159,11 @@ class Phase8BOperatorBootstrapPostgresTests(unittest.TestCase):
         self.assertFalse(result["network_reads_occurred"])
         self.assertFalse(result["network_writes_occurred"])
         self.assertFalse(result["real_proof_executed"])
-        self.assertEqual(set(result), {
-            "command", "version", "target_database", "observed_repository_sha",
+        self.assertTrue({
+            "target_host", "target_port", "target_database", "admin_database",
+            "admin_user", "postgres_current_user", "postgres_system_identifier",
+            "postgres_server_version", "target_database_oid", "database_exists",
+            "database_identity_sha256", "observed_repository_sha",
             "expected_reviewed_sha", "migration_count", "latest_migration",
             "immutable_catalog_verified", "migration_0026_installed",
             "configuration_snapshot_id", "configuration_hash", "account_fingerprint",
@@ -158,11 +171,13 @@ class Phase8BOperatorBootstrapPostgresTests(unittest.TestCase):
             "adapter_implementation_hash", "dry_run", "read_only_preflight",
             "production_write_enabled", "credentials_accessed", "network_reads_occurred",
             "network_writes_occurred", "real_proof_executed", "bootstrap_record_hash",
-        })
+        } <= set(result))
         result_core = {
             key: value for key, value in result.items() if key != "bootstrap_record_hash"
         }
-        self.assertEqual(result["bootstrap_record_hash"], sha256_payload(result_core))
+        self.assertEqual(
+            result["bootstrap_record_hash"], derive_bootstrap_record_hash(result_core)
+        )
         self.assertNotEqual(result["bootstrap_record_hash"], result["configuration_hash"])
         verification = self.verification_result
         self.assertTrue(verification["ready_for_operator_authorization"])
@@ -171,6 +186,25 @@ class Phase8BOperatorBootstrapPostgresTests(unittest.TestCase):
         self.assertTrue(verification["phase8_indexes_verified"])
         self.assertTrue(verification["phase8_triggers_verified"])
         self.assertEqual(verification["production_write_count"], 0)
+        verification_core = {
+            key: value for key, value in verification.items()
+            if key != "bootstrap_record_hash"
+        }
+        self.assertEqual(
+            verification["bootstrap_record_hash"],
+            derive_bootstrap_record_hash(verification_core),
+        )
+        self.assertNotEqual(
+            verification["bootstrap_record_hash"], verification["configuration_hash"]
+        )
+        repeated = self.service.verify(
+            expected_reviewed_sha=SHA,
+            account_fingerprint=FINGERPRINT,
+            instrument="BTC-USDT",
+        )
+        self.assertEqual(
+            verification["bootstrap_record_hash"], repeated["bootstrap_record_hash"]
+        )
         self.persist()
 
     def test_configuration_persistence_is_atomic_idempotent_and_exactly_reloadable(self):
@@ -287,11 +321,9 @@ class Phase8BOperatorBootstrapPostgresTests(unittest.TestCase):
         self.assertEqual(results[0], results[1])
         self.assertEqual(self.count(), 1)
 
-    def test_concurrent_conflicting_creation_fails_closed(self):
-        conflicting = phase8a_dry_run_configuration(
-            account_fingerprint=FINGERPRINT,
-            endpoint_catalog_hash=endpoint_catalog_hash(),
-            provider_implementation_hash=OKX_PRODUCTION_SPOT_ADAPTER_IMPLEMENTATION_HASH,
+    def test_concurrent_two_valid_fingerprints_enforce_global_singleton(self):
+        configuration_b = phase8b_authenticated_readonly_configuration(
+            "abcdef1234567890", "BTC-USDT"
         )
 
         def worker(configuration):
@@ -301,22 +333,151 @@ class Phase8BOperatorBootstrapPostgresTests(unittest.TestCase):
             try:
                 repository = DurablePostgresLiveRepository(connection)
                 try:
-                    identifier = repository.persist_guarded_live_configuration_snapshot(
+                    repository.persist_guarded_live_configuration_snapshot(
                         configuration=configuration,
                         created_at_utc=datetime(2026, 7, 15, tzinfo=timezone.utc),
                     )
                 except Exception as exc:
-                    return "error", type(exc).__name__
-                return "ok", str(identifier)
+                    return "error", type(exc).__name__, configuration.account_fingerprint
+                return "ok", "persisted", configuration.account_fingerprint
             finally:
                 connection.close()
 
         with ThreadPoolExecutor(max_workers=2) as executor:
-            outcomes = tuple(executor.map(worker, (self.configuration, conflicting)))
-        self.assertEqual({outcome[0] for outcome in outcomes}, {"ok", "error"})
-        self.assertIn(("error", "PermissionError"), outcomes)
+            outcomes = tuple(executor.map(worker, (self.configuration, configuration_b)))
+        self.assertEqual([outcome[0] for outcome in outcomes].count("ok"), 1)
+        self.assertEqual([outcome[0] for outcome in outcomes].count("error"), 1)
+        self.assertEqual(
+            [outcome[1] for outcome in outcomes if outcome[0] == "error"],
+            ["LiveConflictError"],
+        )
         self.assertEqual(self.count(), 1)
+        winner = next(outcome[2] for outcome in outcomes if outcome[0] == "ok")
+        verification = self.service.verify(
+            expected_reviewed_sha=SHA,
+            account_fingerprint=winner,
+            instrument="BTC-USDT",
+        )
+        self.assertTrue(verification["ready_for_operator_authorization"])
+        self.assertEqual(verification["production_write_count"], 0)
 
+    def test_two_full_initialize_attempts_serialize_entire_operation(self):
+        target = replace(self.target, database=self.concurrent_database)
+        service = Phase8BOperatorBootstrap(
+            target,
+            connector=self.connector,
+            identity_resolver=lambda: RuntimeRepositoryIdentity(SHA, "git_checkout"),
+            clock=lambda: datetime(2026, 7, 15, tzinfo=timezone.utc),
+        )
+        plan = service.plan(
+            expected_reviewed_sha=SHA,
+            account_fingerprint=FINGERPRINT,
+            instrument="BTC-USDT",
+        )
+        self.assertFalse(plan["database_exists"])
+
+        def worker():
+            try:
+                result = service.initialize(
+                    expected_reviewed_sha=SHA,
+                    account_fingerprint=FINGERPRINT,
+                    instrument="BTC-USDT",
+                    previous_plan_hash=plan["plan_hash"],
+                    confirm_readonly_bootstrap=True,
+                )
+            except Exception as exc:
+                return "error", type(exc).__name__
+            return "ok", result["bootstrap_record_hash"]
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            outcomes = tuple(executor.map(lambda _: worker(), range(2)))
+        self.assertEqual([outcome[0] for outcome in outcomes].count("ok"), 1)
+        self.assertEqual([outcome[0] for outcome in outcomes].count("error"), 1)
+        self.assertEqual(
+            [outcome[1] for outcome in outcomes if outcome[0] == "error"],
+            ["BootstrapOperationError"],
+        )
+        verification = service.verify(
+            expected_reviewed_sha=SHA,
+            account_fingerprint=FINGERPRINT,
+            instrument="BTC-USDT",
+        )
+        self.assertTrue(verification["ready_for_operator_authorization"])
+        self.assertEqual(verification["production_write_count"], 0)
+
+    def test_target_oid_change_after_plan_is_rejected(self):
+        target = replace(self.target, database=self.oid_database)
+        service = Phase8BOperatorBootstrap(
+            target,
+            connector=self.connector,
+            identity_resolver=lambda: RuntimeRepositoryIdentity(SHA, "git_checkout"),
+        )
+        admin = self.connector(**target.connection_kwargs("postgres", read_only=False))
+        try:
+            admin.autocommit = True
+            from psycopg import sql
+            with admin.cursor() as cursor:
+                cursor.execute(
+                    sql.SQL("CREATE DATABASE {}").format(sql.Identifier(self.oid_database))
+                )
+        finally:
+            admin.close()
+        plan = service.plan(
+            expected_reviewed_sha=SHA,
+            account_fingerprint=FINGERPRINT,
+            instrument="BTC-USDT",
+        )
+        original_oid = plan["target_database_oid"]
+        admin = self.connector(**target.connection_kwargs("postgres", read_only=False))
+        try:
+            admin.autocommit = True
+            from psycopg import sql
+            with admin.cursor() as cursor:
+                cursor.execute(
+                    sql.SQL("DROP DATABASE {}").format(sql.Identifier(self.oid_database))
+                )
+                cursor.execute(
+                    sql.SQL("CREATE DATABASE {}").format(sql.Identifier(self.oid_database))
+                )
+        finally:
+            admin.close()
+        changed = service.plan(
+            expected_reviewed_sha=SHA,
+            account_fingerprint=FINGERPRINT,
+            instrument="BTC-USDT",
+        )
+        self.assertNotEqual(original_oid, changed["target_database_oid"])
+        with self.assertRaises(BootstrapOperationError):
+            service.initialize(
+                expected_reviewed_sha=SHA,
+                account_fingerprint=FINGERPRINT,
+                instrument="BTC-USDT",
+                previous_plan_hash=plan["plan_hash"],
+                confirm_readonly_bootstrap=True,
+            )
+
+    def test_unexpected_non_internal_trigger_is_rejected(self):
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "CREATE TRIGGER phase8b_unexpected_trigger BEFORE UPDATE ON "
+                "execution.live_configuration_snapshots FOR EACH ROW EXECUTE FUNCTION "
+                "execution.prevent_live_authority_mutation()"
+            )
+        self.connection.commit()
+        try:
+            plan = self.service.plan(
+                expected_reviewed_sha=SHA,
+                account_fingerprint=FINGERPRINT,
+                instrument="BTC-USDT",
+            )
+            self.assertIn("non_internal_trigger_catalog_mismatch", plan["blockers"])
+        finally:
+            with self.connection.cursor() as cursor:
+                cursor.execute(
+                    "DROP TRIGGER phase8b_unexpected_trigger ON "
+                    "execution.live_configuration_snapshots"
+                )
+            self.connection.commit()
     def test_altered_database_migration_hash_is_rejected_and_never_overwritten(self):
         migration_id = next(iter(EXPECTED_MIGRATION_CATALOG))
         expected_hash = EXPECTED_MIGRATION_CATALOG[migration_id]

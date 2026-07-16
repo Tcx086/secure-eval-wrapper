@@ -251,22 +251,21 @@ class DurablePostgresLiveRepository:
         with self.transaction():
             self._execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
-                ("phase8b-bootstrap:" + configuration.account_fingerprint,),
+                ("phase8b-bootstrap-global-configuration",),
             )
             existing = self._fetchall(
-                "SELECT configuration_snapshot_id,configuration_sha256,record_sha256 "
-                "FROM execution.live_configuration_snapshots "
-                "WHERE account_fingerprint=%s FOR UPDATE",
-                (configuration.account_fingerprint,),
+                "SELECT * FROM execution.live_configuration_snapshots "
+                "ORDER BY configuration_sha256 FOR UPDATE"
             )
             if existing:
                 if len(existing) != 1 or (
                     existing[0]["configuration_snapshot_id"] != configuration_id
                     or existing[0]["configuration_sha256"] != configuration.configuration_hash
                     or existing[0]["record_sha256"] != record_hash
+                    or existing[0]["account_fingerprint"] != configuration.account_fingerprint
                 ):
                     raise LiveConflictError(
-                        "account already has a different guarded live configuration"
+                        "bootstrap database already contains a different global guarded live configuration"
                     )
                 if self.load_guarded_live_configuration(configuration.configuration_hash) != configuration:
                     raise PermissionError("exact configuration replay failed typed reload")
