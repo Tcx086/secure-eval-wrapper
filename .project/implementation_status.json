@@ -4,7 +4,7 @@
   "repository": "Tcx086/secure-eval-wrapper",
   "status_source": "docs/IMPLEMENTATION_STATUS.md",
   "schema": ".project/implementation_status.schema.json",
-  "updated_at_utc": "2026-07-15T23:40:11Z",
+  "updated_at_utc": "2026-07-16T21:50:54Z",
   "current_phase": "phase_8_guarded_live_execution",
   "rules": {
     "future_functional_prs_must_update_markdown_status": true,
@@ -395,14 +395,14 @@
         "Confirm that Phase 8B implementation and audit used no real credentials and performed no authenticated OKX request, production order, or production cancellation; the real local authenticated proof remains unexecuted and production writes remain disabled and unreachable",
         "Implement the dedicated secure-eval-live-bootstrap inspect, plan, initialize, and verify workflow with pinned immutable migration hashes, exact repository, database, and plan identity, explicit read-only confirmation, the fixed conservative BTC-USDT Spot configuration factory, typed atomic PostgreSQL persistence, public-safe verification, offline attack coverage, and isolated PostgreSQL tests; keep this operator bootstrap pending independent audit without accessing credentials, OKX, or the existing operator database",
         "Harden bootstrap failure provenance with the exact last completed stage, require the complete Phase 8 schema contract before configuration insertion, derive the bootstrap result hash independently, and add altered-catalog plus concurrent-conflict regressions without changing migrations 0001 through 0026",
-        "Repair the dedicated bootstrap audit boundary with literal loopback-only PostgreSQL targets, dedicated database naming, server current-user/cluster/version/OID-bound plans, true persistent-object emptiness inspection, one target-wide full-operation advisory lock, one global configuration singleton, independently derived verify hashes, and real two-fingerprint plus full-initialize concurrency regressions; keep migrations 0001 through 0026 immutable and production writes unreachable"
+        "Repair the dedicated bootstrap audit boundary with literal loopback-only PostgreSQL targets, a fixed non-substitutable production database-name rule, server current-user/cluster/version/OID-bound plans, and a fail-closed exact 0001-0026 catalog requirement for every pre-existing target, including collation-only and externally created empty databases; preserve the target-wide full-operation advisory lock, global configuration singleton, independently derived verify hashes, production-named concurrency regressions, immutable migrations 0001-0026, and unreachable production writes"
       ],
       "todo": [
         "Independently audit and accept the dedicated Phase 8B local operator bootstrap before using it for operator authorization",
-        "Optionally execute exactly one controlled local authenticated read-only proof with operator-owned environment credentials that are never persisted, only after the separate exact operator authorization",
+        "Keep real authenticated proof authorization at NO; optionally execute exactly one controlled local authenticated read-only proof with operator-owned environment credentials that are never persisted only after separate exact operator authorization",
         "Independently review the resulting redacted proof before accepting the operational Phase 8B checkpoint",
-        "Do not design Phase 8C until the operational Phase 8B checkpoint is separately accepted",
-        "Keep production orders and cancellations disabled until a later explicitly approved phase"
+        "Phase 8C is not started; do not design it until the operational Phase 8B checkpoint is separately accepted",
+        "Keep production submit and cancel disabled and unreachable until a later explicitly approved phase"
       ]
     },
     {

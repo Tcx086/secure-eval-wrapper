@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import inspect
 import io
 import json
 import socket
@@ -8,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -256,6 +257,52 @@ class Phase8BOperatorBootstrapOfflineTests(unittest.TestCase):
             "secure_eval_phase8b_operator_01",
         )
 
+    def test_production_database_policy_is_fixed_and_not_constructor_replaceable(self):
+        expected_fields = (
+            "database", "host", "port", "admin_database", "admin_user", "sslmode",
+        )
+        self.assertEqual(
+            tuple(inspect.signature(PostgresAdminTarget).parameters), expected_fields
+        )
+        self.assertEqual(
+            tuple(item.name for item in fields(PostgresAdminTarget)), expected_fields
+        )
+        post_init_source = inspect.getsource(PostgresAdminTarget.__post_init__)
+        self.assertIn(
+            r"secure_eval_phase8b(?:_[a-z0-9][a-z0-9_]{0,42})?", post_init_source
+        )
+        self.assertNotIn("callable", post_init_source)
+        with self.assertRaises(TypeError):
+            PostgresAdminTarget(**{
+                "database": "arbitrary_database",
+                "database_name_policy": lambda _: True,
+            })
+
+    def test_every_nonproduction_database_name_is_rejected_before_connection(self):
+        for database in (
+            "secure_eval_wrapper", "postgres", "template0", "template1",
+            "arbitrary_database", "sew_phase8b_test", "secure_eval_phase8",
+            "secure_eval_phase8b-bad", "Secure_eval_phase8b", "secure_eval_phase8b test",
+        ):
+            with self.subTest(database=database), self.assertRaises(
+                (BootstrapSafetyError, ValueError)
+            ):
+                PostgresAdminTarget(database=database)
+
+    def test_cli_rejects_nonproduction_database_before_bootstrap_construction(self):
+        output = io.StringIO()
+
+        def fail_if_constructed(_target):
+            raise AssertionError("bootstrap constructed")
+
+        with contextlib.redirect_stdout(output):
+            result = main(
+                ["inspect", "--database", "arbitrary_database"],
+                bootstrap_factory=fail_if_constructed,
+            )
+        self.assertEqual(result, 2)
+        self.assertEqual(json.loads(output.getvalue())["status"], "failed_closed")
+
     def test_plan_hash_binds_all_public_connection_and_cluster_identity_fields(self):
         target = PostgresAdminTarget()
         reference = _reference(target)
@@ -287,7 +334,7 @@ class Phase8BOperatorBootstrapOfflineTests(unittest.TestCase):
         self.assertNotEqual(first["plan_hash"], changed_cluster["plan_hash"])
         self.assertNotEqual(first["plan_hash"], changed_user["plan_hash"])
 
-    def test_uncatalogued_view_function_sequence_or_event_trigger_is_not_empty(self):
+    def test_every_existing_uncatalogued_database_fails_closed(self):
         reference = _reference(
             PostgresAdminTarget(), database_exists=True, database_oid=16384
         )
@@ -295,10 +342,10 @@ class Phase8BOperatorBootstrapOfflineTests(unittest.TestCase):
             with self.subTest(kind=kind):
                 service = _ObjectOnlyBootstrap(kind, reference)
                 state = service._inspect_existing_database(reference)
-                self.assertEqual(state.catalog_state, "legacy_or_unknown")
+                self.assertEqual(state.catalog_state, "uncatalogued")
                 self.assertEqual(state.non_system_object_kinds, (kind,))
                 self.assertIn(
-                    "existing_database_has_objects_without_migration_catalog",
+                    "existing_uncatalogued_database_is_never_initialized",
                     state.blockers,
                 )
 

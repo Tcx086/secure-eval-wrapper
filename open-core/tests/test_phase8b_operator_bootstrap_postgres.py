@@ -49,11 +49,12 @@ class Phase8BOperatorBootstrapPostgresTests(unittest.TestCase):
         cls.psycopg = psycopg
         cls.password = os.environ["POSTGRES_PASSWORD"]
         suffix = uuid4().hex[:10]
-        cls.database = "sew_phase8b_bootstrap_" + suffix
-        cls.partial_database = "sew_phase8b_partial_" + suffix
-        cls.concurrent_database = "sew_phase8b_concurrent_" + suffix
-        cls.oid_database = "sew_phase8b_oid_" + suffix
-        cls.database_name_policy = lambda name: name.startswith("sew_phase8b_")
+        cls.database = "secure_eval_phase8b_test_" + suffix
+        cls.partial_database = "secure_eval_phase8b_partial_" + suffix
+        cls.concurrent_database = "secure_eval_phase8b_concurrent_" + suffix
+        cls.oid_database = "secure_eval_phase8b_oid_" + suffix
+        cls.collation_database = "secure_eval_phase8b_collation_" + suffix
+        cls.external_empty_database = "secure_eval_phase8b_empty_" + suffix
         cls.target = PostgresAdminTarget(
             database=cls.database,
             host=os.environ["POSTGRES_HOST"],
@@ -61,7 +62,6 @@ class Phase8BOperatorBootstrapPostgresTests(unittest.TestCase):
             admin_database="postgres",
             admin_user=os.environ["POSTGRES_USER"],
             sslmode=os.environ.get("POSTGRES_SSLMODE", "disable"),
-            database_name_policy=cls.database_name_policy,
         )
 
         def connector(**kwargs):
@@ -107,8 +107,10 @@ class Phase8BOperatorBootstrapPostgresTests(unittest.TestCase):
                     cls.partial_database,
                     cls.concurrent_database,
                     cls.oid_database,
+                    cls.collation_database,
+                    cls.external_empty_database,
                 ):
-                    if not database.startswith("sew_phase8b_"):
+                    if not database.startswith("secure_eval_phase8b_"):
                         raise AssertionError("refusing to clean non-test database")
                     cursor.execute(
                         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
@@ -146,6 +148,120 @@ class Phase8BOperatorBootstrapPostgresTests(unittest.TestCase):
         with self.connection.cursor() as cursor:
             cursor.execute("SELECT count(*) FROM execution.live_configuration_snapshots")
             return cursor.fetchone()[0]
+
+    def service_for_database(self, database):
+        target = replace(self.target, database=database)
+        return target, Phase8BOperatorBootstrap(
+            target,
+            connector=self.connector,
+            identity_resolver=lambda: RuntimeRepositoryIdentity(SHA, "git_checkout"),
+            clock=lambda: datetime(2026, 7, 15, tzinfo=timezone.utc),
+        )
+
+    def create_external_database(self, target):
+        connection = self.connector(
+            **target.connection_kwargs("postgres", read_only=False)
+        )
+        try:
+            connection.autocommit = True
+            from psycopg import sql
+
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    sql.SQL("CREATE DATABASE {}").format(sql.Identifier(target.database))
+                )
+        finally:
+            connection.close()
+
+    def assert_uncatalogued_database_was_not_migrated(self, target):
+        connection = self.connector(
+            **target.connection_kwargs(target.database, read_only=True)
+        )
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT to_regclass('audit.schema_migrations') IS NOT NULL"
+                )
+                self.assertFalse(cursor.fetchone()[0])
+        finally:
+            connection.close()
+
+    def assert_existing_uncatalogued_plan_fails_before_migrations(self, service, plan):
+        self.assertTrue(plan["database_exists"])
+        self.assertFalse(plan["database_creation_required"])
+        self.assertFalse(plan["migrations_required"])
+        self.assertEqual(plan["migration_count_to_apply"], 0)
+        self.assertEqual(plan["catalog_state"], "uncatalogued")
+        self.assertIn(
+            "existing_uncatalogued_database_is_never_initialized", plan["blockers"]
+        )
+        with self.assertRaises(BootstrapOperationError) as raised:
+            service.initialize(
+                expected_reviewed_sha=SHA,
+                account_fingerprint=FINGERPRINT,
+                instrument="BTC-USDT",
+                previous_plan_hash=plan["plan_hash"],
+                confirm_readonly_bootstrap=True,
+            )
+        self.assertEqual(raised.exception.last_completed_stage, "target_lock_acquired")
+
+    def test_existing_uncatalogued_collation_database_fails_closed_before_migrations(self):
+        target, service = self.service_for_database(self.collation_database)
+        self.create_external_database(target)
+        connection = self.connector(
+            **target.connection_kwargs(target.database, read_only=False)
+        )
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute('CREATE COLLATION public.phase8b_hidden FROM "C"')
+            connection.commit()
+        finally:
+            connection.close()
+
+        inspection = service.inspect()
+        self.assertEqual(inspection.catalog_state, "uncatalogued")
+        self.assertIn(
+            "existing_uncatalogued_database_is_never_initialized",
+            inspection.blockers,
+        )
+        plan = service.plan(
+            expected_reviewed_sha=SHA,
+            account_fingerprint=FINGERPRINT,
+            instrument="BTC-USDT",
+        )
+        self.assert_existing_uncatalogued_plan_fails_before_migrations(service, plan)
+        self.assert_uncatalogued_database_was_not_migrated(target)
+        connection = self.connector(
+            **target.connection_kwargs(target.database, read_only=True)
+        )
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT count(*) FROM pg_collation c JOIN pg_namespace n "
+                    "ON n.oid=c.collnamespace WHERE n.nspname='public' "
+                    "AND c.collname='phase8b_hidden'"
+                )
+                self.assertEqual(cursor.fetchone()[0], 1)
+        finally:
+            connection.close()
+
+    def test_externally_created_empty_uncatalogued_database_fails_closed_before_migrations(self):
+        target, service = self.service_for_database(self.external_empty_database)
+        self.create_external_database(target)
+        inspection = service.inspect()
+        self.assertEqual(inspection.catalog_state, "uncatalogued")
+        self.assertEqual(inspection.non_system_object_count, 0)
+        self.assertIn(
+            "existing_uncatalogued_database_is_never_initialized",
+            inspection.blockers,
+        )
+        plan = service.plan(
+            expected_reviewed_sha=SHA,
+            account_fingerprint=FINGERPRINT,
+            instrument="BTC-USDT",
+        )
+        self.assert_existing_uncatalogued_plan_fails_before_migrations(service, plan)
+        self.assert_uncatalogued_database_was_not_migrated(target)
 
     def test_clean_dedicated_initialization_reached_exact_0026_and_ready(self):
         result = self.initialization_result

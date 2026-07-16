@@ -10,7 +10,7 @@ import hashlib
 import importlib.util
 import re
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from types import MappingProxyType
@@ -36,7 +36,6 @@ DEFAULT_POSTGRES_EXTENSIONS = frozenset({"plpgsql"})
 LATEST_MIGRATION = "0026_phase8b_authenticated_readonly_preflight"
 CONFIRMATION_FLAG = "--confirm-readonly-bootstrap"
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
-_DEDICATED_DATABASE = re.compile(r"^secure_eval_phase8b(?:_[a-z0-9][a-z0-9_]{0,42})?$")
 
 EXPECTED_MIGRATION_CATALOG: Mapping[str, str] = MappingProxyType({
     "0001_initial_schema": "598486e6af2eed4559564593adc0b66deff9e21ea91dbda560980c208a2950c5",
@@ -118,10 +117,6 @@ class BootstrapOperationError(BootstrapSafetyError):
         self.last_completed_stage = last_completed_stage
 
 
-def _production_database_name_policy(database: str) -> bool:
-    return _DEDICATED_DATABASE.fullmatch(database) is not None
-
-
 @dataclass(frozen=True)
 class PostgresAdminTarget:
     database: str = DEFAULT_DATABASE
@@ -130,12 +125,6 @@ class PostgresAdminTarget:
     admin_database: str = "postgres"
     admin_user: str = "postgres"
     sslmode: str = "disable"
-    database_name_policy: Callable[[str], bool] = field(
-        default=_production_database_name_policy,
-        repr=False,
-        compare=False,
-    )
-
     def __post_init__(self) -> None:
         for name in ("database", "admin_database"):
             value = getattr(self, name)
@@ -147,7 +136,9 @@ class PostgresAdminTarget:
             raise BootstrapSafetyError("target database must differ from the admin database")
         if self.admin_database not in MAINTENANCE_DATABASES:
             raise BootstrapSafetyError("admin database must be a recognized maintenance database")
-        if not callable(self.database_name_policy) or not self.database_name_policy(self.database):
+        if re.fullmatch(
+            r"secure_eval_phase8b(?:_[a-z0-9][a-z0-9_]{0,42})?", self.database
+        ) is None:
             raise BootstrapSafetyError("target database name is not dedicated to Phase 8B")
         if self.host not in LOCAL_POSTGRES_HOSTS:
             raise BootstrapSafetyError("PostgreSQL host must be literal 127.0.0.1 or ::1")
@@ -624,11 +615,9 @@ class Phase8BOperatorBootstrap:
                 object_blockers,
                 user_tables,
             ) = self._inspect_database_objects(connection, exact_catalog=exact_catalog)
-            if not catalog_ready and non_system_object_count == 0:
-                catalog_state = "empty"
-            elif not catalog_ready:
-                catalog_state = "legacy_or_unknown"
-                blockers.append("existing_database_has_objects_without_migration_catalog")
+            if not catalog_ready:
+                catalog_state = "uncatalogued"
+                blockers.append("existing_uncatalogued_database_is_never_initialized")
             elif exact_catalog:
                 catalog_state = "exact_0001_0026"
                 blockers.extend(object_blockers)
@@ -782,7 +771,7 @@ class Phase8BOperatorBootstrap:
             reference=reference,
             admin_connection=admin_connection,
         )
-        migrations_required = state.catalog_state in {"absent", "empty"}
+        migrations_required = not state.database_exists
         core = {
             "command": "secure-eval-live-bootstrap plan",
             "version": BOOTSTRAP_VERSION,
