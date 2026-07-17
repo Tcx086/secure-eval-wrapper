@@ -12,6 +12,8 @@ from urllib.request import Request, urlopen
 
 from secure_eval_wrapper.data_collection.hashing import sha256_payload
 
+from ..provider_identity import OKX_PRODUCTION_SPOT_ADAPTER_IMPLEMENTATION_HASH
+
 from ..endpoints import EndpointClass, LiveOperation, OKX_PRODUCTION_ORIGIN, build_request_path, classify_exact, route_for
 from ..collector_evidence import QueryDisposition, _issue_okx_bundle, _issue_okx_envelope
 from ..gates import common_ci_indicators
@@ -104,7 +106,7 @@ def _permissions(value: object) -> tuple[tuple[str, ...], tuple[str, ...]]:
 
 
 class OkxProductionSpotAdapter(GuardedLiveVenue):
-    provider_implementation_hash = sha256_payload({"adapter": "okx-production-spot", "version": 5, "writes": "phase8b-unreachable", "authenticated_readonly_preflight": "exact-six-gets-unparameterized-positions"})
+    provider_implementation_hash = OKX_PRODUCTION_SPOT_ADAPTER_IMPLEMENTATION_HASH
 
     def __init__(self, *, transport, credential_material=None, clock=None) -> None:
         self.transport = transport

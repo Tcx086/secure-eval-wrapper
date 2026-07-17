@@ -82,6 +82,8 @@ jobs:
         run: python -m unittest discover -s open-core/tests -p "test_phase8_identity.py" -v && python -m unittest discover -s open-core/tests -p "test_phase8_guarded_live.py" -v
       - name: Phase 8B explicit authenticated read-only preflight, fail-closed permissions, redaction, and socket-free default
         run: python -m unittest discover -s open-core/tests -p "test_phase8b_authenticated_readonly_preflight.py" -v
+      - name: Phase 8B audited operator bootstrap planning, confirmation, migration identity, and offline attack coverage
+        run: python -m unittest discover -s open-core/tests -p "test_phase8b_operator_bootstrap.py" -v
       - name: Compile package and scripts
         run: python -m compileall -q open-core/src open-core/scripts
       - run: secure-eval-backtest
@@ -99,6 +101,7 @@ jobs:
       - run: secure-eval-live-status --help
       - run: secure-eval-live-reconcile --help
       - run: secure-eval-live-kill --help
+      - run: secure-eval-live-bootstrap --help
 
   postgres-integration:
     name: PostgreSQL 16 integration
@@ -185,6 +188,10 @@ jobs:
         env:
           RUN_POSTGRES_INTEGRATION: "true"
         run: python -m unittest discover -s open-core/tests -p "test_phase8b_postgres_integration.py" -v
+      - name: Phase 8B dedicated operator bootstrap, exact catalog, configuration replay, rollback, conflict, and concurrency
+        env:
+          RUN_POSTGRES_INTEGRATION: "true"
+        run: python -m unittest discover -s open-core/tests -p "test_phase8b_operator_bootstrap_postgres.py" -v
       - name: Seeded 0023 to 0026 upgrade with existing Phase 5, Phase 6, Phase 7, and Phase 8A rows
         run: |
           python open-core/scripts/apply_postgres_migrations.py --database secure_eval_upgrade --create-database --through 0009 --seed-phase5
