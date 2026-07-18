@@ -31,6 +31,7 @@ secure-eval-live-status = "secure_eval_wrapper.live.cli:status_main"
 secure-eval-live-reconcile = "secure_eval_wrapper.live.cli:reconcile_main"
 secure-eval-live-kill = "secure_eval_wrapper.live.cli:kill_main"
 secure-eval-live-bootstrap = "secure_eval_wrapper.live.bootstrap_cli:main"
+secure-eval-live-shadow = "secure_eval_wrapper.live.shadow_cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
