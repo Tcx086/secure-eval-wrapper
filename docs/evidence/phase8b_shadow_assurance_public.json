@@ -2,7 +2,7 @@
   "schema_version": 1,
   "operation": "phase8b_shadow_assurance",
   "status": "implemented_pending_independent_audit",
-  "repository_sha": "9059127667404cf1897a9dfe5aad7439d7b3365e",
+  "repository_sha": "be6f3393ab81b70023dcc07988e364013989adb6",
   "shadow_runtime_version": "phase8b-shadow-v1",
   "fixture_scenario_count": 54,
   "mock_account_scenario_count": 27,
@@ -76,6 +76,6 @@
   "latest_migration": "0026",
   "migration_0026_sha256": "698772fb68c5c4981256682d064c3be641193ab10c8dbf55e1a5b390ca7c504a",
   "migration_0027_exists": false,
-  "evidence_payload_sha256": "0e621b9032836bf388bd6b6f1d6ed6a5f238d7535ee6d7e6ea5040aaedfe412b",
+  "evidence_payload_sha256": "a7af4bccbc72d4b3fc0adbd4bef78b5a013e95b1c8e8a12806dc35916e1bd248",
   "independent_audit_status": "pending"
 }
