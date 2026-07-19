@@ -11,6 +11,7 @@ from secure_eval_wrapper.live.shadow_evidence import (
     build_public_shadow_evidence,
     validate_public_shadow_evidence,
 )
+from secure_eval_wrapper.live.shadow_verifier import run_offline_assurance_verifier
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -56,6 +57,11 @@ class Phase8BShadowPublicEvidenceTests(unittest.TestCase):
         }
         self.assertEqual(self.payload["evidence_payload_sha256"], sha256_payload(core))
         self.assertEqual(self.payload["independent_audit_status"], "pending")
+
+    def test_executable_verifier_is_repeatable_across_thread_completion_order(self):
+        expected = run_offline_assurance_verifier(SHA)
+        for _ in range(3):
+            self.assertEqual(run_offline_assurance_verifier(SHA), expected)
 
     def test_forbidden_keys_paths_secrets_and_entropy_are_rejected(self):
         attacks = (

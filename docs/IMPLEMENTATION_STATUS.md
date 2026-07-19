@@ -367,6 +367,7 @@ Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarde
 - [x] Repair the shadow public-source boundary with the exact two anonymous OKX GETs, a symbols-only bounded trade request, true send-boundary counts, and source-instance-issued provenance that is validated before persistence.
 - [x] Require literal loopback and exact disposable shadow PostgreSQL targets before connect, delegate authentication to libpq without a password CLI argument, reject catalog and row contamination, and share one canonical ordered migration `0001`-`0026` identity with bootstrap.
 - [x] Replace caller-fed assurance counts with an executable repository/catalog/runtime-bound verifier, classify PostgreSQL and public smoke as not executed in the checked artifact, and add fake-transport, provenance, migration, CLI, evidence-tamper, contamination, restart, replay, concurrency, and crash regressions while keeping independent audit pending.
+- [x] Make verifier v3 deterministic across thread completion order by canonicalizing concurrent persistence outcomes, and repair the fresh-process libpq environment regression exposed by the first branch and pull-request CI attempt.
 
 ## Todo
 

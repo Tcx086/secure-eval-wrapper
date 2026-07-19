@@ -167,8 +167,8 @@ class Phase8BShadowPostgresTests(unittest.TestCase):
         initial = service.run_fixture("clean_flat_account", shadow_run_id=run_id)
         connection.close()
 
-        env["PGPASSWORD"] = self.base["password"]
         env = os.environ.copy()
+        env["PGPASSWORD"] = self.base["password"]
         command = [
             sys.executable,
             "-m",

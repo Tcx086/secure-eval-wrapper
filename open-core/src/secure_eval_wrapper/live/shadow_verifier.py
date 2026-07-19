@@ -22,7 +22,7 @@ from .shadow_scenarios import all_shadow_scenarios
 from .shadow_models import shadow_uuid
 
 
-SHADOW_VERIFIER_VERSION = "phase8b-shadow-assurance-verifier-v2"
+SHADOW_VERIFIER_VERSION = "phase8b-shadow-assurance-verifier-v3"
 POSTGRESQL_VERIFIER_NOT_EXECUTED = "POSTGRESQL_VERIFIER_NOT_EXECUTED"
 _RESTART_CASES = ("clean_flat_account", "existing_long_spot_position", "stale_data")
 _REPLAY_CASES = (
@@ -157,7 +157,10 @@ def run_offline_assurance_verifier(repository_sha: str) -> dict[str, object]:
                 )
                 for _ in range(2)
             )
-            concurrent = tuple(future.result() for future in futures)
+            concurrent = tuple(sorted(
+                (future.result() for future in futures),
+                key=lambda item: (item.persistence_result, item.summary_hash),
+            ))
         summaries.extend(concurrent)
         passed = (
             len({item.decision_hash for item in concurrent}) == 1

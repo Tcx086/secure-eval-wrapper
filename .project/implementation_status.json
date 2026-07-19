@@ -406,7 +406,8 @@
         "Confirm the Phase 8B shadow-assurance candidate uses no real credentials, real account data, authenticated endpoints, operator database, production transport, production order, or production cancellation; real-proof authorization remains NO and operator bootstrap remains unexecuted",
         "Repair the shadow public-source boundary with the exact two anonymous OKX GETs, a symbols-only bounded trade request, true send-boundary counts, and source-instance-issued provenance that is validated before persistence",
         "Require literal loopback and exact disposable shadow PostgreSQL targets before connect, delegate authentication to libpq without a password CLI argument, reject catalog and row contamination, and share one canonical ordered migration 0001-0026 identity with bootstrap",
-        "Replace caller-fed assurance counts with an executable repository/catalog/runtime-bound verifier, classify PostgreSQL and public smoke as not executed in the checked artifact, and add fake-transport, provenance, migration, CLI, evidence-tamper, contamination, restart, replay, concurrency, and crash regressions while keeping independent audit pending"
+        "Replace caller-fed assurance counts with an executable repository/catalog/runtime-bound verifier, classify PostgreSQL and public smoke as not executed in the checked artifact, and add fake-transport, provenance, migration, CLI, evidence-tamper, contamination, restart, replay, concurrency, and crash regressions while keeping independent audit pending",
+        "Make verifier v3 deterministic across thread completion order by canonicalizing concurrent persistence outcomes, and repair the fresh-process libpq environment regression exposed by the first branch and pull-request CI attempt"
       ],
       "todo": [
         "Independently audit the public-data and synthetic-account Phase 8B shadow-assurance implementation candidate and its public evidence before accepting it",
