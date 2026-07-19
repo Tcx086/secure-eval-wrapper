@@ -1,9 +1,567 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "operation": "phase8b_shadow_assurance",
   "status": "implemented_pending_independent_audit",
-  "repository_sha": "be6f3393ab81b70023dcc07988e364013989adb6",
-  "shadow_runtime_version": "phase8b-shadow-v1",
+  "repository_sha": "9dfd0f8bbe33ae36fd2f167fc461513f3135396c",
+  "shadow_runtime_version": "phase8b-shadow-v2",
+  "verifier_version": "phase8b-shadow-assurance-verifier-v2",
+  "assurance_verifier_result": {
+    "verifier_version": "phase8b-shadow-assurance-verifier-v2",
+    "repository_sha": "9dfd0f8bbe33ae36fd2f167fc461513f3135396c",
+    "scenario_catalog_hash": "a0a69cf33a1313f6791197b2090c489064c042520d216ac09791b20c83d1c49e",
+    "runtime_implementation_hash": "7973dd923c3e0390bcb1eab32337ce2cdccb338842b44c3e2b08ab3deb1bf76d",
+    "scenario_results": [
+      {
+        "case_id": "clean_flat_account",
+        "passed": true,
+        "evidence_hash": "4de3ee698e6b81cc27a55e5fec2fd439c44204cf68aa210b90edf583e2cd885b",
+        "result_hash": "73af0e966007bbba68978939b8f9ce74b4f6f8c6777cf8239e04cd2e61e124ed"
+      },
+      {
+        "case_id": "insufficient_quote_balance",
+        "passed": true,
+        "evidence_hash": "5082658c7a5d914034244a7c43bced38fa5f997adef780a0d1294fe8385d30d1",
+        "result_hash": "e5e951c652380db3a268df79af11768d4fa17108a938436a12e391fabe6c0499"
+      },
+      {
+        "case_id": "insufficient_base_balance",
+        "passed": true,
+        "evidence_hash": "a68be8ad195bd7fd1f12eba6ffb96c9bafd85fb1fd22c4bda89830e9a193f47f",
+        "result_hash": "4a80c4721c2db4bf2ace1e1043619f756797e0b8a3db04ec8353a56afc1ab9b1"
+      },
+      {
+        "case_id": "existing_long_spot_position",
+        "passed": true,
+        "evidence_hash": "9c0e4b2028e92adfbdea67eb13f1be9c2f217b15012d8b2af51998aa8a81a7df",
+        "result_hash": "079f4a7c4d16df1aa220ac3d227792fcc0a9d3d53977b0ed8a8faa2aadcba2a9"
+      },
+      {
+        "case_id": "synthetic_short_position",
+        "passed": true,
+        "evidence_hash": "b120eff70450e295ce4229e9175d1e138dc30bfa2cc02b7ad008a6641a74e4a0",
+        "result_hash": "68fe1ade480038eae4e8ba311a09a1bcaa245e4d99ee996af1a34dca06eeb6b0"
+      },
+      {
+        "case_id": "synthetic_perpetual_position",
+        "passed": true,
+        "evidence_hash": "94f523f683643a8b693dd92761318eceb848cd2b2f7b62891f8bd66487bec00a",
+        "result_hash": "e85517cfb1abdb606cceebe6da6ec0d554b54bf055aa934de4c2972b092d761a"
+      },
+      {
+        "case_id": "synthetic_futures_position",
+        "passed": true,
+        "evidence_hash": "565dd6db0f8049e0b55bb52826defac89d15a27c71da4b866cf1fddbeac998f2",
+        "result_hash": "6272e2a28c2f8cc16edb04774b6a2b48175025f77505aebd95bae14dad97b9fd"
+      },
+      {
+        "case_id": "synthetic_options_exposure",
+        "passed": true,
+        "evidence_hash": "43dd1b0b9b867b9dd6f1cdcfada58e91a0ff6cb369476c226fb4bea52b32f5da",
+        "result_hash": "153692618af5def5f5cb85f042d324abbb8cadd760c8f0665c0f61278f167c57"
+      },
+      {
+        "case_id": "pending_buy_order",
+        "passed": true,
+        "evidence_hash": "0bf139a6456fd872bb605f9a60252c2bbe652b23504913742af2d57fde4117d1",
+        "result_hash": "95382d4ffc9bc0895cf6151d52db0d15d4f261c0156dea04bc84ceb1c15cfb6f"
+      },
+      {
+        "case_id": "pending_sell_order",
+        "passed": true,
+        "evidence_hash": "a25ca8da72c11d68bc2c0cfd0409b5ce9e33cf31d3397877fdd929808c819d98",
+        "result_hash": "139c68b5d3a3dbc21deb2607cecb6c8d433ec441a83607485459f9b3c48eee5f"
+      },
+      {
+        "case_id": "excessive_reserved_notional",
+        "passed": true,
+        "evidence_hash": "2a524c552f71508d2d6fa66407ba586f3160d7b1adccdef1e83fd7cb020d8db4",
+        "result_hash": "d2024455b73e5454e36c8950cc4c392c289f6e4010805c1479c0059e033fbb3a"
+      },
+      {
+        "case_id": "near_limit_notional",
+        "passed": true,
+        "evidence_hash": "3f087b303f50fad7a5200b59af44a7fc1a5fd3b1d35f590c807854bc5c42ed58",
+        "result_hash": "2d164fcc526e1788228ecb204e44a2d9090affe7644c0f4f925085c8841f03ac"
+      },
+      {
+        "case_id": "breached_daily_loss_guard",
+        "passed": true,
+        "evidence_hash": "65bae85864677b66b7f2ecb570f07d63b4b4cfccdc43c09c382182947bbd2f0c",
+        "result_hash": "29a4186ddc4f047f31a26f88fe9c1f3d6e8e8fed976b9b8ec57a2fe98c9a60b3"
+      },
+      {
+        "case_id": "kill_switch_active",
+        "passed": true,
+        "evidence_hash": "0a90b8382cc0aa802c4edae56542ccdfde33a6df8ab41f989c197af9fe39a802",
+        "result_hash": "a640ac563c7fd543a6a2ec12be0607a362709502d155bd647de608fc49f89b21"
+      },
+      {
+        "case_id": "permission_read_only",
+        "passed": true,
+        "evidence_hash": "1a9d90570fecb384507b24ce9375fee636b6b43382c6a9a9229b2080d2c96fe9",
+        "result_hash": "7ea819ad26dbaeb4096c9ee879b7858d1da84e7e85c030bea02253b8abf20e21"
+      },
+      {
+        "case_id": "permission_trade_enabled_synthetic_profile",
+        "passed": true,
+        "evidence_hash": "141d15a7f440d0d2dc30bb0a9908cae48c186d2aec9d70c6f09f6759fdda7e77",
+        "result_hash": "8ed4aeaaa6eaea74951976ceae74626c322f46beeab0e3deb6df7d1a3fced120"
+      },
+      {
+        "case_id": "conflicting_account_classification",
+        "passed": true,
+        "evidence_hash": "bab0e2525b968bfbfd6052ef889ff8bf563e0d67ee2041cc3016733921332c21",
+        "result_hash": "377774d974ab789dbdb79049d1a7fb6e4f49f240554c7f73f0d5a954d1a61e98"
+      },
+      {
+        "case_id": "malformed_account_snapshot",
+        "passed": true,
+        "evidence_hash": "1234037ad78f4b0b678b2a5956a3954f526b41b22eb21891b747e9bb4f542c2f",
+        "result_hash": "93b1dfadfe79f55c61e409c6e0b296ce631e0f93cf176b486bbe9c15dd94781f"
+      },
+      {
+        "case_id": "duplicate_positions",
+        "passed": true,
+        "evidence_hash": "73536a4dc08abdeddfe5b1fe1b78d7bb566d110641e43382bd6bc7fba901f25a",
+        "result_hash": "59bb948a64942ed4cf19bef9f2e268a0cef8b087ad112c8b5000f4f0cde49a8f"
+      },
+      {
+        "case_id": "negative_balance",
+        "passed": true,
+        "evidence_hash": "750b9abfce7c60a7d64ea022d1387457627f73f8d31f02f5dfa4f15056876bc2",
+        "result_hash": "2626f7236301c8db2cb383a298ffbda420f927fd50570af822173f36a46fb492"
+      },
+      {
+        "case_id": "nan_or_infinity_quantity",
+        "passed": true,
+        "evidence_hash": "7faddf84df906592bfdba98746788ebe6026cb2d13b07b52cb9c9c65c99ae4a4",
+        "result_hash": "c493fac096287f9546709cb441efa8c4448f7f227d5124ec52bdac0fa46cf8a5"
+      },
+      {
+        "case_id": "wrong_settlement_asset",
+        "passed": true,
+        "evidence_hash": "ab63ba0494d971f2e0cc260874edcd3b2a0e8d591f6c64df1775dff2087aa1ae",
+        "result_hash": "ed07ebacd66370eacb27745462bfeca101b2e511df1375927d77922483ff70e7"
+      },
+      {
+        "case_id": "non_btc_usdt_instrument",
+        "passed": true,
+        "evidence_hash": "c91f0e9d3cce78b36562f987e7b56c60cf4cd5bd7dd1361ed21be4703dc69e94",
+        "result_hash": "0ed1ff1d6deda8850e2b73db1b053287bacd771a39a989519b1f0d8d45affdab"
+      },
+      {
+        "case_id": "unsupported_order_type",
+        "passed": true,
+        "evidence_hash": "38be31a74f8f23a01e08e6b6c623128f5edaf3fa54b67f100c6d5c9b034aa051",
+        "result_hash": "2c4d571f7ac67008e6f89d4b0a4f1748a03f6ed80df380d681d3533ea49b8c71"
+      },
+      {
+        "case_id": "zero_quantity",
+        "passed": true,
+        "evidence_hash": "00774985a4fdc3e0105ac107a38aac83dccc338db50a42c0eecd77d1d96f81f6",
+        "result_hash": "ff2550254a1c572303ba7d1e9328a5f36dd1749e802c78e769ff93e73b022e18"
+      },
+      {
+        "case_id": "quantity_rounding_below_minimum",
+        "passed": true,
+        "evidence_hash": "99744fe309ea56dfb428edc1a26ba05e23eb8401945187273fb6502bf04b9b89",
+        "result_hash": "4260b558e879b59d98fd6580e9991a430eea22b7e2b3d1dd6a51b9320824d791"
+      },
+      {
+        "case_id": "quantity_rounding_above_maximum",
+        "passed": true,
+        "evidence_hash": "cf1f3e36462e4b6dd49eda27dd1d7cb19289e79f32e95381b06d5efdaf994cc7",
+        "result_hash": "0693030b703637a702a6d70b271363437879aa15895f5df312fe5e22c29d46c4"
+      },
+      {
+        "case_id": "normal_public_snapshot",
+        "passed": true,
+        "evidence_hash": "35d83676ae560bf7a92861758f1a8dca4e806e02fc08e05e15ad5f7d8e8d5261",
+        "result_hash": "3b60471881b9544343c42f2273c92cc5ab8802ac0404dae95c8c1ba055dd63da"
+      },
+      {
+        "case_id": "stale_data",
+        "passed": true,
+        "evidence_hash": "f4e5d42d8ed3870f10f16b61b587fadc57f4afc272b67dd055c08183f476ed5e",
+        "result_hash": "1c174ae122e9252c2b35600f3b9e4070216992830dff53340c6648e89ff58d90"
+      },
+      {
+        "case_id": "future_timestamp",
+        "passed": true,
+        "evidence_hash": "df0019ded30c029b8cdf11a2eaeca6e17ba12b6a436d917b8d4148350fa50079",
+        "result_hash": "7e40fa2e4509008a09fee064e9d0b083ee452fb1ec8149bfa0b1b66a7517d27b"
+      },
+      {
+        "case_id": "clock_skew",
+        "passed": true,
+        "evidence_hash": "837d0eafe3f0857ca9df56a8ad5e35513408f407450c994346c70c45b6890db2",
+        "result_hash": "3ababb12686816ac157985909726c0fe7006bc6d2582b5219a11db4d2c174df4"
+      },
+      {
+        "case_id": "crossed_bid_ask",
+        "passed": true,
+        "evidence_hash": "ed03ac0d8d0bc15c1227043af18bc9b6c6d3e34e96879b3bd65f91067bf4c9c2",
+        "result_hash": "17c2b28078d4249b209ba1b678847e43f70bab961ab5f27964e5fe6728dffe5e"
+      },
+      {
+        "case_id": "bid_zero",
+        "passed": true,
+        "evidence_hash": "1199400c03ae181b6b64eb07ac2dfbaac8a456976caae35bf1b2d1c52f3e2cc0",
+        "result_hash": "2075e3825239c691d3427226f8969619865c0606172d24d4df835e663ec74087"
+      },
+      {
+        "case_id": "ask_zero",
+        "passed": true,
+        "evidence_hash": "4f9734e96cf9962e699b1a0343c16f9daa488e65fadd49285a431be99259f82e",
+        "result_hash": "04889729bffc0651fe0feae489a45389bd7d6dc6790e3537448f4095956f7756"
+      },
+      {
+        "case_id": "negative_price",
+        "passed": true,
+        "evidence_hash": "c477f6ff1d7a2309f2795bb5c2e4fa17e7189cd4627c10376fb71e1eb92a871d",
+        "result_hash": "df76992d1ea098d762db0e8e1e3952f4cbb18ec4e2befc21a4651f664a4dfbd7"
+      },
+      {
+        "case_id": "nan_or_infinity_price",
+        "passed": true,
+        "evidence_hash": "90272e39e25a595ca34687d48e75df76855581c78a5137ae60a5cf07e6a33066",
+        "result_hash": "6bc76566affe087d9e4c23c0318b6f3eef3f5a9e4fde5a77dc496e17e6f37c8c"
+      },
+      {
+        "case_id": "missing_instrument_metadata",
+        "passed": true,
+        "evidence_hash": "5020d897c39e4b997ed43dd6e69264f8ad119e50c0486ba05b387286351d1c56",
+        "result_hash": "98f6a81dc2cab5865ddbbae1c3cc81e7a531e2575f0eeb55b6ed788fcdad3082"
+      },
+      {
+        "case_id": "delisted_instrument",
+        "passed": true,
+        "evidence_hash": "c9277a8464bc09340c9f2c17699c12d06738b508d2dc25cef62ac1290c273fcd",
+        "result_hash": "06c016e8562200e338ebe3b35e7cc07c86c78ddad18a39c082fc52f85c3591ba"
+      },
+      {
+        "case_id": "instrument_not_live",
+        "passed": true,
+        "evidence_hash": "02a358b8708535b845cff477a9aa0487397cbb3dded06a71975d24e63cf9ed9a",
+        "result_hash": "40737b1108564f1c05be8460e2a2e279a78c54d93342169e0215f2f44c3cb8ac"
+      },
+      {
+        "case_id": "wrong_instrument_type",
+        "passed": true,
+        "evidence_hash": "bf05cf630fdbb1dee4928f209abc6441aa7b4396473c95b6325faaef8477bb82",
+        "result_hash": "36671350410ff588a3518e30c5b8d38f16de231093881e2499a3827c4ab45c0c"
+      },
+      {
+        "case_id": "perpetual_instead_of_spot",
+        "passed": true,
+        "evidence_hash": "3792e4e36171f8cc17badc2a0c34eac894fdaad50ddfcc1c5f7868cb1b47520b",
+        "result_hash": "20b5266467da952ff462921d27384cfb3a6e9ee792b788b939dc35ed71073737"
+      },
+      {
+        "case_id": "duplicate_response_rows",
+        "passed": true,
+        "evidence_hash": "8f9fbcb3a7a8f6cb5444e53083ed532016016814f1c68060d851f2291e176441",
+        "result_hash": "d89eb7aa123d6802aae476af331d3cbad54548a4fe35aca086bce3f083561962"
+      },
+      {
+        "case_id": "malformed_json",
+        "passed": true,
+        "evidence_hash": "b2947378d12798947799aa5cd2aaac3fbf1375978af0c2d32312429d573fb1c7",
+        "result_hash": "90848fc869a46d1d3975f8e0582b464059f03db83f19ddc1518ca17b7dba36f8"
+      },
+      {
+        "case_id": "incomplete_response",
+        "passed": true,
+        "evidence_hash": "7c9ccd1b1e0aa1c23acd9bddc91cec1acee30d5a56053742b72d54d67fe2ed92",
+        "result_hash": "790cb3e47168d1b52edd218b22afa8fc6beef63457d11a755528ab08579da668"
+      },
+      {
+        "case_id": "provider_error_code",
+        "passed": true,
+        "evidence_hash": "3388b3673a8bad9d1b897a10838c1bbe075542509ce25d8066e00f85b09bc515",
+        "result_hash": "3cbb97fe53ea8dc787d5272406fe8c89d1fe682f806d681f34f7e03f8b1ae17e"
+      },
+      {
+        "case_id": "timeout",
+        "passed": true,
+        "evidence_hash": "eb7eb08916697d753854045f78b0422251b05da5fa6b7c6b82eceaa8b1bb4458",
+        "result_hash": "9d672c6c59e452f2462501aecde9d1a0ee922a4fa3ad5dd66b73d137e2b807c7"
+      },
+      {
+        "case_id": "connection_failure",
+        "passed": true,
+        "evidence_hash": "14e2cfda5ad1c329ae092ef8732acfb80e521ee8e77ddea80ea34fec5d07ae3d",
+        "result_hash": "da5fa6f993749b1e51c55e7840a1bb973ce26625d061e3d2b8024bf1de87ab68"
+      },
+      {
+        "case_id": "rate_limit",
+        "passed": true,
+        "evidence_hash": "f90a56571b687430849b2cd3ffdb0821b6d26876419a83cb6628f0163b789f37",
+        "result_hash": "5dcdbae4c5e95f332e9fbaf9ca5477d0434d91e70583125d0cc3e34ecbddae59"
+      },
+      {
+        "case_id": "partial_page",
+        "passed": true,
+        "evidence_hash": "825ba4bda59ac9509212feccd2d3b2aaf6a43d1a105d10c06d1013cb65c067df",
+        "result_hash": "59a279820ee9ed2d5837fa078446cfec8849c5840f747797a64e1aebcc030364"
+      },
+      {
+        "case_id": "conflicting_public_sources",
+        "passed": true,
+        "evidence_hash": "e3ce4558ae738090b57f92c247300c990375c1b631284c40da0acd9fdb8d2360",
+        "result_hash": "2b1e96cdfe21fb9dd1ec37cbf5745fb235d3b828d776200a4fcb842d04e0fed9"
+      },
+      {
+        "case_id": "public_response_replay",
+        "passed": true,
+        "evidence_hash": "bf3b0aeb3c81c15fa37e422917fd345c8b2a8623520a1ea7bfdd8778c3c99232",
+        "result_hash": "567217a6d6d10b1218aa4ca973be9bd6c84005990bdf1eaeb3e7fa37d8a9eb92"
+      },
+      {
+        "case_id": "stale_cached_response",
+        "passed": true,
+        "evidence_hash": "8c7cbda40aa746463c9c237b9057851f9f007130d33e2e603bcc5ea5e489760a",
+        "result_hash": "1936f8c83d714f5b418576785d071447b6c0b5d821fe72d1a9c74788a2fdea16"
+      },
+      {
+        "case_id": "fixture_marked_operational",
+        "passed": true,
+        "evidence_hash": "a24b6f1957f2d95180a9212db9620887d4a2e1ce6fe5342b54f4d3b80a70a62c",
+        "result_hash": "58651bd69294c7349adfcf8c10ac2742f3dfee2aa7faa410f1cc6a6303bc7931"
+      },
+      {
+        "case_id": "operational_response_marked_fixture",
+        "passed": true,
+        "evidence_hash": "e614b2a89b916a4f41ad68b1e926a647e940086b977b76be11636365bf7fa576",
+        "result_hash": "95b2017dcf15c2eca85c77e9a71c67d4f18ee773a16fa6ddaf962ed4c717b5e4"
+      }
+    ],
+    "restart_results": [
+      {
+        "case_id": "clean_flat_account",
+        "passed": true,
+        "evidence_hash": "9a8c2f1740dffca46bdcf9468009bf8ee55a20663ca12153a9b24b547f8087cc",
+        "result_hash": "a20f81c3f17a365c478457188d2aa8c0f5f4ba27de5a0b03b2a48e4d7fcaffe8"
+      },
+      {
+        "case_id": "existing_long_spot_position",
+        "passed": true,
+        "evidence_hash": "24b744be3a4af82ecf6f2eb85c6fc69638ecefbc163fe2728f7434e5ac63a9eb",
+        "result_hash": "d3d26b6e54ed7d3cffc6ed78262f5832a8e8fc19cf356ef146389462ad43f3fc"
+      },
+      {
+        "case_id": "stale_data",
+        "passed": true,
+        "evidence_hash": "616b9ae803d647fcef070b4bd32581bfaa8085369649affe455d694b0b10473f",
+        "result_hash": "12379da485e32fbf994d52f852474042bd5bb586f3f2c55e480bec04ecc90d98"
+      }
+    ],
+    "replay_results": [
+      {
+        "case_id": "clean_flat_account",
+        "passed": true,
+        "evidence_hash": "0fb47dd8d60a401f3ddd4d18d4b9efd8d85a0e6ebb2fa48325793546e2029e7b",
+        "result_hash": "b151a0dc4a1ba6e64656886f651327da85220e83ddd5b695e6e6f7e698a28f92"
+      },
+      {
+        "case_id": "existing_long_spot_position",
+        "passed": true,
+        "evidence_hash": "e384bf18dc9b31a53163a5b826531b7765f742eec5323c0383169ffec716a98d",
+        "result_hash": "7b586d697a7491aa5027051a63f9f7b78509343bbe26f97912888f7ca13559ff"
+      },
+      {
+        "case_id": "pending_buy_order",
+        "passed": true,
+        "evidence_hash": "8acd7e5879d19a696f3a13c70730fa6be5a90af17015f83a44ffa2895961582f",
+        "result_hash": "599585523c827546f572d723b1a7fc3c024d8fec88ab472e1a90dfb35330d49d"
+      },
+      {
+        "case_id": "stale_data",
+        "passed": true,
+        "evidence_hash": "669788534dc93f3ac9f8ed16de7fa9d3cef68cf03e14f30ae7395ac1dfc82fc0",
+        "result_hash": "7a870ff286f1554f014a4b655f28ad235a79e987c29fe72271bf17b00cd918da"
+      },
+      {
+        "case_id": "delisted_instrument",
+        "passed": true,
+        "evidence_hash": "9b6142adc4e5c2fe957563cf74ed40e9a4c2291928db5fb1b4b0c34bf1a63626",
+        "result_hash": "f1af586a481d85897f079ecead0d92915330b0411bda8a50ce5a1ab7d473552b"
+      },
+      {
+        "case_id": "insufficient_quote_balance",
+        "passed": true,
+        "evidence_hash": "2b56c69705298e6fd205adc33d248b00152f2233cea4f7a3f35254bae24aa899",
+        "result_hash": "bf04b2a6a64ee72db82da7cac38703314a53801eb24f8448ae7d6a566e1dcf9f"
+      }
+    ],
+    "concurrency_results": [
+      {
+        "case_id": "shadow_concurrency_01",
+        "passed": true,
+        "evidence_hash": "a6f56ef98657a18f36681df1d3ac3fa7c74032a1db7652f0a5c92988e7c4d070",
+        "result_hash": "c501707dfce1bd42bdbd22dd71ae12f5ec97b63f7451d1be0134a7aaf50535a4"
+      },
+      {
+        "case_id": "shadow_concurrency_02",
+        "passed": true,
+        "evidence_hash": "842f61a62e4273ae4dbbdf134127c5361a8bb15f629ecb907cdf532000acb816",
+        "result_hash": "78eacbed9b6b2b806125bcb60ce6f38bd5e31fc20b162b2b55e5e7052e05f5df"
+      },
+      {
+        "case_id": "shadow_concurrency_03",
+        "passed": true,
+        "evidence_hash": "c5baa513ff1b768eb6cb2206c808b3bfbdf5d7abb29b3a9fc8c2c5fb030804ef",
+        "result_hash": "7986245281f70be4d0ba6aa3b6bd357764053c38e89d5042717d1ebe14fe2e0e"
+      },
+      {
+        "case_id": "shadow_concurrency_04",
+        "passed": true,
+        "evidence_hash": "08fd65f41030a717370e6f088fa451db5478fa4fb7bb814ddedc213bb82c8db2",
+        "result_hash": "c850ffb80c77737c612506bea17a145b91c8c88586ffc71972a674b5ba45e03e"
+      },
+      {
+        "case_id": "shadow_concurrency_05",
+        "passed": true,
+        "evidence_hash": "7d3c5c948b5e4b534f52258d0d376305b4ca1c840d933cdfe7a0971a707c72df",
+        "result_hash": "009762ac70798873b6798594c3a55d9a281bd3c89933c5f5e9bf651ea28bcc80"
+      },
+      {
+        "case_id": "shadow_concurrency_06",
+        "passed": true,
+        "evidence_hash": "9f478afb7d3074bedaa91f70a842532ebd260f29902911d4d1658e053122fcd2",
+        "result_hash": "73e28468ce44cbb75c1d1409dab47f57ac734f899c378e8ca2bd4a081b9b9792"
+      },
+      {
+        "case_id": "shadow_concurrency_07",
+        "passed": true,
+        "evidence_hash": "e1f798beb4171d3daeb2b6d3f6e4dfd363936eeff0a8fad4639d285ab6143de0",
+        "result_hash": "4a704246afacb0dcf6d76da5fae39aa7cb6cce8b7d40118567c6ed2fbc72668c"
+      }
+    ],
+    "crash_results": [
+      {
+        "case_id": "after_decision_persist_before_summary",
+        "passed": true,
+        "evidence_hash": "65eb8365aabeceba6e8280d6d22db6f18a3f425b69ea8ce2337c3c739a926972",
+        "result_hash": "4bf39edad8843c72c24de45a41f830f91f7cd70f78ecb8ca5cd4677b222f5940"
+      },
+      {
+        "case_id": "after_transaction_commit_before_response",
+        "passed": true,
+        "evidence_hash": "40e1640624f2476b1d11a95fdc19bda69a555b10577b61a490d5f74dd00d1dd4",
+        "result_hash": "4b2681a056a57ab465b85ffd5c3d112cfeea24d1effd44f8830a3f9296f59a54"
+      },
+      {
+        "case_id": "approval_created",
+        "passed": true,
+        "evidence_hash": "65eb8365aabeceba6e8280d6d22db6f18a3f425b69ea8ce2337c3c739a926972",
+        "result_hash": "4497493755625d0c87e03e3bf44dbebe405d8ca1aa07a2f93a4a6312d7e4cbec"
+      },
+      {
+        "case_id": "before_decision_persist",
+        "passed": true,
+        "evidence_hash": "65eb8365aabeceba6e8280d6d22db6f18a3f425b69ea8ce2337c3c739a926972",
+        "result_hash": "62e4978f2fcaa358243cd2ee945cac032e1d3441732012d84c72f8e707ddd225"
+      },
+      {
+        "case_id": "before_transaction_commit",
+        "passed": true,
+        "evidence_hash": "65eb8365aabeceba6e8280d6d22db6f18a3f425b69ea8ce2337c3c739a926972",
+        "result_hash": "f7d613f8e1bb9f173dbb33057c984b2c764801c32168cef15d834f5a8d01f91c"
+      },
+      {
+        "case_id": "manifest_created",
+        "passed": true,
+        "evidence_hash": "65eb8365aabeceba6e8280d6d22db6f18a3f425b69ea8ce2337c3c739a926972",
+        "result_hash": "387d6b384e23b01f37cccaef483fb5dd268bae2a3eab357b9dc28ae008dff331"
+      },
+      {
+        "case_id": "market_snapshot_normalized",
+        "passed": true,
+        "evidence_hash": "65eb8365aabeceba6e8280d6d22db6f18a3f425b69ea8ce2337c3c739a926972",
+        "result_hash": "e12623820be759fd04f67ea98429ee11cbf18aaa4fa702b8e5d6988ce7db326b"
+      },
+      {
+        "case_id": "risk_evaluated",
+        "passed": true,
+        "evidence_hash": "65eb8365aabeceba6e8280d6d22db6f18a3f425b69ea8ce2337c3c739a926972",
+        "result_hash": "06c2bde2b35b965440c8747840b6a0dd319b768392e1b00fe194d43fda5f860b"
+      },
+      {
+        "case_id": "synthetic_account_validated",
+        "passed": true,
+        "evidence_hash": "65eb8365aabeceba6e8280d6d22db6f18a3f425b69ea8ce2337c3c739a926972",
+        "result_hash": "afc29780c35a373a8f21769bd58ad90bff8b7139c92ad95abd0fbe1129d411cd"
+      }
+    ],
+    "postgresql_verification": {
+      "classification": "POSTGRESQL_VERIFIER_NOT_EXECUTED",
+      "restart_results": [],
+      "replay_results": [],
+      "concurrency_results": [],
+      "crash_results": []
+    },
+    "accepted_shadow_decision_count": 7,
+    "blocked_shadow_decision_count": 47,
+    "blocker_frequencies": {
+      "ask_must_be_positive": 1,
+      "bid_must_be_positive": 1,
+      "conflicting_account_classification": 1,
+      "conflicting_public_sources": 1,
+      "crossed_bid_ask": 1,
+      "duplicate_public_response_rows": 1,
+      "duplicate_synthetic_position": 1,
+      "excessive_reserved_notional": 1,
+      "fixture_classification_mismatch": 1,
+      "incomplete_public_response": 1,
+      "instrument_delisted": 1,
+      "instrument_not_allowed": 1,
+      "instrument_not_live": 1,
+      "insufficient_base_balance": 1,
+      "insufficient_quote_balance": 1,
+      "kill_switch_not_armed": 1,
+      "malformed_account_snapshot": 1,
+      "malformed_public_response": 1,
+      "market_price_must_be_positive": 1,
+      "market_price_not_finite": 1,
+      "maximum_clock_skew": 1,
+      "maximum_daily_realized_loss": 1,
+      "missing_instrument_metadata": 1,
+      "negative_synthetic_balance": 1,
+      "only_limit_orders_allowed": 1,
+      "operational_classification_mismatch": 1,
+      "partial_public_response": 1,
+      "public_market_future_timestamp": 1,
+      "public_network_connection_failure": 1,
+      "public_network_rate_limit": 1,
+      "public_network_timeout": 1,
+      "public_provider_error": 1,
+      "public_response_replay": 1,
+      "quantity_above_maximum_after_rounding": 1,
+      "quantity_below_minimum_after_rounding": 1,
+      "quantity_must_be_positive": 1,
+      "quantity_not_finite": 1,
+      "stale_cached_response": 1,
+      "stale_market_data": 1,
+      "synthetic_derivative_exposure": 3,
+      "synthetic_permission_not_trade_enabled": 1,
+      "synthetic_short_position": 1,
+      "wrong_instrument_type": 2,
+      "wrong_settlement_asset": 1
+    },
+    "zero_write_facts": {
+      "network_write_count": 0,
+      "production_transport_call_count": 0,
+      "authenticated_endpoint_call_count": 0,
+      "credential_read_count": 0,
+      "production_write_count": 0
+    },
+    "verifier_result_sha256": "1747a9ac7d48fc2cbecf6dbfcf9c8aa0d566cb71e9dc4f7f684868649bbdc4af"
+  },
+  "verifier_result_sha256": "1747a9ac7d48fc2cbecf6dbfcf9c8aa0d566cb71e9dc4f7f684868649bbdc4af",
+  "scenario_catalog_sha256": "a0a69cf33a1313f6791197b2090c489064c042520d216ac09791b20c83d1c49e",
+  "runtime_implementation_sha256": "7973dd923c3e0390bcb1eab32337ce2cdccb338842b44c3e2b08ab3deb1bf76d",
+  "postgresql_verification_classification": "POSTGRESQL_VERIFIER_NOT_EXECUTED",
   "fixture_scenario_count": 54,
   "mock_account_scenario_count": 27,
   "public_market_failure_scenario_count": 27,
@@ -11,6 +569,10 @@
   "replay_scenarios_passed": 6,
   "concurrency_scenarios_passed": 7,
   "crash_recovery_scenarios_passed": 9,
+  "postgresql_restart_scenarios_passed": 0,
+  "postgresql_replay_scenarios_passed": 0,
+  "postgresql_concurrency_scenarios_passed": 0,
+  "postgresql_crash_recovery_scenarios_passed": 0,
   "accepted_shadow_decision_count": 7,
   "blocked_shadow_decision_count": 47,
   "blocker_frequencies": {
@@ -62,6 +624,7 @@
   "stale_data_rejection_count": 2,
   "malformed_data_rejection_count": 4,
   "synthetic_exposure_rejection_count": 4,
+  "network_write_count": 0,
   "production_transport_call_count": 0,
   "authenticated_endpoint_call_count": 0,
   "credential_read_count": 0,
@@ -72,10 +635,14 @@
   "operator_database_accessed": false,
   "authenticated_proof_executed": false,
   "public_network_smoke_status": "PUBLIC_NETWORK_SMOKE_NOT_EXECUTED",
+  "public_network_smoke_read_count": 0,
+  "public_network_smoke_source_hashes": [],
+  "public_network_smoke_provenance_hash": null,
+  "public_network_smoke_result_hash": null,
   "migration_count": 26,
   "latest_migration": "0026",
   "migration_0026_sha256": "698772fb68c5c4981256682d064c3be641193ab10c8dbf55e1a5b390ca7c504a",
   "migration_0027_exists": false,
-  "evidence_payload_sha256": "a7af4bccbc72d4b3fc0adbd4bef78b5a013e95b1c8e8a12806dc35916e1bd248",
+  "evidence_payload_sha256": "ed88f2f2113170cdd8ab1f0de9eb00995db18edac9caa6fdc37a8d9f385adab6",
   "independent_audit_status": "pending"
 }
