@@ -56,7 +56,7 @@ class Phase8BShadowRestartReplayTests(unittest.TestCase):
     def test_five_single_field_modifications_preserve_lineage_and_old_evidence(self):
         base = scenario_by_id("clean_flat_account")
         store = ShadowMemoryStore()
-        base_summary = runtime(store=store).run_scenario(base)
+        base_summary = runtime(store=store)._run_fixture_scenario_for_test(base)
         variants = []
 
         market = deepcopy(dict(base.market_payload)); market["last_price"] = "50001"
@@ -72,7 +72,7 @@ class Phase8BShadowRestartReplayTests(unittest.TestCase):
 
         for variant in variants:
             with self.subTest(variant=variant.scenario_id):
-                summary = runtime(store=store).run_scenario(
+                summary = runtime(store=store)._run_fixture_scenario_for_test(
                     variant,
                     parent_input_hash=base_summary.input_hash,
                 )

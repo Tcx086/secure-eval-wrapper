@@ -1,15 +1,28 @@
 """Credential-free Phase 8B shadow assurance runtime."""
 from __future__ import annotations
 
+from dataclasses import dataclass
+from hashlib import sha256
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from types import MappingProxyType
 from typing import Callable, Mapping
+from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from secure_eval_wrapper.alpha.identity import SeriesIdentity
 from secure_eval_wrapper.data_collection.hashing import sha256_payload
-from secure_eval_wrapper.data_collection.models import DataRequest, InstrumentType, MarketDataType
+from secure_eval_wrapper.data_collection.http_transport import (
+    HttpRequest,
+    HttpResponse,
+    HttpTransport,
+    UrlLibHttpTransport,
+)
+from secure_eval_wrapper.data_collection.models import (
+    DataRequest,
+    InstrumentType,
+    MarketDataType,
+)
 from secure_eval_wrapper.execution.models import OrderSide
 from secure_eval_wrapper.paper.models import PaperMarketDataEvidence
 from secure_eval_wrapper.signals.models import SignalDirection, StandardizedSignal
@@ -77,11 +90,32 @@ class ShadowAuthorityError(PermissionError):
     pass
 
 
-class ShadowPublicDataFailure(RuntimeError):
-    def __init__(self, failure_kind: str, network_read_count: int) -> None:
-        self.failure_kind = failure_kind
-        self.network_read_count = network_read_count
-        super().__init__("bounded public shadow market read failed")
+_PUBLIC_ENDPOINT_IDENTITIES = (
+    "GET /api/v5/public/instruments",
+    "GET /api/v5/market/history-trades",
+)
+_PUBLIC_PROVENANCE_CAPABILITY = object()
+_TEST_TRANSPORT_CAPABILITY = object()
+
+
+@dataclass(frozen=True, slots=True)
+class _PublicSourceProvenance:
+    source_exact_type: str
+    endpoint_identities: tuple[str, ...]
+    actual_send_count: int
+    response_source_hashes: tuple[str, ...]
+    instrument: str
+    classification: str
+    payload_hash: str
+    failure_kind: str | None
+    token_hash: str
+    _capability: object
+
+
+@dataclass(frozen=True, slots=True)
+class _PublicMarketLoad:
+    payload: Mapping[str, object]
+    provenance: _PublicSourceProvenance
 
 
 def _public_failure_kind(exc: Exception) -> str:
@@ -114,8 +148,80 @@ def _parse_decimal(value: object) -> Decimal:
         raise ValueError("value is not a Decimal") from exc
 
 
+def _provenance_core(
+    *,
+    source_exact_type: str,
+    endpoint_identities: tuple[str, ...],
+    actual_send_count: int,
+    response_source_hashes: tuple[str, ...],
+    instrument: str,
+    classification: str,
+    payload_hash: str,
+    failure_kind: str | None,
+) -> dict[str, object]:
+    return {
+        "source_exact_type": source_exact_type,
+        "endpoint_identities": endpoint_identities,
+        "actual_send_count": actual_send_count,
+        "response_source_hashes": response_source_hashes,
+        "instrument": instrument,
+        "classification": classification,
+        "payload_hash": payload_hash,
+        "failure_kind": failure_kind,
+    }
+
+
+class ShadowPublicDataFailure(RuntimeError):
+    def __init__(self, failure_kind: str, load: _PublicMarketLoad) -> None:
+        self.failure_kind = failure_kind
+        self.load = load
+        self.provenance = load.provenance
+        self.network_read_count = load.provenance.actual_send_count
+        super().__init__("bounded public shadow market read failed")
+
+
+class _CountingPublicTransport:
+    __slots__ = (
+        "_delegate",
+        "actual_send_count",
+        "endpoint_identities",
+        "response_hashes",
+    )
+
+    def __init__(self, delegate: HttpTransport) -> None:
+        self._delegate = delegate
+        self.actual_send_count = 0
+        self.endpoint_identities: list[str] = []
+        self.response_hashes: list[str] = []
+
+    def send(self, request: HttpRequest) -> HttpResponse:
+        path = urlsplit(request.url).path
+        identity = f"{request.method} {path}"
+        if (
+            self.actual_send_count >= len(_PUBLIC_ENDPOINT_IDENTITIES)
+            or identity != _PUBLIC_ENDPOINT_IDENTITIES[self.actual_send_count]
+            or request.method != "GET"
+            or dict(request.headers)
+            or any("auth" in str(key).lower() for key in request.headers)
+        ):
+            raise ShadowAuthorityError("public shadow transport rejected request identity")
+        self.actual_send_count += 1
+        self.endpoint_identities.append(identity)
+        response = self._delegate.send(request)
+        if type(response) is not HttpResponse:
+            raise ShadowAuthorityError("public shadow transport returned an invalid response type")
+        self.response_hashes.append(sha256_payload({
+            "status": response.status,
+            "body_sha256": sha256(response.body_bytes).hexdigest(),
+            "headers": dict(response.headers),
+        }))
+        return response
+
+
 class FixtureShadowMarketSource:
     """Exact fixture catalog source with no socket-capable dependency."""
+
+    __slots__ = ()
 
     def load(self, scenario_id: str, *, at_utc: datetime) -> Mapping[str, object]:
         del at_utc
@@ -123,16 +229,118 @@ class FixtureShadowMarketSource:
 
 
 class OkxPublicShadowMarketSource:
-    """Internally constructs only the audited unauthenticated public provider."""
+    """Construct only the audited unauthenticated provider and seal its provenance."""
 
-    def __init__(self, *, allow_public_network: bool, timeout_seconds: float = 3.0) -> None:
+    __slots__ = ("_timeout_seconds", "_transport", "_last_provenance")
+
+    def __init__(
+        self,
+        *,
+        allow_public_network: bool,
+        timeout_seconds: float = 3.0,
+        _transport_for_test: HttpTransport | None = None,
+        _test_capability: object | None = None,
+    ) -> None:
         if allow_public_network is not True:
             raise ShadowAuthorityError("public network source requires the exact opt-in flag")
         if isinstance(timeout_seconds, bool) or not 0 < timeout_seconds <= 10:
             raise ValueError("public network timeout must be in (0, 10] seconds")
-        self.timeout_seconds = float(timeout_seconds)
+        if _transport_for_test is not None and _test_capability is not _TEST_TRANSPORT_CAPABILITY:
+            raise ShadowAuthorityError("fake public transport is test-internal only")
+        self._timeout_seconds = float(timeout_seconds)
+        self._transport = (
+            UrlLibHttpTransport() if _transport_for_test is None else _transport_for_test
+        )
+        self._last_provenance: _PublicSourceProvenance | None = None
 
-    def load(self, scenario_id: str, *, at_utc: datetime) -> Mapping[str, object]:
+    @classmethod
+    def _for_test(
+        cls,
+        transport: HttpTransport,
+        *,
+        timeout_seconds: float = 3.0,
+    ) -> "OkxPublicShadowMarketSource":
+        return cls(
+            allow_public_network=True,
+            timeout_seconds=timeout_seconds,
+            _transport_for_test=transport,
+            _test_capability=_TEST_TRANSPORT_CAPABILITY,
+        )
+
+    @property
+    def timeout_seconds(self) -> float:
+        return self._timeout_seconds
+
+    @property
+    def safety_facts(self) -> ShadowSafetyFacts:
+        provenance = self._last_provenance
+        return ShadowSafetyFacts(
+            network_read_count=0 if provenance is None else provenance.actual_send_count,
+            network_write_count=0,
+            authenticated_endpoint_call_count=0,
+            production_transport_call_count=0,
+        )
+
+    def _issue_provenance(
+        self,
+        *,
+        transport: _CountingPublicTransport,
+        response_source_hashes: tuple[str, ...],
+        classification: str,
+        payload_hash: str,
+        failure_kind: str | None,
+    ) -> _PublicSourceProvenance:
+        source_exact_type = f"{type(self).__module__}.{type(self).__qualname__}"
+        core = _provenance_core(
+            source_exact_type=source_exact_type,
+            endpoint_identities=tuple(transport.endpoint_identities),
+            actual_send_count=transport.actual_send_count,
+            response_source_hashes=response_source_hashes,
+            instrument="BTC-USDT",
+            classification=classification,
+            payload_hash=payload_hash,
+            failure_kind=failure_kind,
+        )
+        provenance = _PublicSourceProvenance(
+            **core,
+            token_hash=sha256_payload(core),
+            _capability=_PUBLIC_PROVENANCE_CAPABILITY,
+        )
+        self._last_provenance = provenance
+        return provenance
+
+    def _failure(
+        self,
+        exc: Exception,
+        *,
+        at_utc: datetime,
+        transport: _CountingPublicTransport,
+        response_source_hashes: tuple[str, ...],
+    ) -> ShadowPublicDataFailure:
+        response_source_hashes = tuple(transport.response_hashes)
+        failure_kind = _public_failure_kind(exc)
+        payload = dict(scenario_by_id("normal_public_snapshot").market_payload)
+        payload.update(
+            classification="unavailable",
+            failure_kind=failure_kind,
+            source_identity="okx-public-network-unavailable",
+            network_read_count=transport.actual_send_count,
+            public_timestamp_utc=at_utc.isoformat(),
+            public_source_hashes=response_source_hashes,
+        )
+        provenance = self._issue_provenance(
+            transport=transport,
+            response_source_hashes=response_source_hashes,
+            classification="unavailable",
+            payload_hash=sha256_payload(payload),
+            failure_kind=failure_kind,
+        )
+        return ShadowPublicDataFailure(
+            failure_kind,
+            _PublicMarketLoad(MappingProxyType(payload), provenance),
+        )
+
+    def load(self, scenario_id: str, *, at_utc: datetime) -> _PublicMarketLoad:
         if scenario_id != "public_network_okx_btc_usdt":
             raise ValueError("public shadow source permits only BTC-USDT")
         from secure_eval_wrapper.data_collection.okx_v5_public import (
@@ -142,25 +350,35 @@ class OkxPublicShadowMarketSource:
 
         key = okx_spot_instrument_key("BTC-USDT")
         collection_id = shadow_uuid("public-collection", {"at": at_utc, "instrument": "BTC-USDT"})
+        counting = _CountingPublicTransport(self._transport)
         provider = OkxPublicProvider(
+            transport=counting,
             timeout=self.timeout_seconds,
             max_pages=1,
             clock=lambda: at_utc,
         )
-        network_read_count = 1
+        response_hashes: tuple[str, ...] = ()
         try:
             instruments = provider.fetch_instruments(
                 DataRequest(
                     collection_id,
                     "okx",
                     MarketDataType.INSTRUMENTS,
-                    ("BTC-USDT",),
+                    (),
+                    limit=1,
                     instruments=(key,),
                 )
             )
         except Exception as exc:
-            raise ShadowPublicDataFailure(_public_failure_kind(exc), network_read_count) from exc
-        network_read_count = 2
+            raise self._failure(
+                exc, at_utc=at_utc, transport=counting, response_source_hashes=response_hashes
+            ) from exc
+        if len(instruments) != 1:
+            exc = ValueError("public instrument response must contain exactly one record")
+            raise self._failure(
+                exc, at_utc=at_utc, transport=counting, response_source_hashes=response_hashes
+            )
+        response_hashes = (instruments[0].source_sha256,)
         try:
             trades = provider.fetch_trades(
                 DataRequest(
@@ -172,18 +390,23 @@ class OkxPublicShadowMarketSource:
                     end_at_utc=at_utc + timedelta(milliseconds=1),
                     limit=10,
                     max_pages=1,
-                    instruments=(key,),
                 )
             )
         except Exception as exc:
-            raise ShadowPublicDataFailure(_public_failure_kind(exc), network_read_count) from exc
-        if len(instruments) != 1 or not trades:
-            raise ShadowPublicDataFailure("malformed_json", network_read_count)
-        metadata = dict(instruments[0].payload)
+            raise self._failure(
+                exc, at_utc=at_utc, transport=counting, response_source_hashes=response_hashes
+            ) from exc
+        if not trades:
+            exc = ValueError("public trade response must contain at least one record")
+            raise self._failure(
+                exc, at_utc=at_utc, transport=counting, response_source_hashes=response_hashes
+            )
         latest = max(trades, key=lambda observation: observation.observed_at_utc)
+        response_hashes = tuple(counting.response_hashes)
+        metadata = dict(instruments[0].payload)
         trade = dict(latest.payload)
         price = str(trade["price"])
-        return MappingProxyType({
+        payload = {
             "provider": "okx",
             "instrument": "BTC-USDT",
             "instrument_type": "spot",
@@ -199,7 +422,7 @@ class OkxPublicShadowMarketSource:
             "maximum_quantity": "0.1",
             "source_identity": "secure_eval_wrapper.data_collection.OkxPublicProvider",
             "classification": "public_network",
-            "network_read_count": 2,
+            "network_read_count": counting.actual_send_count,
             "response_rows": 1,
             "metadata_present": True,
             "response_complete": True,
@@ -210,8 +433,83 @@ class OkxPublicShadowMarketSource:
             "fixture_declared_operational": False,
             "operational_declared_fixture": False,
             "failure_kind": None,
-            "public_source_hashes": (instruments[0].source_sha256, latest.source_sha256),
-        })
+            "public_source_hashes": response_hashes,
+        }
+        provenance = self._issue_provenance(
+            transport=counting,
+            response_source_hashes=response_hashes,
+            classification="public_network",
+            payload_hash=sha256_payload(payload),
+            failure_kind=None,
+        )
+        return _PublicMarketLoad(MappingProxyType(payload), provenance)
+
+
+_AUDITED_PUBLIC_LOAD_METHOD = OkxPublicShadowMarketSource.load
+
+
+def _validate_public_source_provenance(
+    source: OkxPublicShadowMarketSource,
+    provenance: _PublicSourceProvenance,
+    market_payload: Mapping[str, object],
+) -> None:
+    if (
+        type(source) is not OkxPublicShadowMarketSource
+        or source._last_provenance is not provenance
+        or type(provenance) is not _PublicSourceProvenance
+        or provenance._capability is not _PUBLIC_PROVENANCE_CAPABILITY
+    ):
+        raise ShadowAuthorityError("public shadow provenance capability is invalid")
+    source_type = (
+        f"{OkxPublicShadowMarketSource.__module__}."
+        f"{OkxPublicShadowMarketSource.__qualname__}"
+    )
+    classification = str(market_payload.get("classification"))
+    failure_kind = market_payload.get("failure_kind")
+    if classification == "public_network":
+        payload_hash = sha256_payload(dict(market_payload))
+        if (
+            provenance.actual_send_count != 2
+            or provenance.endpoint_identities != _PUBLIC_ENDPOINT_IDENTITIES
+            or len(provenance.response_source_hashes) != 2
+            or tuple(market_payload.get("public_source_hashes", ()))
+            != provenance.response_source_hashes
+            or failure_kind is not None
+        ):
+            raise ShadowAuthorityError("public shadow success provenance is incomplete")
+    elif classification == "unavailable":
+        payload_hash = sha256_payload(dict(market_payload))
+        if (
+            provenance.endpoint_identities
+            != _PUBLIC_ENDPOINT_IDENTITIES[:provenance.actual_send_count]
+            or provenance.actual_send_count not in (0, 1, 2)
+            or len(provenance.response_source_hashes) > provenance.actual_send_count
+            or tuple(market_payload.get("public_source_hashes", ())) != provenance.response_source_hashes
+            or not isinstance(failure_kind, str)
+        ):
+            raise ShadowAuthorityError("public shadow failure provenance is incomplete")
+    else:
+        raise ShadowAuthorityError("public shadow classification is not source-issued")
+    core = _provenance_core(
+        source_exact_type=provenance.source_exact_type,
+        endpoint_identities=provenance.endpoint_identities,
+        actual_send_count=provenance.actual_send_count,
+        response_source_hashes=provenance.response_source_hashes,
+        instrument=provenance.instrument,
+        classification=provenance.classification,
+        payload_hash=provenance.payload_hash,
+        failure_kind=provenance.failure_kind,
+    )
+    if (
+        provenance.source_exact_type != source_type
+        or provenance.instrument != "BTC-USDT"
+        or provenance.classification != classification
+        or provenance.failure_kind != failure_kind
+        or provenance.payload_hash != payload_hash
+        or provenance.token_hash != sha256_payload(core)
+        or provenance.actual_send_count != int(market_payload.get("network_read_count", -1))
+    ):
+        raise ShadowAuthorityError("public shadow provenance token does not bind the payload")
 
 
 _ALLOWED_SOURCE_TYPES = (FixtureShadowMarketSource, OkxPublicShadowMarketSource)
@@ -531,11 +829,32 @@ class ShadowAssuranceRuntime:
     ) -> ShadowRunSummary:
         if type(self.market_source) is not FixtureShadowMarketSource:
             raise ShadowAuthorityError("fixture execution requires the exact fixture source")
-        return self.run_scenario(
+        return self._run_validated_input(
             scenario_by_id(fixture_name),
             shadow_run_id=shadow_run_id,
             parent_input_hash=parent_input_hash,
             crash_at=crash_at,
+            _source_mode="fixture",
+            _public_provenance=None,
+        )
+
+    def _run_fixture_scenario_for_test(
+        self,
+        scenario: ShadowScenarioSpec,
+        *,
+        shadow_run_id: UUID | None = None,
+        parent_input_hash: str | None = None,
+        crash_at: str | None = None,
+    ) -> ShadowRunSummary:
+        if type(self.market_source) is not FixtureShadowMarketSource:
+            raise ShadowAuthorityError("fixture-only test execution requires the exact fixture source")
+        return self._run_validated_input(
+            scenario,
+            shadow_run_id=shadow_run_id,
+            parent_input_hash=parent_input_hash,
+            crash_at=crash_at,
+            _source_mode="fixture",
+            _public_provenance=None,
         )
 
     def run_public(
@@ -548,59 +867,93 @@ class ShadowAssuranceRuntime:
     ) -> ShadowRunSummary:
         if type(self.market_source) is not OkxPublicShadowMarketSource:
             raise ShadowAuthorityError("public execution requires the exact public source")
+        bound_load = getattr(self.market_source, "load", None)
+        if getattr(bound_load, "__func__", None) is not _AUDITED_PUBLIC_LOAD_METHOD:
+            raise ShadowAuthorityError("public source load implementation was replaced")
         if provider.lower() != "okx" or instrument.upper() != "BTC-USDT":
             raise ShadowAuthorityError("public shadow mode permits only audited OKX BTC-USDT Spot")
         now = datetime.now(timezone.utc) if at_utc is None else at_utc
         base = scenario_by_id("normal_public_snapshot")
         try:
-            market = self.market_source.load("public_network_okx_btc_usdt", at_utc=now)
-        except Exception as exc:
-            if isinstance(exc, ShadowPublicDataFailure):
-                failure_kind = exc.failure_kind
-                network_read_count = exc.network_read_count
-            else:
-                failure_kind = "connection_failure"
-                network_read_count = 0
-            market = dict(base.market_payload)
-            market.update(
-                classification="unavailable",
-                failure_kind=failure_kind,
-                source_identity="okx-public-network-unavailable",
-                network_read_count=network_read_count,
-                public_timestamp_utc=now.isoformat(),
-            )
+            loaded = bound_load("public_network_okx_btc_usdt", at_utc=now)
+        except ShadowPublicDataFailure as exc:
+            loaded = exc.load
+        if type(loaded) is not _PublicMarketLoad:
+            raise ShadowAuthorityError("public source returned an unsealed payload")
+        market = dict(loaded.payload)
+        _validate_public_source_provenance(self.market_source, loaded.provenance, market)
         failure_blocker = {
             "timeout": "public_network_timeout",
             "rate_limit": "public_network_rate_limit",
             "malformed_json": "malformed_public_response",
             "connection_failure": "public_network_connection_failure",
         }.get(market.get("failure_kind"))
-        request = dict(base.request_payload); request["decision_at_utc"] = now.isoformat()
+        request = dict(base.request_payload)
+        request["decision_at_utc"] = now.isoformat()
         scenario = ShadowScenarioSpec(
             "public_network_okx_btc_usdt",
             "market",
             base.account_payload,
             market,
             request,
-            "accepted" if market.get("failure_kind") is None else "blocked",
+            "accepted" if failure_blocker is None else "blocked",
             () if failure_blocker is None else (failure_blocker,),
-            1 if market.get("failure_kind") is None else 0,
-            int(market.get("network_read_count", 0)),
+            1 if failure_blocker is None else 0,
+            loaded.provenance.actual_send_count,
             0,
             "persisted",
         )
-        return self.run_scenario(scenario, shadow_run_id=shadow_run_id)
+        return self._run_validated_input(
+            scenario,
+            shadow_run_id=shadow_run_id,
+            _source_mode="public",
+            _public_provenance=loaded.provenance,
+        )
 
-    def run_scenario(
+    def _run_validated_input(
         self,
         scenario: ShadowScenarioSpec,
         *,
         shadow_run_id: UUID | None = None,
         parent_input_hash: str | None = None,
         crash_at: str | None = None,
+        _source_mode: str,
+        _public_provenance: _PublicSourceProvenance | None,
     ) -> ShadowRunSummary:
+        if type(scenario) is not ShadowScenarioSpec:
+            raise ShadowAuthorityError("shadow input must use the exact scenario type")
+        classification = scenario.market_payload.get("classification")
+        reads = scenario.market_payload.get("network_read_count")
+        if _source_mode == "fixture":
+            if (
+                type(self.market_source) is not FixtureShadowMarketSource
+                or classification != "fixture"
+                or reads != 0
+                or _public_provenance is not None
+                or "public_source_hashes" in scenario.market_payload
+            ):
+                raise ShadowAuthorityError(
+                    "fixture-only execution requires fixture classification and zero reads"
+                )
+        elif _source_mode == "public":
+            if (
+                type(self.market_source) is not OkxPublicShadowMarketSource
+                or _public_provenance is None
+            ):
+                raise ShadowAuthorityError("public execution requires source-produced provenance")
+            _validate_public_source_provenance(
+                self.market_source, _public_provenance, scenario.market_payload
+            )
+        else:
+            raise ShadowAuthorityError("unknown shadow source mode")
         if crash_at is not None and crash_at not in RUNTIME_CRASH_POINTS:
             raise ValueError("unknown Phase 8B shadow crash point")
+        public_source_hashes = (
+            () if _public_provenance is None else _public_provenance.response_source_hashes
+        )
+        public_provenance_hash = (
+            None if _public_provenance is None else _public_provenance.token_hash
+        )
         identity = self.identity_resolver()
         repository_sha = identity.observed_commit_sha
         raw_account_hash = sha256_payload(dict(scenario.account_payload))
@@ -720,7 +1073,12 @@ class ShadowAssuranceRuntime:
                 repository_sha,
                 parent_input_hash,
             )
-            return self._persist_and_summarize(decision, crash_at=crash_at)
+            return self._persist_and_summarize(
+                decision,
+                crash_at=crash_at,
+                public_source_hashes=public_source_hashes,
+                public_provenance_hash=public_provenance_hash,
+            )
 
         series = SeriesIdentity(
             "okx",
@@ -990,13 +1348,20 @@ class ShadowAssuranceRuntime:
             repository_sha,
             parent_input_hash,
         )
-        return self._persist_and_summarize(decision, crash_at=crash_at)
+        return self._persist_and_summarize(
+            decision,
+            crash_at=crash_at,
+            public_source_hashes=public_source_hashes,
+            public_provenance_hash=public_provenance_hash,
+        )
 
     def _persist_and_summarize(
         self,
         decision: ShadowDecisionRecord,
         *,
         crash_at: str | None,
+        public_source_hashes: tuple[str, ...],
+        public_provenance_hash: str | None,
     ) -> ShadowRunSummary:
         if crash_at == "before_decision_persist":
             raise ShadowInjectedCrash(crash_at)
@@ -1013,6 +1378,8 @@ class ShadowAssuranceRuntime:
             "idempotent_replay" if replayed else "persisted",
             replayed,
             decision.safety_facts,
+            public_source_hashes,
+            public_provenance_hash,
         )
 
 

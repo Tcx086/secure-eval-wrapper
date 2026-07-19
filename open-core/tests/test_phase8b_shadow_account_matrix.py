@@ -14,7 +14,7 @@ class Phase8BShadowAccountMatrixTests(unittest.TestCase):
         self.assertEqual(len({scenario.input_hash for scenario in scenarios}), 27)
         for scenario in scenarios:
             with self.subTest(scenario=scenario.scenario_id):
-                summary = runtime().run_scenario(scenario)
+                summary = runtime()._run_fixture_scenario_for_test(scenario)
                 self.assertEqual(
                     "accepted" if summary.accepted else "blocked",
                     scenario.expected_result,

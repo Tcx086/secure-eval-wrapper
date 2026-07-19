@@ -79,8 +79,40 @@ class Phase8BShadowBoundaryTests(unittest.TestCase):
             for node in ast.walk(tree)
             if isinstance(node, ast.ImportFrom)
         )
-        forbidden = (".broker", ".venue", ".credentials", ".readonly_preflight")
-        self.assertFalse(any(name.endswith(forbidden) for name in imports))
+        forbidden = ("broker", "venues.okx_live", "credentials", "readonly_preflight")
+        self.assertFalse(any(any(part in name for part in forbidden) for name in imports))
+
+    def test_shadow_modules_exclude_dynamic_imports_authenticated_proof_and_private_endpoints(self):
+        directory = Path(inspect.getsourcefile(ShadowAssuranceRuntime)).parent
+        for filename in (
+            "shadow_runtime.py",
+            "shadow_cli.py",
+            "shadow_repository.py",
+            "shadow_verifier.py",
+            "shadow_evidence.py",
+        ):
+            with self.subTest(filename=filename):
+                source = (directory / filename).read_text(encoding="utf-8")
+                tree = ast.parse(source)
+                dynamic_calls = {
+                    node.func.id
+                    for node in ast.walk(tree)
+                    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id in {"__import__", "eval", "exec"}
+                }
+                dynamic_calls.update(
+                    node.func.attr
+                    for node in ast.walk(tree)
+                    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "import_module"
+                )
+                self.assertFalse(dynamic_calls)
+                self.assertNotIn("run_authenticated_readonly_preflight", source)
+                self.assertNotIn("build_authenticated_readonly_proof", source)
+                self.assertNotIn("OkxProductionSpotAdapter", source)
+                self.assertNotIn("GuardedLiveBroker", source)
+                self.assertNotIn("OKX_PRIVATE", source)
+                self.assertNotIn("OKX_PRODUCTION_BASE_URL", source)
 
     def test_fixture_source_has_no_generic_transport_or_write_symbols(self):
         source = FixtureShadowMarketSource()

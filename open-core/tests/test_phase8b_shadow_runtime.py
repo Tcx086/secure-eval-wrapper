@@ -68,7 +68,7 @@ class Phase8BShadowRuntimeTests(unittest.TestCase):
         with self.assertRaises(ShadowAuthorityError):
             OkxPublicShadowMarketSource(allow_public_network=False)
 
-    def test_public_failure_reports_attempted_read_without_leaking_exception(self):
+    def test_local_public_failure_reports_zero_sends_without_leaking_exception(self):
         service = ShadowAssuranceRuntime(
             repository=MemoryShadowRepository(),
             market_source=OkxPublicShadowMarketSource(allow_public_network=True),
@@ -83,7 +83,7 @@ class Phase8BShadowRuntimeTests(unittest.TestCase):
             )
         self.assertFalse(summary.accepted)
         self.assertEqual(summary.blockers, ("public_network_timeout",))
-        self.assertEqual(summary.safety_facts.network_read_count, 1)
+        self.assertEqual(summary.safety_facts.network_read_count, 0)
         self.assertNotIn("private upstream diagnostic", str(summary.public_payload()))
 
     def test_summary_never_claims_account_or_authenticated_proof(self):

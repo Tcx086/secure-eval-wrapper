@@ -364,6 +364,9 @@ Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarde
 - [x] Reuse `audit.run_manifests` for atomic PostgreSQL 16 shadow bundles without adding migration `0027`; require exact disposable database names, immutable migrations `0001` through `0026`, canonical migration `0026`, restart reload, idempotent replay, explicit conflict, lineage, seven concurrency cases, and nine crash-recovery cases.
 - [x] Add eight focused suites, six-job CI integration, CLI/documentation, and a fixed-allowlist public assurance artifact with forbidden-key, secret/path, and high-entropy scans; the artifact remains `implemented_pending_independent_audit` and never claims authenticated proof or production authority.
 - [x] Confirm this candidate uses no real credentials, real account data, authenticated endpoints, operator database, production transport, production order, or production cancellation; real proof authorization remains NO and the operator bootstrap remains unexecuted.
+- [x] Repair the shadow public-source boundary with the exact two anonymous OKX GETs, a symbols-only bounded trade request, true send-boundary counts, and source-instance-issued provenance that is validated before persistence.
+- [x] Require literal loopback and exact disposable shadow PostgreSQL targets before connect, delegate authentication to libpq without a password CLI argument, reject catalog and row contamination, and share one canonical ordered migration `0001`-`0026` identity with bootstrap.
+- [x] Replace caller-fed assurance counts with an executable repository/catalog/runtime-bound verifier, classify PostgreSQL and public smoke as not executed in the checked artifact, and add fake-transport, provenance, migration, CLI, evidence-tamper, contamination, restart, replay, concurrency, and crash regressions while keeping independent audit pending.
 
 ## Todo
 

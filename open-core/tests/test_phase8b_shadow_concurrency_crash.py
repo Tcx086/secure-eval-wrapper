@@ -38,7 +38,7 @@ class Phase8BShadowConcurrencyCrashTests(unittest.TestCase):
         run_id = UUID("00000000-0000-5000-8000-000000008b01")
         with ThreadPoolExecutor(max_workers=2) as pool:
             results = tuple(pool.map(
-                lambda _: runtime(store=store).run_scenario(base, shadow_run_id=run_id),
+                lambda _: runtime(store=store)._run_fixture_scenario_for_test(base, shadow_run_id=run_id),
                 range(2),
             ))
         self.assertEqual(sum(item.replayed for item in results), 1)
@@ -50,8 +50,8 @@ class Phase8BShadowConcurrencyCrashTests(unittest.TestCase):
         market_variant = _variant(base, "concurrent_market_variant", market=market)
         with ThreadPoolExecutor(max_workers=2) as pool:
             market_results = (
-                pool.submit(runtime(store=store).run_scenario, base),
-                pool.submit(runtime(store=store).run_scenario, market_variant),
+                pool.submit(runtime(store=store)._run_fixture_scenario_for_test, base),
+                pool.submit(runtime(store=store)._run_fixture_scenario_for_test, market_variant),
             )
             market_results = tuple(item.result() for item in market_results)
         self.assertEqual(len({item.input_hash for item in market_results}), 2)
@@ -62,8 +62,8 @@ class Phase8BShadowConcurrencyCrashTests(unittest.TestCase):
         account_variant = _variant(base, "concurrent_account_variant", account=account)
         with ThreadPoolExecutor(max_workers=2) as pool:
             account_results = (
-                pool.submit(runtime(store=store).run_scenario, base),
-                pool.submit(runtime(store=store).run_scenario, account_variant),
+                pool.submit(runtime(store=store)._run_fixture_scenario_for_test, base),
+                pool.submit(runtime(store=store)._run_fixture_scenario_for_test, account_variant),
             )
             account_results = tuple(item.result() for item in account_results)
         self.assertEqual(len({item.input_hash for item in account_results}), 2)
@@ -71,14 +71,14 @@ class Phase8BShadowConcurrencyCrashTests(unittest.TestCase):
         # 4. The same run ID cannot silently overwrite a different payload.
         store = ShadowMemoryStore()
         conflict_id = UUID("00000000-0000-5000-8000-000000008b04")
-        runtime(store=store).run_scenario(base, shadow_run_id=conflict_id)
+        runtime(store=store)._run_fixture_scenario_for_test(base, shadow_run_id=conflict_id)
         with self.assertRaises(ShadowPersistenceConflict):
-            runtime(store=store).run_scenario(market_variant, shadow_run_id=conflict_id)
+            runtime(store=store)._run_fixture_scenario_for_test(market_variant, shadow_run_id=conflict_id)
 
         # 5. Different run IDs may intentionally carry the same payload.
         store = ShadowMemoryStore()
         same_payload = tuple(
-            runtime(store=store).run_scenario(
+            runtime(store=store)._run_fixture_scenario_for_test(
                 base,
                 shadow_run_id=UUID(f"00000000-0000-5000-8000-000000008b0{index}"),
             )
@@ -90,24 +90,24 @@ class Phase8BShadowConcurrencyCrashTests(unittest.TestCase):
         # 6. An idempotent replay and a new run can proceed together.
         store = ShadowMemoryStore()
         replay_id = UUID("00000000-0000-5000-8000-000000008b07")
-        runtime(store=store).run_scenario(base, shadow_run_id=replay_id)
+        runtime(store=store)._run_fixture_scenario_for_test(base, shadow_run_id=replay_id)
         with ThreadPoolExecutor(max_workers=2) as pool:
             replay_future = pool.submit(
-                runtime(store=store).run_scenario, base, shadow_run_id=replay_id
+                runtime(store=store)._run_fixture_scenario_for_test, base, shadow_run_id=replay_id
             )
-            new_future = pool.submit(runtime(store=store).run_scenario, market_variant)
+            new_future = pool.submit(runtime(store=store)._run_fixture_scenario_for_test, market_variant)
             replay, new = replay_future.result(), new_future.result()
         self.assertTrue(replay.replayed)
         self.assertFalse(new.replayed)
 
         # 7. A restarted reader can load committed evidence while another run writes.
         store = ShadowMemoryStore()
-        committed = runtime(store=store).run_scenario(base)
+        committed = runtime(store=store)._run_fixture_scenario_for_test(base)
         with ThreadPoolExecutor(max_workers=2) as pool:
             read_future = pool.submit(
                 runtime(store=store).repository.load_bundle, committed.shadow_run_id
             )
-            write_future = pool.submit(runtime(store=store).run_scenario, account_variant)
+            write_future = pool.submit(runtime(store=store)._run_fixture_scenario_for_test, account_variant)
             loaded, written = read_future.result(), write_future.result()
         self.assertEqual(loaded["decision"]["decision_hash"], committed.decision_hash)
         self.assertNotEqual(written.input_hash, committed.input_hash)

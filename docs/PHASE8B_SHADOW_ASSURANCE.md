@@ -48,7 +48,7 @@ The complete catalog can be evaluated without a socket or database:
 secure-eval-live-shadow matrix --repository-sha <40-character-reviewed-sha>
 ```
 
-Omitting the persisted run's database target fails closed before a socket is opened. Accepted scenarios create at most one hypothetical shadow intent; blocked scenarios preserve ordered blocker codes and create no executable intent.
+Omitting the persisted run's database target fails closed before a socket is opened. Only the literal loopback hosts `127.0.0.1` and `::1` are accepted; `localhost`, remote hosts, the operator database, and unrelated database names are rejected before connecting. The CLI has no PostgreSQL password argument and delegates authentication to libpq configuration such as `.pgpass` or `PGPASSFILE`. Accepted scenarios create at most one hypothetical shadow intent; blocked scenarios preserve ordered blocker codes and create no executable intent.
 
 ### Explicit public-data mode
 
@@ -63,13 +63,13 @@ secure-eval-live-shadow run \
   --postgres-database secure_eval_phase8b_shadow_public
 ```
 
-This mode internally constructs the audited unauthenticated `OkxPublicProvider` and permits only OKX BTC-USDT Spot instrument metadata and recent public trades. It performs at most two bounded public reads, accepts no caller-supplied method/path/body/headers, and uses no authenticated account endpoint. Timeouts must be greater than zero and at most ten seconds. A connection or response failure becomes a blocked public-data decision; it cannot be promoted to operational proof.
+This mode internally constructs the audited unauthenticated `OkxPublicProvider` and permits only `GET /api/v5/public/instruments` followed by `GET /api/v5/market/history-trades`. The trade request is symbols-only (`BTC-USDT`), has an empty instrument tuple and parameter map, uses a fixed five-minute UTC window, `limit<=10`, and `max_pages=1`. It performs no more than those two reads, sends empty headers, accepts no caller-supplied method/path/body/headers, and uses no authenticated account endpoint. The counter increments immediately before each transport send, including a send that raises. Source-issued provenance binds the exact source type and instance, endpoint sequence, actual send count, response hashes, instrument, classification, full payload hash, and failure kind before persistence. Timeouts must be greater than zero and at most ten seconds. A connection or response failure becomes a blocked public-data decision; it cannot be promoted to operational proof.
 
 ## Scenario matrix
 
-The 27 account cases cover clean and flat state, existing Spot/perpetual exposure, limits, drawdown and daily loss, kill state, permissions, mode, balances, reservations, pending orders, snapshots, duplicates, malformed values, unsupported currencies, and stale or inconsistent synthetic state.
+The exact 27 account scenario IDs are `clean_flat_account`, `insufficient_quote_balance`, `insufficient_base_balance`, `existing_long_spot_position`, `synthetic_short_position`, `synthetic_perpetual_position`, `synthetic_futures_position`, `synthetic_options_exposure`, `pending_buy_order`, `pending_sell_order`, `excessive_reserved_notional`, `near_limit_notional`, `breached_daily_loss_guard`, `kill_switch_active`, `permission_read_only`, `permission_trade_enabled_synthetic_profile`, `conflicting_account_classification`, `malformed_account_snapshot`, `duplicate_positions`, `negative_balance`, `nan_or_infinity_quantity`, `wrong_settlement_asset`, `non_btc_usdt_instrument`, `unsupported_order_type`, `zero_quantity`, `quantity_rounding_below_minimum`, and `quantity_rounding_above_maximum`.
 
-The 27 market cases cover normal fixture/public/replay observations plus stale, missing, malformed, incomplete, contradictory, cached, unsupported, wrong-provider/instrument/type, bad metadata, timestamp, status, tick/lot/quantity bounds, crossed quotes, duplicate/conflicting source, timeout, rate-limit, provider error, empty response, and declaration-confusion failures.
+The exact 27 market scenario IDs are `normal_public_snapshot`, `stale_data`, `future_timestamp`, `clock_skew`, `crossed_bid_ask`, `bid_zero`, `ask_zero`, `negative_price`, `nan_or_infinity_price`, `missing_instrument_metadata`, `delisted_instrument`, `instrument_not_live`, `wrong_instrument_type`, `perpetual_instead_of_spot`, `duplicate_response_rows`, `malformed_json`, `incomplete_response`, `provider_error_code`, `timeout`, `connection_failure`, `rate_limit`, `partial_page`, `conflicting_public_sources`, `public_response_replay`, `stale_cached_response`, `fixture_marked_operational`, and `operational_response_marked_fixture`.
 
 Each case has a stable scenario ID, stable input hash, expected result, ordered blockers, expected intent count, read/write count, and persistence result. Tests require all 54 catalog outcomes to match these declarations.
 
@@ -89,9 +89,11 @@ The test matrix covers seven concurrency cases and nine crash points from market
 
 ## Public assurance evidence
 
-The generated artifact is `docs/evidence/phase8b_shadow_assurance_public.json`. Its keys and key order are fixed by an allowlist, and `evidence_payload_sha256` binds every other field. Validation rejects extra/forbidden keys, local paths, secret-shaped values, unexpected high-entropy strings, nonzero transport/authentication/credential/write counts, and any claim of real-account, operator-database, authenticated-proof, submit, cancel, or migration-0027 authority.
+The generated artifact is `docs/evidence/phase8b_shadow_assurance_public.json`. Its keys and key order are fixed by an allowlist, and `evidence_payload_sha256` binds every other field. Its results come from an executable deterministic verifier, not caller-supplied passed counts. The artifact binds the repository SHA, scenario-catalog hash, runtime-implementation hash, unique per-case results and result hashes for all 54 catalog cases, three restart cases, six replay cases, seven actual in-memory concurrency cases, and all nine crash points. Validation reruns the verifier and rejects count, self-hash, verifier-hash, missing-case, duplicate-case, fake-success, and repository-SHA tampering.
 
-The artifact reports `status=implemented_pending_independent_audit` and `independent_audit_status=pending`. Public-network smoke is classified truthfully; network unavailability is recorded as `PUBLIC_NETWORK_SMOKE_NOT_EXECUTED`, never converted into a fabricated success.
+PostgreSQL evidence has an explicit classification. The checked artifact uses `POSTGRESQL_VERIFIER_NOT_EXECUTED` and therefore reports zero PostgreSQL passed-case counts. The public-network smoke is also `PUBLIC_NETWORK_SMOKE_NOT_EXECUTED`; no real public request was made to generate the checked artifact. Validation additionally rejects extra/forbidden keys, local paths, secret-shaped values, unexpected high-entropy strings, nonzero transport/authentication/credential/write counts, and any claim of real-account, operator-database, authenticated-proof, submit, cancel, or migration-0027 authority.
+
+The artifact reports `status=implemented_pending_independent_audit` and `independent_audit_status=pending`. Public-network smoke was not run for the checked artifact and is recorded as `PUBLIC_NETWORK_SMOKE_NOT_EXECUTED`, never converted into a fabricated success.
 
 ## Limitations
 

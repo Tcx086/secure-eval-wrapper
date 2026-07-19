@@ -13,7 +13,7 @@ class Phase8BShadowMarketFailureTests(unittest.TestCase):
         self.assertEqual(len({scenario.scenario_id for scenario in scenarios}), 27)
         for scenario in scenarios:
             with self.subTest(scenario=scenario.scenario_id):
-                summary = runtime().run_scenario(scenario)
+                summary = runtime()._run_fixture_scenario_for_test(scenario)
                 self.assertEqual(
                     "accepted" if summary.accepted else "blocked",
                     scenario.expected_result,
@@ -30,7 +30,7 @@ class Phase8BShadowMarketFailureTests(unittest.TestCase):
         accepted = [
             scenario.scenario_id
             for scenario in market_failure_scenarios()
-            if runtime().run_scenario(scenario).accepted
+            if runtime()._run_fixture_scenario_for_test(scenario).accepted
         ]
         self.assertEqual(accepted, ["normal_public_snapshot"])
 

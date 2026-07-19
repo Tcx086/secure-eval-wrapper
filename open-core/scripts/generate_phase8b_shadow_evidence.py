@@ -12,18 +12,11 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository-sha", required=True)
     parser.add_argument(
-        "--public-network-smoke-status",
-        default="PUBLIC_NETWORK_SMOKE_NOT_EXECUTED",
-    )
-    parser.add_argument(
         "--output",
         default="docs/evidence/phase8b_shadow_assurance_public.json",
     )
     args = parser.parse_args(argv)
-    payload = build_public_shadow_evidence(
-        repository_sha=args.repository_sha,
-        public_network_smoke_status=args.public_network_smoke_status,
-    )
+    payload = build_public_shadow_evidence(repository_sha=args.repository_sha)
     path = Path(args.output)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

@@ -135,7 +135,9 @@ class Phase8BShadowPostgresTests(unittest.TestCase):
     def service(cls, key):
         connection = cls.connect(key)
         repository = PostgresShadowRepository(
-            connection, expected_database=cls.databases[key]
+            connection,
+            expected_database=cls.databases[key],
+            expected_host=cls.base["host"],
         )
         runtime = ShadowAssuranceRuntime(
             repository=repository,
@@ -165,6 +167,7 @@ class Phase8BShadowPostgresTests(unittest.TestCase):
         initial = service.run_fixture("clean_flat_account", shadow_run_id=run_id)
         connection.close()
 
+        env["PGPASSWORD"] = self.base["password"]
         env = os.environ.copy()
         command = [
             sys.executable,
@@ -213,7 +216,7 @@ class Phase8BShadowPostgresTests(unittest.TestCase):
             "clean_flat_account",
             shadow_run_id=UUID("00000000-0000-5000-8000-000000008d02"),
         )
-        changed = service.run_scenario(
+        changed = service._run_fixture_scenario_for_test(
             _modified_market(),
             shadow_run_id=UUID("00000000-0000-5000-8000-000000008d03"),
             parent_input_hash=base.input_hash,
@@ -264,7 +267,7 @@ class Phase8BShadowPostgresTests(unittest.TestCase):
             connection, service = self.service("concurrent")
             try:
                 try:
-                    summary = service.run_scenario(scenario, shadow_run_id=run_id)
+                    summary = service._run_fixture_scenario_for_test(scenario, shadow_run_id=run_id)
                     return "replay" if summary.replayed else "persisted"
                 except ShadowPersistenceConflict:
                     return "conflict"
@@ -305,6 +308,82 @@ class Phase8BShadowPostgresTests(unittest.TestCase):
         self.assertEqual(bundle["decision"]["safety_facts"]["production_write_count"], 0)
         connection.close()
 
+    def test_catalog_attacks_fail_before_persistence_and_are_rolled_back(self):
+        attacks = (
+            (
+                "old_hash",
+                "UPDATE audit.schema_migrations SET sha256=%s WHERE migration_id=%s",
+                ("0" * 64, "0001_initial_schema"),
+            ),
+            (
+                "filename",
+                "UPDATE audit.schema_migrations SET filename=%s WHERE migration_id=%s",
+                ("0001_old_name.sql", "0001_initial_schema"),
+            ),
+            (
+                "same_count_unknown_id",
+                "UPDATE audit.schema_migrations SET migration_id=%s WHERE migration_id=%s",
+                ("0099_unknown", "0001_initial_schema"),
+            ),
+            (
+                "partial",
+                "DELETE FROM audit.schema_migrations WHERE migration_id=%s",
+                ("0026_phase8b_authenticated_readonly_preflight",),
+            ),
+            (
+                "0027",
+                "INSERT INTO audit.schema_migrations "
+                "(migration_id,filename,sha256,description) VALUES (%s,%s,%s,%s)",
+                ("0027_attack", "0027_attack.sql", "f" * 64, "attack"),
+            ),
+        )
+        for name, statement, parameters in attacks:
+            with self.subTest(name=name):
+                connection = self.connect("primary")
+                try:
+                    with connection.cursor() as cursor:
+                        cursor.execute(statement, parameters)
+                    with self.assertRaises(PermissionError):
+                        PostgresShadowRepository(
+                            connection,
+                            expected_database=self.databases["primary"],
+                            expected_host=self.base["host"],
+                        )
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            "SELECT count(*) FROM audit.schema_migrations"
+                        )
+                        self.assertEqual(cursor.fetchone()["count"], 26)
+                        cursor.execute(
+                            "SELECT count(*) FROM audit.run_manifests "
+                            "WHERE storage_ref='phase8b_shadow_assurance'"
+                        )
+                        self.assertEqual(cursor.fetchone()["count"], 0)
+                finally:
+                    connection.close()
+
+    def test_non_shadow_application_row_contamination_fails_and_is_not_preserved(self):
+        connection = self.connect("primary")
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("CREATE TABLE public.phase8b_attack_marker (id integer PRIMARY KEY)")
+                cursor.execute("INSERT INTO public.phase8b_attack_marker VALUES (1)")
+            with self.assertRaises(PermissionError):
+                PostgresShadowRepository(
+                    connection,
+                    expected_database=self.databases["primary"],
+                    expected_host=self.base["host"],
+                )
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT to_regclass('public.phase8b_attack_marker')")
+                self.assertIsNone(cursor.fetchone()["to_regclass"])
+                cursor.execute(
+                    "SELECT count(*) FROM audit.run_manifests "
+                    "WHERE storage_ref='phase8b_shadow_assurance'"
+                )
+                self.assertEqual(cursor.fetchone()["count"], 0)
+        finally:
+            connection.close()
 
 if __name__ == "__main__":
     unittest.main()

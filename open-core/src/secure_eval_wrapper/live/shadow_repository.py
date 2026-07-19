@@ -13,11 +13,15 @@ from uuid import UUID
 
 from secure_eval_wrapper.data_collection.hashing import sha256_payload
 
-from .shadow_models import ShadowDecisionRecord
+from .migration_catalog import (
+    MIGRATION_0026_SHA256,
+    validate_migration_catalog_rows,
+)
+from .shadow_models import SHADOW_RUNTIME_VERSION, ShadowDecisionRecord
 
 
 SHADOW_DATABASE_PREFIX = "secure_eval_phase8b_shadow_"
-MIGRATION_0026_SHA256 = "698772fb68c5c4981256682d064c3be641193ab10c8dbf55e1a5b390ca7c504a"
+LOCAL_SHADOW_POSTGRES_HOSTS = frozenset({"127.0.0.1", "::1"})
 PERSISTENCE_CRASH_POINTS = frozenset({
     "after_decision_persist_before_summary",
     "before_transaction_commit",
@@ -46,6 +50,14 @@ def validate_shadow_database_name(value: str) -> str:
         raise PermissionError(
             "shadow persistence requires an explicit disposable "
             "secure_eval_phase8b_shadow_<suffix> database"
+        )
+    return value
+
+
+def validate_shadow_postgres_host(value: str) -> str:
+    if type(value) is not str or value not in LOCAL_SHADOW_POSTGRES_HOSTS:
+        raise PermissionError(
+            "shadow persistence requires literal loopback host 127.0.0.1 or ::1"
         )
     return value
 
@@ -102,7 +114,7 @@ def shadow_bundle_payload(decision: ShadowDecisionRecord) -> dict[str, object]:
         "schema_version": 1,
         "operation": "phase8b_shadow_assurance",
         "status": "complete",
-        "runtime_version": "phase8b-shadow-v1",
+        "runtime_version": SHADOW_RUNTIME_VERSION,
         "decision": decision_payload,
         "summary": {
             "shadow_run_id": str(decision.shadow_run_id),
@@ -113,6 +125,8 @@ def shadow_bundle_payload(decision: ShadowDecisionRecord) -> dict[str, object]:
             "accepted": decision.accepted,
             "blockers": list(decision.blockers),
             "shadow_intent_count": int(decision.shadow_intent is not None),
+            "network_read_count": decision.safety_facts.network_read_count,
+            "network_write_count": decision.safety_facts.network_write_count,
             "production_transport_call_count": 0,
             "authenticated_endpoint_call_count": 0,
             "credential_read_count": 0,
@@ -189,7 +203,14 @@ class PostgresShadowRepository:
 
     authoritative_storage = "PostgreSQL"
 
-    def __init__(self, connection, *, expected_database: str) -> None:
+    def __init__(
+        self,
+        connection,
+        *,
+        expected_database: str,
+        expected_host: str,
+    ) -> None:
+        self.expected_host = validate_shadow_postgres_host(expected_host)
         self.connection = connection
         self.expected_database = validate_shadow_database_name(expected_database)
         self._verify_target()
@@ -200,6 +221,11 @@ class PostgresShadowRepository:
 
     def _verify_target(self) -> None:
         try:
+            connection_host = str(
+                getattr(getattr(self.connection, "info", None), "host", "")
+            )
+            if connection_host != self.expected_host:
+                raise PermissionError("shadow connection host identity mismatch")
             with self.connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT current_database(), "
@@ -211,34 +237,62 @@ class PostgresShadowRepository:
                 if actual_database != self.expected_database:
                     raise PermissionError("shadow connection database identity mismatch")
                 validate_shadow_database_name(actual_database)
-                if version < 160000:
-                    raise PermissionError("Phase 8B shadow persistence requires PostgreSQL 16")
+                if not 160000 <= version < 170000:
+                    raise PermissionError("Phase 8B shadow persistence requires exact PostgreSQL 16")
                 cursor.execute(
-                    "SELECT migration_id,sha256 FROM audit.schema_migrations "
+                    "SELECT migration_id,filename,sha256::text FROM audit.schema_migrations "
                     "ORDER BY migration_id"
                 )
                 rows = tuple(cursor.fetchall())
-                catalog = {
-                    str(self._value(item, "migration_id", 0)): str(
-                        self._value(item, "sha256", 1)
+                catalog = tuple(
+                    (
+                        str(self._value(item, "migration_id", 0)),
+                        str(self._value(item, "filename", 1)),
+                        str(self._value(item, "sha256", 2)),
                     )
                     for item in rows
-                }
-                if (
-                    len(catalog) != 26
-                    or not catalog
-                    or max(key[:4] for key in catalog) != "0026"
-                    or catalog.get("0026_phase8b_authenticated_readonly_preflight")
-                    != MIGRATION_0026_SHA256
-                    or any(key.startswith("0027") for key in catalog)
-                ):
-                    raise PermissionError(
-                        "shadow database must expose the exact immutable 0001-0026 catalog"
-                    )
+                )
+                validate_migration_catalog_rows(catalog)
                 cursor.execute("SELECT to_regclass('audit.run_manifests')")
                 row = cursor.fetchone()
                 if self._value(row, "to_regclass", 0) is None:
                     raise PermissionError("generic audit manifest storage is unavailable")
+                cursor.execute(
+                    "SELECT count(*) FROM audit.run_manifests "
+                    "WHERE run_mode IS DISTINCT FROM 'simulation' "
+                    "OR storage_ref IS DISTINCT FROM 'phase8b_shadow_assurance' "
+                    "OR manifest_jsonb->>'operation' IS DISTINCT FROM 'phase8b_shadow_assurance' "
+                    "OR manifest_jsonb->>'status' IS DISTINCT FROM 'complete'"
+                )
+                row = cursor.fetchone()
+                if int(self._value(row, "count", 0)):
+                    raise PermissionError(
+                        "shadow database contains non-shadow audit manifest rows"
+                    )
+                cursor.execute(
+                    "SELECT table_schema,table_name FROM information_schema.tables "
+                    "WHERE table_type='BASE TABLE' "
+                    "AND table_schema NOT IN ('pg_catalog','information_schema') "
+                    "ORDER BY table_schema,table_name"
+                )
+                for item in cursor.fetchall():
+                    schema = str(self._value(item, "table_schema", 0))
+                    table = str(self._value(item, "table_name", 1))
+                    if (schema, table) in {
+                        ("audit", "schema_migrations"),
+                        ("audit", "run_manifests"),
+                    }:
+                        continue
+                    if re.fullmatch(r"[a-z][a-z0-9_]*", schema) is None or re.fullmatch(
+                        r"[a-z][a-z0-9_]*", table
+                    ) is None:
+                        raise PermissionError("shadow database exposes an unsafe table identity")
+                    cursor.execute(f'SELECT EXISTS (SELECT 1 FROM "{schema}"."{table}")')
+                    row = cursor.fetchone()
+                    if bool(self._value(row, "exists", 0)):
+                        raise PermissionError(
+                            "shadow database contains non-shadow authoritative application rows"
+                        )
         finally:
             self.connection.rollback()
 
@@ -339,6 +393,7 @@ class PostgresShadowRepository:
 
 
 __all__ = [
+    "LOCAL_SHADOW_POSTGRES_HOSTS",
     "MIGRATION_0026_SHA256",
     "MemoryShadowRepository",
     "PERSISTENCE_CRASH_POINTS",
@@ -351,4 +406,5 @@ __all__ = [
     "shadow_bundle_payload",
     "shadow_decision_payload",
     "validate_shadow_database_name",
+    "validate_shadow_postgres_host",
 ]

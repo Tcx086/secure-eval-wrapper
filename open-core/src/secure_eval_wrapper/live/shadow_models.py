@@ -14,7 +14,7 @@ from secure_eval_wrapper.data_collection.time_utils import require_utc_datetime
 from secure_eval_wrapper.signals.models import StandardizedSignal
 
 
-SHADOW_RUNTIME_VERSION = "phase8b-shadow-v1"
+SHADOW_RUNTIME_VERSION = "phase8b-shadow-v2"
 
 
 def shadow_uuid(kind: str, payload: object) -> UUID:
@@ -481,6 +481,8 @@ class ShadowRunSummary:
     persistence_result: str
     replayed: bool
     safety_facts: ShadowSafetyFacts
+    public_source_hashes: tuple[str, ...] = ()
+    public_provenance_hash: str | None = None
     hypothetical: bool = True
     summary_hash: str | None = None
 
@@ -491,6 +493,10 @@ class ShadowRunSummary:
             _digest(getattr(self, name), name)
         if self.manifest_hash is not None:
             _digest(self.manifest_hash, "manifest_hash")
+        for digest in self.public_source_hashes:
+            _digest(digest, "public_source_hash")
+        if self.public_provenance_hash is not None:
+            _digest(self.public_provenance_hash, "public_provenance_hash")
         if self.shadow_intent_count not in (0, 1):
             raise ValueError("one shadow scenario can produce at most one intent")
         if self.hypothetical is not True:
@@ -507,6 +513,8 @@ class ShadowRunSummary:
             "persistence_result": self.persistence_result,
             "replayed": self.replayed,
             "safety_facts_hash": self.safety_facts.record_hash,
+            "public_source_hashes": self.public_source_hashes,
+            "public_provenance_hash": self.public_provenance_hash,
             "hypothetical": self.hypothetical,
         })
         if self.summary_hash is not None and self.summary_hash != expected:
@@ -527,6 +535,8 @@ class ShadowRunSummary:
             "persistence_result": self.persistence_result,
             "replayed": self.replayed,
             "hypothetical": True,
+            "network_read_count": self.safety_facts.network_read_count,
+            "network_write_count": self.safety_facts.network_write_count,
             "production_transport_call_count": self.safety_facts.production_transport_call_count,
             "authenticated_endpoint_call_count": self.safety_facts.authenticated_endpoint_call_count,
             "credential_read_count": self.safety_facts.credential_read_count,
@@ -536,6 +546,8 @@ class ShadowRunSummary:
             "real_account_data_used": self.safety_facts.real_account_data_used,
             "operator_database_accessed": self.safety_facts.operator_database_accessed,
             "authenticated_proof_executed": self.safety_facts.authenticated_proof_executed,
+            "public_source_hashes": self.public_source_hashes,
+            "public_provenance_hash": self.public_provenance_hash,
             "summary_hash": self.summary_hash,
         })
 
