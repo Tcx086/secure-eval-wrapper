@@ -77,8 +77,8 @@ def _concurrency_case_result(
         "case_id": case_id,
         "expected_outcome_classification": expected,
         "observed_outcome_classification": observed,
-        "relevant_run_ids": tuple(sorted(run_ids)),
-        "relevant_hashes": tuple(sorted(hashes)),
+        "relevant_run_ids": sorted(run_ids),
+        "relevant_hashes": sorted(hashes),
         "evidence_hash": sha256_payload(evidence),
         "passed": bool(passed),
     }
