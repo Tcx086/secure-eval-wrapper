@@ -11,6 +11,12 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from secure_eval_wrapper.live.identity import RuntimeRepositoryIdentity
+from secure_eval_wrapper.live.shadow_bundle import ShadowBundleValidationError
+from secure_eval_wrapper.live.shadow_models import (
+    ShadowDataProvenance,
+    ShadowDecisionRecord,
+    ShadowSafetyFacts,
+)
 from secure_eval_wrapper.live.shadow_repository import (
     PostgresShadowRepository,
     ShadowInjectedCrash,
@@ -30,6 +36,49 @@ RUN = os.environ.get("RUN_POSTGRES_INTEGRATION", "").lower() == "true"
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATOR = ROOT / "open-core" / "scripts" / "apply_postgres_migrations.py"
 REPOSITORY_SHA = "a" * 40
+
+
+_PUBLIC_ENDPOINTS = (
+    "GET /api/v5/public/instruments",
+    "GET /api/v5/market/history-trades",
+)
+
+
+def _public_decision(
+    run_id: UUID,
+    *,
+    classification: str = "public_network",
+    network_read_count: int = 2,
+    response_hashes: tuple[str, ...] = ("1" * 64, "2" * 64),
+    source_instance_id: str = "3" * 64,
+    failure_kind: str | None = None,
+) -> ShadowDecisionRecord:
+    return ShadowDecisionRecord(
+        shadow_run_id=run_id,
+        scenario_id=f"postgres_{classification}_{network_read_count}",
+        input_hash="5" * 64,
+        market_snapshot_hash=None,
+        synthetic_account_snapshot_hash=None,
+        configuration_hash="6" * 64,
+        preflight_hash="7" * 64,
+        approval_hash=None,
+        manifest_hash=None,
+        live_risk_decision_hash=None,
+        accepted=False,
+        blockers=("test_only_blocker",),
+        shadow_intent=None,
+        safety_facts=ShadowSafetyFacts(network_read_count),
+        data_provenance=ShadowDataProvenance(
+            classification,
+            _PUBLIC_ENDPOINTS[:network_read_count],
+            network_read_count,
+            response_hashes,
+            source_instance_id,
+            "4" * 64,
+            failure_kind,
+        ),
+        repository_commit_sha=REPOSITORY_SHA,
+    )
 
 
 def _modified_market():
@@ -232,6 +281,72 @@ class Phase8BShadowPostgresTests(unittest.TestCase):
         self.assertEqual(restarted.repository.row_counts()["audit.run_manifests"], 2)
         connection.close()
 
+    def test_durable_public_provenance_restart_and_conflict(self):
+        decisions = (
+            _public_decision(
+                UUID("00000000-0000-5000-8000-00000000d001")
+            ),
+            _public_decision(
+                UUID("00000000-0000-5000-8000-00000000d002"),
+                classification="unavailable",
+                network_read_count=1,
+                response_hashes=(),
+                failure_kind="timeout",
+            ),
+            _public_decision(
+                UUID("00000000-0000-5000-8000-00000000d003"),
+                classification="unavailable",
+                network_read_count=2,
+                response_hashes=("1" * 64,),
+                failure_kind="connection_failure",
+            ),
+        )
+        connection = self.connect("primary")
+        repository = PostgresShadowRepository(
+            connection,
+            expected_database=self.databases["primary"],
+            expected_host=self.base["host"],
+        )
+        for decision in decisions:
+            self.assertFalse(repository.persist_bundle(decision))
+        connection.close()
+
+        restarted = self.connect("primary")
+        repository = PostgresShadowRepository(
+            restarted,
+            expected_database=self.databases["primary"],
+            expected_host=self.base["host"],
+        )
+        expected = (
+            ("public_network", 2, 2),
+            ("unavailable", 1, 0),
+            ("unavailable", 2, 1),
+        )
+        for decision, (classification, reads, hash_count) in zip(
+            decisions, expected, strict=True
+        ):
+            loaded = repository.load_bundle(decision.shadow_run_id)
+            provenance = loaded["decision"]["data_provenance"]
+            self.assertEqual(provenance["classification"], classification)
+            self.assertEqual(provenance["network_read_count"], reads)
+            self.assertEqual(len(provenance["response_source_hashes"]), hash_count)
+            self.assertEqual(
+                loaded["summary"]["data_provenance_hash"],
+                loaded["decision"]["data_provenance_hash"],
+            )
+
+        conflict = _public_decision(
+            decisions[0].shadow_run_id,
+            source_instance_id="8" * 64,
+        )
+        with self.assertRaises(ShadowPersistenceConflict):
+            repository.persist_bundle(conflict)
+        self.assertEqual(
+            repository.row_counts()["audit.run_manifests"],
+            3,
+        )
+        restarted.close()
+
     def test_all_nine_crash_points_rollback_or_restart_complete(self):
         post_commit = "after_transaction_commit_before_response"
         for index, crash_point in enumerate(sorted(RUNTIME_CRASH_POINTS), start=1):
@@ -361,6 +476,235 @@ class Phase8BShadowPostgresTests(unittest.TestCase):
                         self.assertEqual(cursor.fetchone()["count"], 0)
                 finally:
                     connection.close()
+
+    def test_committed_forged_rows_fail_closed_without_repair_or_overwrite(self):
+        attacks = (
+            (
+                "forged_bundle_hash",
+                "UPDATE audit.run_manifests SET "
+                "manifest_jsonb=jsonb_set(manifest_jsonb,'{bundle_hash}',to_jsonb(%s::text),false) "
+                "WHERE run_id=%s",
+                ("0" * 64,),
+            ),
+            (
+                "artifact_sha256",
+                "UPDATE audit.run_manifests SET artifact_sha256=%s WHERE run_id=%s",
+                ("0" * 64,),
+            ),
+            (
+                "forged_decision_hash",
+                "UPDATE audit.run_manifests SET "
+                "manifest_jsonb=jsonb_set(manifest_jsonb,'{decision,decision_hash}',"
+                "to_jsonb(%s::text),false) WHERE run_id=%s",
+                ("0" * 64,),
+            ),
+            (
+                "forged_safety_facts_hash",
+                "UPDATE audit.run_manifests SET "
+                "manifest_jsonb=jsonb_set(manifest_jsonb,'{decision,safety_facts_hash}',"
+                "to_jsonb(%s::text),false) WHERE run_id=%s",
+                ("0" * 64,),
+            ),
+            (
+                "production_write_count",
+                "UPDATE audit.run_manifests SET "
+                "manifest_jsonb=jsonb_set(manifest_jsonb,"
+                "'{decision,safety_facts,production_write_count}','1'::jsonb,false) "
+                "WHERE run_id=%s",
+                (),
+            ),
+            (
+                "summary_decision_mismatch",
+                "UPDATE audit.run_manifests SET "
+                "manifest_jsonb=jsonb_set(manifest_jsonb,'{summary,decision_hash}',"
+                "to_jsonb(%s::text),false) WHERE run_id=%s",
+                ("0" * 64,),
+            ),
+            (
+                "wrong_json_run_id",
+                "UPDATE audit.run_manifests SET "
+                "manifest_jsonb=jsonb_set(manifest_jsonb,'{decision,shadow_run_id}',"
+                "to_jsonb(%s::text),false) WHERE run_id=%s",
+                ("00000000-0000-5000-8000-00000000ffff",),
+            ),
+            (
+                "wrong_data_sha256",
+                "UPDATE audit.run_manifests SET data_sha256=%s WHERE run_id=%s",
+                ("0" * 64,),
+            ),
+            (
+                "wrong_config_sha256",
+                "UPDATE audit.run_manifests SET config_sha256=%s WHERE run_id=%s",
+                ("0" * 64,),
+            ),
+            (
+                "wrong_code_sha256",
+                "UPDATE audit.run_manifests SET code_sha256=%s WHERE run_id=%s",
+                ("0" * 64,),
+            ),
+            (
+                "missing_field",
+                "UPDATE audit.run_manifests SET manifest_jsonb=manifest_jsonb-'runtime_version' "
+                "WHERE run_id=%s",
+                (),
+            ),
+            (
+                "extra_authority_field",
+                "UPDATE audit.run_manifests SET "
+                "manifest_jsonb=manifest_jsonb||'{\"authority_override\":true}'::jsonb "
+                "WHERE run_id=%s",
+                (),
+            ),
+            (
+                "preparing_spoof",
+                "UPDATE audit.run_manifests SET "
+                "manifest_jsonb=jsonb_set(manifest_jsonb,'{status}','\"preparing\"'::jsonb,false) "
+                "WHERE run_id=%s",
+                (),
+            ),
+            (
+                "forged_public_source_hash",
+                "UPDATE audit.run_manifests SET "
+                "manifest_jsonb=jsonb_set(manifest_jsonb,"
+                "'{decision,data_provenance,response_source_hashes}',"
+                "jsonb_build_array(%s::text),false) WHERE run_id=%s",
+                ("9" * 64,),
+            ),
+            (
+                "forged_source_classification",
+                "UPDATE audit.run_manifests SET "
+                "manifest_jsonb=jsonb_set(manifest_jsonb,"
+                "'{decision,data_provenance,classification}',"
+                "'\"public_network\"'::jsonb,false) WHERE run_id=%s",
+                (),
+            ),
+            (
+                "forged_endpoint_identity",
+                "UPDATE audit.run_manifests SET "
+                "manifest_jsonb=jsonb_set(manifest_jsonb,"
+                "'{decision,data_provenance,endpoint_identities}',"
+                "'[\"GET /api/v5/public/instruments\"]'::jsonb,false) "
+                "WHERE run_id=%s",
+                (),
+            ),
+            (
+                "malformed_json_shape",
+                "UPDATE audit.run_manifests SET manifest_jsonb='[]'::jsonb WHERE run_id=%s",
+                (),
+            ),
+        )
+        for index, (name, statement, parameters) in enumerate(attacks, start=1):
+            with self.subTest(name=name):
+                run_id = UUID(
+                    f"00000000-0000-5000-8000-00000000a{index:03x}"
+                )
+                connection, service = self.service("primary")
+                service.run_fixture("clean_flat_account", shadow_run_id=run_id)
+                connection.close()
+
+                attacker = self.connect("primary")
+                try:
+                    with attacker.cursor() as cursor:
+                        cursor.execute(statement, (*parameters, run_id))
+                    attacker.commit()
+                finally:
+                    attacker.close()
+
+                fresh = self.connect("primary")
+                try:
+                    with self.assertRaises(
+                        (ShadowBundleValidationError, PermissionError)
+                    ):
+                        PostgresShadowRepository(
+                            fresh,
+                            expected_database=self.databases["primary"],
+                            expected_host=self.base["host"],
+                        )
+                finally:
+                    fresh.close()
+
+                audit = self.connect("primary")
+                try:
+                    with audit.cursor() as cursor:
+                        cursor.execute(
+                            "SELECT count(*) FROM audit.run_manifests "
+                            "WHERE storage_ref='phase8b_shadow_assurance'"
+                        )
+                        self.assertEqual(cursor.fetchone()["count"], 1)
+                        cursor.execute(
+                            "DELETE FROM audit.run_manifests "
+                            "WHERE storage_ref='phase8b_shadow_assurance'"
+                        )
+                    audit.commit()
+                finally:
+                    audit.close()
+
+    def test_forged_row_causes_fresh_process_cli_inspect_failure(self):
+        run_id = UUID("00000000-0000-5000-8000-00000000afff")
+        connection, service = self.service("primary")
+        service.run_fixture("clean_flat_account", shadow_run_id=run_id)
+        connection.close()
+
+        attacker = self.connect("primary")
+        try:
+            with attacker.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE audit.run_manifests SET "
+                    "manifest_jsonb=jsonb_set(manifest_jsonb,'{decision,decision_hash}',"
+                    "to_jsonb(%s::text),false) WHERE run_id=%s",
+                    ("0" * 64, run_id),
+                )
+            attacker.commit()
+        finally:
+            attacker.close()
+
+        env = os.environ.copy()
+        env["PGPASSWORD"] = self.base["password"]
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "secure_eval_wrapper.live.shadow_cli",
+                "inspect",
+                "--run-id",
+                str(run_id),
+                "--postgres-database",
+                self.databases["primary"],
+                "--postgres-host",
+                self.base["host"],
+                "--postgres-port",
+                str(self.base["port"]),
+                "--postgres-user",
+                self.base["user"],
+                "--postgres-sslmode",
+                self.base["sslmode"],
+            ],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 2)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["blockers"], ["shadow_runtime_failed_closed"])
+
+        audit = self.connect("primary")
+        try:
+            with audit.cursor() as cursor:
+                cursor.execute(
+                    "SELECT count(*) FROM audit.run_manifests "
+                    "WHERE storage_ref='phase8b_shadow_assurance'"
+                )
+                self.assertEqual(cursor.fetchone()["count"], 1)
+                cursor.execute(
+                    "DELETE FROM audit.run_manifests "
+                    "WHERE storage_ref='phase8b_shadow_assurance'"
+                )
+            audit.commit()
+        finally:
+            audit.close()
 
     def test_non_shadow_application_row_contamination_fails_and_is_not_preserved(self):
         connection = self.connect("primary")

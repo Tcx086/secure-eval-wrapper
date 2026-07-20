@@ -384,6 +384,16 @@ class ShadowSafetyFacts:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
+        for name in (
+            "production_write_enabled",
+            "production_submit_reachable",
+            "production_cancel_reachable",
+            "real_account_data_used",
+            "operator_database_accessed",
+            "authenticated_proof_executed",
+        ):
+            if getattr(self, name) is not False:
+                raise PermissionError(f"{name} must be the boolean false")
         if any((
             self.network_write_count,
             self.production_transport_call_count,
@@ -404,6 +414,103 @@ class ShadowSafetyFacts:
         return sha256_payload({name: getattr(self, name) for name in self.__dataclass_fields__})
 
 
+_PUBLIC_ENDPOINT_IDENTITIES = (
+    "GET /api/v5/public/instruments",
+    "GET /api/v5/market/history-trades",
+)
+
+
+@dataclass(frozen=True)
+class ShadowDataProvenance:
+    """Durable source authority included in every shadow decision hash chain."""
+
+    classification: str
+    endpoint_identities: tuple[str, ...]
+    network_read_count: int
+    response_source_hashes: tuple[str, ...]
+    source_instance_id: str | None
+    payload_hash: str | None
+    failure_kind: str | None
+    provenance_hash: str | None = None
+    record_hash: str | None = None
+
+    def __post_init__(self) -> None:
+        classification = _text(self.classification, "classification")
+        object.__setattr__(self, "classification", classification)
+        endpoints = tuple(self.endpoint_identities)
+        hashes = tuple(self.response_source_hashes)
+        object.__setattr__(self, "endpoint_identities", endpoints)
+        object.__setattr__(self, "response_source_hashes", hashes)
+        if (
+            isinstance(self.network_read_count, bool)
+            or not isinstance(self.network_read_count, int)
+            or self.network_read_count not in (0, 1, 2)
+        ):
+            raise ValueError("shadow provenance network_read_count must be 0, 1, or 2")
+        for digest in hashes:
+            _digest(digest, "response_source_hash")
+        token_core = {
+            "classification": classification,
+            "endpoint_identities": endpoints,
+            "network_read_count": self.network_read_count,
+            "response_source_hashes": hashes,
+            "source_instance_id": self.source_instance_id,
+            "payload_hash": self.payload_hash,
+            "failure_kind": self.failure_kind,
+        }
+        if classification == "fixture":
+            if any((
+                endpoints,
+                self.network_read_count,
+                hashes,
+                self.source_instance_id,
+                self.payload_hash,
+                self.failure_kind,
+                self.provenance_hash,
+            )):
+                raise PermissionError("fixture provenance cannot carry public authority")
+            expected_provenance_hash = None
+        elif classification in ("public_network", "unavailable"):
+            _digest(self.source_instance_id, "source_instance_id")
+            _digest(self.payload_hash, "payload_hash")
+            if endpoints != _PUBLIC_ENDPOINT_IDENTITIES[:self.network_read_count]:
+                raise PermissionError("public endpoints must be the actual ordered send prefix")
+            if len(hashes) > self.network_read_count:
+                raise PermissionError("public response hashes exceed completed sends")
+            if classification == "public_network":
+                if (
+                    self.network_read_count != 2
+                    or len(hashes) != 2
+                    or self.failure_kind is not None
+                ):
+                    raise PermissionError("public success provenance is incomplete")
+            elif not isinstance(self.failure_kind, str) or not self.failure_kind:
+                raise PermissionError("unavailable public provenance requires a failure kind")
+            expected_provenance_hash = sha256_payload(token_core)
+            if (
+                self.provenance_hash is not None
+                and self.provenance_hash != expected_provenance_hash
+            ):
+                raise ValueError("public provenance hash mismatch")
+            object.__setattr__(self, "provenance_hash", expected_provenance_hash)
+        else:
+            raise PermissionError("unsupported shadow provenance classification")
+        record_core = {**token_core, "provenance_hash": expected_provenance_hash}
+        expected_record_hash = sha256_payload(record_core)
+        if self.record_hash is not None and self.record_hash != expected_record_hash:
+            raise ValueError("shadow provenance record hash mismatch")
+        object.__setattr__(self, "record_hash", expected_record_hash)
+
+    @classmethod
+    def fixture(cls) -> "ShadowDataProvenance":
+        return cls("fixture", (), 0, (), None, None, None)
+
+    def public_payload(self) -> Mapping[str, object]:
+        return MappingProxyType({
+            name: getattr(self, name) for name in self.__dataclass_fields__
+        })
+
+
 @dataclass(frozen=True)
 class ShadowDecisionRecord:
     shadow_run_id: UUID
@@ -420,6 +527,7 @@ class ShadowDecisionRecord:
     blockers: tuple[str, ...]
     shadow_intent: ShadowOrderIntent | None
     safety_facts: ShadowSafetyFacts
+    data_provenance: ShadowDataProvenance
     repository_commit_sha: str
     parent_input_hash: str | None = None
     decision_hash: str | None = None
@@ -446,6 +554,8 @@ class ShadowDecisionRecord:
             raise ValueError("shadow decision acceptance and blockers disagree")
         if self.accepted and self.shadow_intent is None:
             raise ValueError("accepted shadow decision requires a description-only intent")
+        if self.safety_facts.network_read_count != self.data_provenance.network_read_count:
+            raise ValueError("shadow safety facts and durable provenance read counts disagree")
         expected = sha256_payload({
             "scenario_id": self.scenario_id,
             "input_hash": self.input_hash,
@@ -460,6 +570,7 @@ class ShadowDecisionRecord:
             "blockers": blockers,
             "shadow_intent_hash": None if self.shadow_intent is None else self.shadow_intent.record_hash,
             "safety_facts_hash": self.safety_facts.record_hash,
+            "data_provenance_hash": self.data_provenance.record_hash,
             "repository_commit_sha": self.repository_commit_sha,
             "parent_input_hash": self.parent_input_hash,
         })
@@ -481,8 +592,7 @@ class ShadowRunSummary:
     persistence_result: str
     replayed: bool
     safety_facts: ShadowSafetyFacts
-    public_source_hashes: tuple[str, ...] = ()
-    public_provenance_hash: str | None = None
+    data_provenance: ShadowDataProvenance
     hypothetical: bool = True
     summary_hash: str | None = None
 
@@ -493,10 +603,8 @@ class ShadowRunSummary:
             _digest(getattr(self, name), name)
         if self.manifest_hash is not None:
             _digest(self.manifest_hash, "manifest_hash")
-        for digest in self.public_source_hashes:
-            _digest(digest, "public_source_hash")
-        if self.public_provenance_hash is not None:
-            _digest(self.public_provenance_hash, "public_provenance_hash")
+        if self.safety_facts.network_read_count != self.data_provenance.network_read_count:
+            raise ValueError("summary safety facts and durable provenance read counts disagree")
         if self.shadow_intent_count not in (0, 1):
             raise ValueError("one shadow scenario can produce at most one intent")
         if self.hypothetical is not True:
@@ -513,13 +621,20 @@ class ShadowRunSummary:
             "persistence_result": self.persistence_result,
             "replayed": self.replayed,
             "safety_facts_hash": self.safety_facts.record_hash,
-            "public_source_hashes": self.public_source_hashes,
-            "public_provenance_hash": self.public_provenance_hash,
+            "data_provenance_hash": self.data_provenance.record_hash,
             "hypothetical": self.hypothetical,
         })
         if self.summary_hash is not None and self.summary_hash != expected:
             raise ValueError("shadow summary hash mismatch")
         object.__setattr__(self, "summary_hash", expected)
+
+    @property
+    def public_source_hashes(self) -> tuple[str, ...]:
+        return self.data_provenance.response_source_hashes
+
+    @property
+    def public_provenance_hash(self) -> str | None:
+        return self.data_provenance.provenance_hash
 
     def public_payload(self) -> Mapping[str, object]:
         return MappingProxyType({
@@ -546,14 +661,21 @@ class ShadowRunSummary:
             "real_account_data_used": self.safety_facts.real_account_data_used,
             "operator_database_accessed": self.safety_facts.operator_database_accessed,
             "authenticated_proof_executed": self.safety_facts.authenticated_proof_executed,
-            "public_source_hashes": self.public_source_hashes,
-            "public_provenance_hash": self.public_provenance_hash,
+            "source_classification": self.data_provenance.classification,
+            "endpoint_identities": self.data_provenance.endpoint_identities,
+            "public_source_hashes": self.data_provenance.response_source_hashes,
+            "public_provenance_hash": self.data_provenance.provenance_hash,
+            "public_provenance_payload_hash": self.data_provenance.payload_hash,
+            "public_source_instance_id": self.data_provenance.source_instance_id,
+            "failure_kind": self.data_provenance.failure_kind,
+            "data_provenance_hash": self.data_provenance.record_hash,
             "summary_hash": self.summary_hash,
         })
 
 
 __all__ = [
     "SHADOW_RUNTIME_VERSION",
+    "ShadowDataProvenance",
     "ShadowDecisionRecord",
     "ShadowDecisionRequest",
     "ShadowEvidenceClassification",

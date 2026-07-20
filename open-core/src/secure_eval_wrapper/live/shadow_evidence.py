@@ -198,10 +198,14 @@ def _scan(value, *, path: tuple[str, ...] = ()) -> None:
     if _RAW_PATH.search(value):
         raise ValueError("raw local path in public shadow evidence")
     key = path[-1] if path else ""
-    hash_field = key.endswith(("_sha", "_sha256", "_hash")) or key in {
-        "repository_sha", "result_hash", "evidence_hash",
-        "case_id", "verifier_version", "classification",
-    }
+    hash_field = (
+        key.endswith(("_sha", "_sha256", "_hash", "_classification"))
+        or "relevant_hashes" in path
+        or key in {
+            "repository_sha", "result_hash", "evidence_hash",
+            "case_id", "verifier_version", "classification",
+        }
+    )
     if not hash_field and _HIGH_ENTROPY.fullmatch(value):
         raise ValueError("unclassified high-entropy value in public shadow evidence")
 

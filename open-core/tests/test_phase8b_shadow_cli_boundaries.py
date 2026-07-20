@@ -145,48 +145,81 @@ class Phase8BShadowCliBoundaryTests(unittest.TestCase):
         self.assertEqual(kwargs["host"], "::1")
         self.assertEqual(kwargs["dbname"], args.postgres_database)
 
-    def _exercise_cli(self, transport, *, persistence_failure=False, serialization_failure=False):
+    def _exercise_cli(
+        self,
+        *,
+        public=False,
+        source_failure=False,
+        persistence_failure=False,
+        serialization_failure=False,
+    ):
         connection = FakeConnection()
         repository = MemoryShadowRepository()
         if persistence_failure:
             repository.persist_bundle = Mock(side_effect=RuntimeError("private persistence detail"))
         output = io.StringIO()
-        patches = (
+        arguments = (
+            _run_arguments()
+            if public
+            else [
+                "run",
+                "--postgres-database",
+                "secure_eval_phase8b_shadow_cli_test",
+                "--postgres-host",
+                "127.0.0.1",
+            ]
+        )
+        source_context = (
+            patch(
+                "secure_eval_wrapper.data_collection.okx_v5_public."
+                "OkxPublicProvider.fetch_instruments",
+                side_effect=TimeoutError("private source detail"),
+            )
+            if source_failure
+            else patch.dict({}, {})
+        )
+        with (
             patch.object(
                 shadow_cli,
                 "_connect",
                 return_value=("secure_eval_phase8b_shadow_cli_test", "127.0.0.1", connection),
             ),
             patch.object(shadow_cli, "PostgresShadowRepository", return_value=repository),
-            patch(
-                "secure_eval_wrapper.live.shadow_runtime.UrlLibHttpTransport",
-                return_value=transport,
-            ),
-        )
-        with patches[0], patches[1], patches[2], redirect_stdout(output):
+            source_context,
+            redirect_stdout(output),
+        ):
             if serialization_failure:
                 failing_json = SimpleNamespace(
                     dumps=Mock(side_effect=TypeError("private json detail")),
                     JSONEncoder=json.JSONEncoder,
                 )
                 with patch.object(shadow_cli, "json", failing_json):
-                    result = shadow_cli.main(_run_arguments())
+                    result = shadow_cli.main(arguments)
             else:
-                result = shadow_cli.main(_run_arguments())
+                result = shadow_cli.main(arguments)
         self.assertTrue(connection.closed)
         return result, json.loads(output.getvalue()), output.getvalue()
 
     def test_success_source_runtime_persistence_and_serialization_paths_preserve_six_facts(self):
         cases = (
-            ("success", QueueTransport(_instrument_response(), _trade_response()), False, False, 0, 2),
-            ("source_failure", QueueTransport(TimeoutError("private source detail")), False, False, 2, 1),
-            ("persistence_failure", QueueTransport(_instrument_response(), _trade_response()), True, False, 2, 2),
-            ("serialization_failure", QueueTransport(_instrument_response(), _trade_response()), False, True, 2, 2),
+            ("fixture_success", False, False, False, False, 0, 0),
+            ("public_local_failure", True, True, False, False, 2, 0),
+            ("fixture_persistence_failure", False, False, True, False, 2, 0),
+            ("fixture_serialization_failure", False, False, False, True, 2, 0),
         )
-        for name, transport, persistence_failure, serialization_failure, expected_code, reads in cases:
+        for (
+            name,
+            public,
+            source_failure,
+            persistence_failure,
+            serialization_failure,
+            expected_code,
+            reads,
+        ) in cases:
             with self.subTest(name=name):
                 result, payload, raw = self._exercise_cli(
-                    transport,
+                    public=public,
+                    source_failure=source_failure,
                     persistence_failure=persistence_failure,
                     serialization_failure=serialization_failure,
                 )

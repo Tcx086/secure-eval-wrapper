@@ -17,6 +17,12 @@ from .migration_catalog import (
     MIGRATION_0026_SHA256,
     validate_migration_catalog_rows,
 )
+from .shadow_bundle import (
+    ShadowBundleValidationError,
+    decode_and_validate_shadow_bundle,
+    validate_shadow_bundle_payload,
+    validate_shadow_manifest_row,
+)
 from .shadow_models import SHADOW_RUNTIME_VERSION, ShadowDecisionRecord
 
 
@@ -102,6 +108,8 @@ def shadow_decision_payload(decision: ShadowDecisionRecord) -> dict[str, object]
             for name in decision.safety_facts.__dataclass_fields__
         }),
         "safety_facts_hash": decision.safety_facts.record_hash,
+        "data_provenance": _json_value(decision.data_provenance.public_payload()),
+        "data_provenance_hash": decision.data_provenance.record_hash,
         "repository_commit_sha": decision.repository_commit_sha,
         "parent_input_hash": decision.parent_input_hash,
         "decision_hash": decision.decision_hash,
@@ -110,6 +118,29 @@ def shadow_decision_payload(decision: ShadowDecisionRecord) -> dict[str, object]
 
 def shadow_bundle_payload(decision: ShadowDecisionRecord) -> dict[str, object]:
     decision_payload = shadow_decision_payload(decision)
+    safety = decision.safety_facts
+    summary_core = {
+        "shadow_run_id": str(decision.shadow_run_id),
+        "scenario_id": decision.scenario_id,
+        "input_hash": decision.input_hash,
+        "decision_hash": decision.decision_hash,
+        "manifest_hash": decision.manifest_hash,
+        "accepted": decision.accepted,
+        "blockers": list(decision.blockers),
+        "shadow_intent_count": int(decision.shadow_intent is not None),
+        "network_read_count": safety.network_read_count,
+        "network_write_count": safety.network_write_count,
+        "production_transport_call_count": safety.production_transport_call_count,
+        "authenticated_endpoint_call_count": safety.authenticated_endpoint_call_count,
+        "credential_read_count": safety.credential_read_count,
+        "production_write_count": safety.production_write_count,
+        "production_submit_reachable": safety.production_submit_reachable,
+        "production_cancel_reachable": safety.production_cancel_reachable,
+        "real_account_data_used": safety.real_account_data_used,
+        "operator_database_accessed": safety.operator_database_accessed,
+        "authenticated_proof_executed": safety.authenticated_proof_executed,
+        "data_provenance_hash": decision.data_provenance.record_hash,
+    }
     core = {
         "schema_version": 1,
         "operation": "phase8b_shadow_assurance",
@@ -117,23 +148,13 @@ def shadow_bundle_payload(decision: ShadowDecisionRecord) -> dict[str, object]:
         "runtime_version": SHADOW_RUNTIME_VERSION,
         "decision": decision_payload,
         "summary": {
-            "shadow_run_id": str(decision.shadow_run_id),
-            "scenario_id": decision.scenario_id,
-            "input_hash": decision.input_hash,
-            "decision_hash": decision.decision_hash,
-            "manifest_hash": decision.manifest_hash,
-            "accepted": decision.accepted,
-            "blockers": list(decision.blockers),
-            "shadow_intent_count": int(decision.shadow_intent is not None),
-            "network_read_count": decision.safety_facts.network_read_count,
-            "network_write_count": decision.safety_facts.network_write_count,
-            "production_transport_call_count": 0,
-            "authenticated_endpoint_call_count": 0,
-            "credential_read_count": 0,
-            "production_write_count": 0,
+            **summary_core,
+            "summary_hash": sha256_payload(summary_core),
         },
     }
-    return {**core, "bundle_hash": sha256_payload(core)}
+    result = {**core, "bundle_hash": sha256_payload(core)}
+    validate_shadow_bundle_payload(result)
+    return result
 
 
 def _preparing_payload(decision: ShadowDecisionRecord) -> dict[str, object]:
@@ -171,6 +192,7 @@ class MemoryShadowRepository:
         with self.store.lock:
             existing = self.store.bundles.get(decision.shadow_run_id)
             if existing is not None:
+                existing = validate_shadow_bundle_payload(existing)
                 if existing.get("bundle_hash") != final["bundle_hash"]:
                     raise ShadowPersistenceConflict(
                         "same shadow run ID has a different authoritative payload"
@@ -191,7 +213,7 @@ class MemoryShadowRepository:
     def load_bundle(self, shadow_run_id: UUID) -> dict[str, object] | None:
         with self.store.lock:
             payload = self.store.bundles.get(shadow_run_id)
-            return None if payload is None else json.loads(json.dumps(payload))
+            return None if payload is None else validate_shadow_bundle_payload(payload)
 
     def row_counts(self) -> Mapping[str, int]:
         with self.store.lock:
@@ -215,9 +237,31 @@ class PostgresShadowRepository:
         self.expected_database = validate_shadow_database_name(expected_database)
         self._verify_target()
 
+    _ROW_COLUMNS = (
+        "run_id",
+        "run_mode",
+        "data_sha256",
+        "config_sha256",
+        "code_sha256",
+        "artifact_sha256",
+        "storage_ref",
+        "manifest_jsonb",
+    )
+    _ROW_SELECT = (
+        "run_id,run_mode,data_sha256,config_sha256,code_sha256,"
+        "artifact_sha256,storage_ref,manifest_jsonb"
+    )
+
     @staticmethod
     def _value(row, key: str, index: int):
         return row[key] if isinstance(row, Mapping) else row[index]
+
+    @classmethod
+    def _manifest_row(cls, row) -> dict[str, object]:
+        return {
+            name: cls._value(row, name, index)
+            for index, name in enumerate(cls._ROW_COLUMNS)
+        }
 
     def _verify_target(self) -> None:
         try:
@@ -270,6 +314,12 @@ class PostgresShadowRepository:
                         "shadow database contains non-shadow audit manifest rows"
                     )
                 cursor.execute(
+                    f"SELECT {self._ROW_SELECT} FROM audit.run_manifests "
+                    "WHERE storage_ref='phase8b_shadow_assurance' ORDER BY run_id"
+                )
+                for manifest_row in cursor.fetchall():
+                    validate_shadow_manifest_row(self._manifest_row(manifest_row))
+                cursor.execute(
                     "SELECT table_schema,table_name FROM information_schema.tables "
                     "WHERE table_type='BASE TABLE' "
                     "AND table_schema NOT IN ('pg_catalog','information_schema') "
@@ -305,6 +355,7 @@ class PostgresShadowRepository:
         if crash_at is not None and crash_at not in PERSISTENCE_CRASH_POINTS:
             raise ValueError("unknown persistence crash point")
         final = shadow_bundle_payload(decision)
+        validate_shadow_bundle_payload(final)
         preparing = _preparing_payload(decision)
         inserted = False
         with self.connection.transaction():
@@ -329,20 +380,13 @@ class PostgresShadowRepository:
                 inserted = cursor.fetchone() is not None
                 if not inserted:
                     cursor.execute(
-                        "SELECT artifact_sha256,manifest_jsonb FROM audit.run_manifests "
+                        f"SELECT {self._ROW_SELECT} FROM audit.run_manifests "
                         "WHERE run_id=%s FOR SHARE",
                         (decision.shadow_run_id,),
                     )
                     row = cursor.fetchone()
-                    payload = self._value(row, "manifest_jsonb", 1)
-                    if isinstance(payload, str):
-                        payload = json.loads(payload)
-                    if (
-                        str(self._value(row, "artifact_sha256", 0))
-                        != final["bundle_hash"]
-                        or payload.get("status") != "complete"
-                        or payload.get("bundle_hash") != final["bundle_hash"]
-                    ):
+                    payload = validate_shadow_manifest_row(self._manifest_row(row))
+                    if payload.get("bundle_hash") != final["bundle_hash"]:
                         raise ShadowPersistenceConflict(
                             "same shadow run ID has a different authoritative payload"
                         )
@@ -369,7 +413,7 @@ class PostgresShadowRepository:
     def load_bundle(self, shadow_run_id: UUID) -> dict[str, object] | None:
         with self.connection.cursor() as cursor:
             cursor.execute(
-                "SELECT manifest_jsonb FROM audit.run_manifests "
+                f"SELECT {self._ROW_SELECT} FROM audit.run_manifests "
                 "WHERE run_id=%s AND storage_ref='phase8b_shadow_assurance'",
                 (shadow_run_id,),
             )
@@ -377,8 +421,7 @@ class PostgresShadowRepository:
         self.connection.rollback()
         if row is None:
             return None
-        payload = self._value(row, "manifest_jsonb", 0)
-        return json.loads(payload) if isinstance(payload, str) else dict(payload)
+        return validate_shadow_manifest_row(self._manifest_row(row))
 
     def row_counts(self) -> Mapping[str, int]:
         with self.connection.cursor() as cursor:
@@ -399,12 +442,16 @@ __all__ = [
     "PERSISTENCE_CRASH_POINTS",
     "PostgresShadowRepository",
     "SHADOW_DATABASE_PREFIX",
+    "ShadowBundleValidationError",
     "ShadowInjectedCrash",
     "ShadowMemoryStore",
     "ShadowPersistenceConflict",
     "ShadowPostCommitCrash",
     "shadow_bundle_payload",
     "shadow_decision_payload",
+    "decode_and_validate_shadow_bundle",
+    "validate_shadow_bundle_payload",
     "validate_shadow_database_name",
+    "validate_shadow_manifest_row",
     "validate_shadow_postgres_host",
 ]

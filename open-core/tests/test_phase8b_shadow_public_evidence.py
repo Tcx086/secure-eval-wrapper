@@ -154,6 +154,35 @@ class Phase8BShadowPublicEvidenceTests(unittest.TestCase):
             self.assertTrue(all(item["passed"] for item in verifier[key]))
 
 
+    def test_verifier_binds_all_seven_distinct_concurrency_semantics(self):
+        rows = self.payload["assurance_verifier_result"]["concurrency_results"]
+        self.assertEqual(
+            [row["case_id"] for row in rows],
+            [
+                "identical_runs_simultaneously",
+                "different_market_snapshots_simultaneously",
+                "different_synthetic_accounts_simultaneously",
+                "same_run_id_different_payloads",
+                "different_run_ids_same_payload",
+                "replay_and_new_run_concurrently",
+                "restarted_reader_while_another_run_writes",
+            ],
+        )
+        self.assertEqual(
+            len({row["expected_outcome_classification"] for row in rows}),
+            7,
+        )
+        for row in rows:
+            self.assertTrue(row["passed"])
+            self.assertEqual(
+                row["observed_outcome_classification"],
+                row["expected_outcome_classification"],
+            )
+            self.assertTrue(row["relevant_run_ids"])
+            self.assertTrue(row["relevant_hashes"])
+            core = {key: value for key, value in row.items() if key != "result_hash"}
+            self.assertEqual(row["result_hash"], sha256_payload(core))
+
     def test_checked_in_public_evidence_is_valid_when_present(self):
         if not EVIDENCE.exists():
             self.skipTest("public evidence is generated after implementation validation")

@@ -222,6 +222,16 @@ def inspect_main(args) -> int:
             "shadow_intent_count": bundle["summary"]["shadow_intent_count"],
             "persistence_result": "loaded_complete",
             **_fact_payload(_zero_facts()),
+            "source_classification": decision["data_provenance"]["classification"],
+            "endpoint_identities": decision["data_provenance"]["endpoint_identities"],
+            "network_read_count": decision["data_provenance"]["network_read_count"],
+            "public_source_hashes": decision["data_provenance"]["response_source_hashes"],
+            "public_provenance_hash": decision["data_provenance"]["provenance_hash"],
+            "public_provenance_payload_hash": decision["data_provenance"]["payload_hash"],
+            "public_source_instance_id": decision["data_provenance"]["source_instance_id"],
+            "failure_kind": decision["data_provenance"]["failure_kind"],
+            "data_provenance_hash": decision["data_provenance_hash"],
+            "summary_hash": bundle["summary"]["summary_hash"],
         }
         return 0 if _emit(result, serialization_facts=_zero_facts()) else 2
     except Exception:

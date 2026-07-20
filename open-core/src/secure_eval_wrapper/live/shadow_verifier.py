@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from pathlib import Path
 from typing import Mapping
 
@@ -11,6 +12,7 @@ from .identity import RuntimeRepositoryIdentity, validate_git_commit_sha
 from .shadow_repository import (
     MemoryShadowRepository,
     ShadowMemoryStore,
+    ShadowPersistenceConflict,
     ShadowPostCommitCrash,
 )
 from .shadow_runtime import (
@@ -18,11 +20,11 @@ from .shadow_runtime import (
     RUNTIME_CRASH_POINTS,
     ShadowAssuranceRuntime,
 )
-from .shadow_scenarios import all_shadow_scenarios
+from .shadow_scenarios import ShadowScenarioSpec, all_shadow_scenarios, scenario_by_id
 from .shadow_models import shadow_uuid
 
 
-SHADOW_VERIFIER_VERSION = "phase8b-shadow-assurance-verifier-v3"
+SHADOW_VERIFIER_VERSION = "phase8b-shadow-assurance-verifier-v4"
 POSTGRESQL_VERIFIER_NOT_EXECUTED = "POSTGRESQL_VERIFIER_NOT_EXECUTED"
 _RESTART_CASES = ("clean_flat_account", "existing_long_spot_position", "stale_data")
 _REPLAY_CASES = (
@@ -33,7 +35,15 @@ _REPLAY_CASES = (
     "delisted_instrument",
     "insufficient_quote_balance",
 )
-_CONCURRENCY_CASES = tuple(f"shadow_concurrency_{index:02d}" for index in range(1, 8))
+_CONCURRENCY_CASES = (
+    "identical_runs_simultaneously",
+    "different_market_snapshots_simultaneously",
+    "different_synthetic_accounts_simultaneously",
+    "same_run_id_different_payloads",
+    "different_run_ids_same_payload",
+    "replay_and_new_run_concurrently",
+    "restarted_reader_while_another_run_writes",
+)
 
 
 def _runtime(repository, repository_sha: str) -> ShadowAssuranceRuntime:
@@ -51,6 +61,57 @@ def _case_result(case_id: str, passed: bool, evidence: object) -> dict[str, obje
         "evidence_hash": sha256_payload(evidence),
     }
     return {**core, "result_hash": sha256_payload(core)}
+
+
+def _concurrency_case_result(
+    case_id: str,
+    *,
+    expected: str,
+    observed: str,
+    run_ids: tuple[str, ...],
+    hashes: tuple[str, ...],
+    passed: bool,
+    evidence: object,
+) -> dict[str, object]:
+    core = {
+        "case_id": case_id,
+        "expected_outcome_classification": expected,
+        "observed_outcome_classification": observed,
+        "relevant_run_ids": tuple(sorted(run_ids)),
+        "relevant_hashes": tuple(sorted(hashes)),
+        "evidence_hash": sha256_payload(evidence),
+        "passed": bool(passed),
+    }
+    return {**core, "result_hash": sha256_payload(core)}
+
+
+def _concurrency_variant(
+    base: ShadowScenarioSpec,
+    scenario_id: str,
+    *,
+    market: dict[str, object] | None = None,
+    account: dict[str, object] | None = None,
+) -> ShadowScenarioSpec:
+    return ShadowScenarioSpec(
+        scenario_id,
+        base.category,
+        deepcopy(dict(base.account_payload)) if account is None else account,
+        deepcopy(dict(base.market_payload)) if market is None else market,
+        deepcopy(dict(base.request_payload)),
+        "accepted",
+        (),
+        1,
+    )
+
+
+def _summary_evidence(summary) -> dict[str, object]:
+    return {
+        "run_id": str(summary.shadow_run_id),
+        "input_hash": summary.input_hash,
+        "decision_hash": summary.decision_hash,
+        "persistence_result": summary.persistence_result,
+        "replayed": summary.replayed,
+    }
 
 
 def _scenario_catalog_hash() -> str:
@@ -75,6 +136,7 @@ def _runtime_implementation_hash() -> str:
         "shadow_models.py",
         "shadow_scenarios.py",
         "shadow_runtime.py",
+        "shadow_bundle.py",
         "shadow_repository.py",
         "shadow_verifier.py",
     )
@@ -142,34 +204,350 @@ def run_offline_assurance_verifier(repository_sha: str) -> dict[str, object]:
         }))
 
     concurrency_results = []
-    concurrency_scenarios = tuple(scenario.scenario_id for scenario in all_shadow_scenarios()[:7])
-    for case_id, scenario_id in zip(_CONCURRENCY_CASES, concurrency_scenarios, strict=True):
-        store = ShadowMemoryStore()
-        run_id = shadow_uuid("verifier-concurrency", {
-            "repository_sha": repository_sha, "case_id": case_id
-        })
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            futures = tuple(
+    base = scenario_by_id("clean_flat_account")
+    market_payload = deepcopy(dict(base.market_payload))
+    market_payload["last_price"] = "50001"
+    market_variant = _concurrency_variant(
+        base,
+        "verifier_concurrent_market_variant",
+        market=market_payload,
+    )
+    account_payload = deepcopy(dict(base.account_payload))
+    account_payload["balances"][0]["available"] = "9999"
+    account_variant = _concurrency_variant(
+        base,
+        "verifier_concurrent_account_variant",
+        account=account_payload,
+    )
+
+    # 1. Two identical runs simultaneously.
+    case_id = _CONCURRENCY_CASES[0]
+    store = ShadowMemoryStore()
+    run_id = shadow_uuid("verifier-concurrency", {
+        "repository_sha": repository_sha, "case_id": case_id
+    })
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        concurrent = tuple(
+            future.result()
+            for future in (
                 pool.submit(
-                    _runtime(MemoryShadowRepository(store), repository_sha).run_fixture,
-                    scenario_id,
+                    _runtime(MemoryShadowRepository(store), repository_sha)
+                    ._run_fixture_scenario_for_test,
+                    base,
                     shadow_run_id=run_id,
-                )
-                for _ in range(2)
+                ),
+                pool.submit(
+                    _runtime(MemoryShadowRepository(store), repository_sha)
+                    ._run_fixture_scenario_for_test,
+                    base,
+                    shadow_run_id=run_id,
+                ),
             )
-            concurrent = tuple(sorted(
-                (future.result() for future in futures),
-                key=lambda item: (item.persistence_result, item.summary_hash),
-            ))
-        summaries.extend(concurrent)
-        passed = (
-            len({item.decision_hash for item in concurrent}) == 1
-            and sorted(item.persistence_result for item in concurrent)
-            == ["idempotent_replay", "persisted"]
         )
-        concurrency_results.append(_case_result(case_id, passed, [
-            item.public_payload() for item in concurrent
-        ]))
+    summaries.extend(concurrent)
+    statuses = tuple(sorted(
+        "replay" if item.replayed else "persisted" for item in concurrent
+    ))
+    expected = "one_persist_one_replay"
+    observed = expected if statuses == ("persisted", "replay") else "+".join(statuses)
+    passed = (
+        observed == expected
+        and len({item.decision_hash for item in concurrent}) == 1
+    )
+    concurrency_results.append(_concurrency_case_result(
+        case_id,
+        expected=expected,
+        observed=observed,
+        run_ids=tuple(str(item.shadow_run_id) for item in concurrent),
+        hashes=tuple(item.decision_hash for item in concurrent),
+        passed=passed,
+        evidence=tuple(sorted(
+            (_summary_evidence(item) for item in concurrent),
+            key=lambda item: (item["persistence_result"], item["decision_hash"]),
+        )),
+    ))
+
+    # 2. Different market snapshots simultaneously.
+    case_id = _CONCURRENCY_CASES[1]
+    store = ShadowMemoryStore()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        concurrent = tuple(
+            future.result()
+            for future in (
+                pool.submit(
+                    _runtime(MemoryShadowRepository(store), repository_sha)
+                    ._run_fixture_scenario_for_test,
+                    base,
+                ),
+                pool.submit(
+                    _runtime(MemoryShadowRepository(store), repository_sha)
+                    ._run_fixture_scenario_for_test,
+                    market_variant,
+                ),
+            )
+        )
+    summaries.extend(concurrent)
+    expected = "two_distinct_market_persists"
+    passed = (
+        all(not item.replayed for item in concurrent)
+        and len({item.shadow_run_id for item in concurrent}) == 2
+        and len({item.input_hash for item in concurrent}) == 2
+    )
+    observed = expected if passed else "market_snapshot_isolation_failed"
+    concurrency_results.append(_concurrency_case_result(
+        case_id,
+        expected=expected,
+        observed=observed,
+        run_ids=tuple(str(item.shadow_run_id) for item in concurrent),
+        hashes=tuple(item.input_hash for item in concurrent),
+        passed=passed,
+        evidence=tuple(sorted(
+            (_summary_evidence(item) for item in concurrent),
+            key=lambda item: item["run_id"],
+        )),
+    ))
+
+    # 3. Different synthetic accounts simultaneously.
+    case_id = _CONCURRENCY_CASES[2]
+    store = ShadowMemoryStore()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        concurrent = tuple(
+            future.result()
+            for future in (
+                pool.submit(
+                    _runtime(MemoryShadowRepository(store), repository_sha)
+                    ._run_fixture_scenario_for_test,
+                    base,
+                ),
+                pool.submit(
+                    _runtime(MemoryShadowRepository(store), repository_sha)
+                    ._run_fixture_scenario_for_test,
+                    account_variant,
+                ),
+            )
+        )
+    summaries.extend(concurrent)
+    expected = "two_distinct_account_persists"
+    passed = (
+        all(not item.replayed for item in concurrent)
+        and len({item.shadow_run_id for item in concurrent}) == 2
+        and len({item.input_hash for item in concurrent}) == 2
+    )
+    observed = expected if passed else "synthetic_account_isolation_failed"
+    concurrency_results.append(_concurrency_case_result(
+        case_id,
+        expected=expected,
+        observed=observed,
+        run_ids=tuple(str(item.shadow_run_id) for item in concurrent),
+        hashes=tuple(item.input_hash for item in concurrent),
+        passed=passed,
+        evidence=tuple(sorted(
+            (_summary_evidence(item) for item in concurrent),
+            key=lambda item: item["run_id"],
+        )),
+    ))
+
+    # 4. Same run ID with different payloads.
+    case_id = _CONCURRENCY_CASES[3]
+    store = ShadowMemoryStore()
+    run_id = shadow_uuid("verifier-concurrency", {
+        "repository_sha": repository_sha, "case_id": case_id
+    })
+
+    def persist_or_conflict(scenario):
+        try:
+            summary = (
+                _runtime(MemoryShadowRepository(store), repository_sha)
+                ._run_fixture_scenario_for_test(scenario, shadow_run_id=run_id)
+            )
+            return {
+                "outcome": "replay" if summary.replayed else "persisted",
+                "summary": summary,
+                "input_hash": summary.input_hash,
+            }
+        except ShadowPersistenceConflict:
+            return {
+                "outcome": "conflict",
+                "summary": None,
+                "input_hash": scenario.input_hash,
+            }
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = tuple(
+            future.result()
+            for future in (
+                pool.submit(persist_or_conflict, base),
+                pool.submit(persist_or_conflict, market_variant),
+            )
+        )
+    summaries.extend(
+        item["summary"] for item in outcomes if item["summary"] is not None
+    )
+    statuses = tuple(sorted(item["outcome"] for item in outcomes))
+    expected = "one_persist_one_conflict"
+    observed = expected if statuses == ("conflict", "persisted") else "+".join(statuses)
+    passed = observed == expected and len(store.bundles) == 1
+    candidate_hashes = tuple(sorted((base.input_hash, market_variant.input_hash)))
+    concurrency_results.append(_concurrency_case_result(
+        case_id,
+        expected=expected,
+        observed=observed,
+        run_ids=(str(run_id),),
+        hashes=candidate_hashes,
+        passed=passed,
+        evidence={
+            "candidate_input_hashes": candidate_hashes,
+            "outcome_classifications": statuses,
+        },
+    ))
+
+    # 5. Different run IDs with the same payload.
+    case_id = _CONCURRENCY_CASES[4]
+    store = ShadowMemoryStore()
+    run_ids = tuple(
+        shadow_uuid("verifier-concurrency", {
+            "repository_sha": repository_sha,
+            "case_id": case_id,
+            "index": index,
+        })
+        for index in (1, 2)
+    )
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        concurrent = tuple(
+            future.result()
+            for future in (
+                pool.submit(
+                    _runtime(MemoryShadowRepository(store), repository_sha)
+                    ._run_fixture_scenario_for_test,
+                    base,
+                    shadow_run_id=run_ids[0],
+                ),
+                pool.submit(
+                    _runtime(MemoryShadowRepository(store), repository_sha)
+                    ._run_fixture_scenario_for_test,
+                    base,
+                    shadow_run_id=run_ids[1],
+                ),
+            )
+        )
+    summaries.extend(concurrent)
+    expected = "two_run_ids_same_payload_persisted"
+    passed = (
+        all(not item.replayed for item in concurrent)
+        and len({item.shadow_run_id for item in concurrent}) == 2
+        and len({item.input_hash for item in concurrent}) == 1
+    )
+    observed = expected if passed else "same_payload_run_id_isolation_failed"
+    concurrency_results.append(_concurrency_case_result(
+        case_id,
+        expected=expected,
+        observed=observed,
+        run_ids=tuple(str(item.shadow_run_id) for item in concurrent),
+        hashes=tuple(item.input_hash for item in concurrent),
+        passed=passed,
+        evidence=tuple(sorted(
+            (_summary_evidence(item) for item in concurrent),
+            key=lambda item: item["run_id"],
+        )),
+    ))
+
+    # 6. Replay and a new run concurrently.
+    case_id = _CONCURRENCY_CASES[5]
+    store = ShadowMemoryStore()
+    replay_id = shadow_uuid("verifier-concurrency", {
+        "repository_sha": repository_sha, "case_id": case_id, "kind": "replay"
+    })
+    new_id = shadow_uuid("verifier-concurrency", {
+        "repository_sha": repository_sha, "case_id": case_id, "kind": "new"
+    })
+    initial = (
+        _runtime(MemoryShadowRepository(store), repository_sha)
+        ._run_fixture_scenario_for_test(base, shadow_run_id=replay_id)
+    )
+    summaries.append(initial)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        replay, new = (
+            future.result()
+            for future in (
+                pool.submit(
+                    _runtime(MemoryShadowRepository(store), repository_sha)
+                    ._run_fixture_scenario_for_test,
+                    base,
+                    shadow_run_id=replay_id,
+                ),
+                pool.submit(
+                    _runtime(MemoryShadowRepository(store), repository_sha)
+                    ._run_fixture_scenario_for_test,
+                    market_variant,
+                    shadow_run_id=new_id,
+                ),
+            )
+        )
+    summaries.extend((replay, new))
+    expected = "replay_and_new_persist"
+    passed = replay.replayed and not new.replayed and len(store.bundles) == 2
+    observed = expected if passed else "replay_new_interleaving_failed"
+    concurrency_results.append(_concurrency_case_result(
+        case_id,
+        expected=expected,
+        observed=observed,
+        run_ids=(str(replay.shadow_run_id), str(new.shadow_run_id)),
+        hashes=(replay.decision_hash, new.decision_hash),
+        passed=passed,
+        evidence=tuple(sorted(
+            (_summary_evidence(item) for item in (replay, new)),
+            key=lambda item: item["run_id"],
+        )),
+    ))
+
+    # 7. A restarted reader loads a committed bundle while another run writes.
+    case_id = _CONCURRENCY_CASES[6]
+    store = ShadowMemoryStore()
+    committed = (
+        _runtime(MemoryShadowRepository(store), repository_sha)
+        ._run_fixture_scenario_for_test(base)
+    )
+    summaries.append(committed)
+    writer_id = shadow_uuid("verifier-concurrency", {
+        "repository_sha": repository_sha, "case_id": case_id, "kind": "writer"
+    })
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        loaded, written = (
+            future.result()
+            for future in (
+                pool.submit(
+                    MemoryShadowRepository(store).load_bundle,
+                    committed.shadow_run_id,
+                ),
+                pool.submit(
+                    _runtime(MemoryShadowRepository(store), repository_sha)
+                    ._run_fixture_scenario_for_test,
+                    account_variant,
+                    shadow_run_id=writer_id,
+                ),
+            )
+        )
+    summaries.append(written)
+    expected = "restarted_reader_loaded_while_new_run_persisted"
+    passed = (
+        loaded["status"] == "complete"
+        and loaded["decision"]["decision_hash"] == committed.decision_hash
+        and not written.replayed
+        and len(store.bundles) == 2
+    )
+    observed = expected if passed else "reader_writer_interleaving_failed"
+    concurrency_results.append(_concurrency_case_result(
+        case_id,
+        expected=expected,
+        observed=observed,
+        run_ids=(str(committed.shadow_run_id), str(written.shadow_run_id)),
+        hashes=(committed.decision_hash, written.decision_hash),
+        passed=passed,
+        evidence={
+            "loaded_bundle_hash": loaded["bundle_hash"],
+            "writer": _summary_evidence(written),
+        },
+    ))
 
     crash_results = []
     for crash_point in sorted(RUNTIME_CRASH_POINTS):

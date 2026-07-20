@@ -368,6 +368,9 @@ Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarde
 - [x] Require literal loopback and exact disposable shadow PostgreSQL targets before connect, delegate authentication to libpq without a password CLI argument, reject catalog and row contamination, and share one canonical ordered migration `0001`-`0026` identity with bootstrap.
 - [x] Replace caller-fed assurance counts with an executable repository/catalog/runtime-bound verifier, classify PostgreSQL and public smoke as not executed in the checked artifact, and add fake-transport, provenance, migration, CLI, evidence-tamper, contamination, restart, replay, concurrency, and crash regressions while keeping independent audit pending.
 - [x] Make verifier v3 deterministic across thread completion order by canonicalizing concurrent persistence outcomes, and repair the fresh-process libpq environment regression exposed by the first branch and pull-request CI attempt.
+- [x] Remove the production public-source test transport factory, seal the exact internally constructed `UrlLibHttpTransport`, bind provenance to an internally generated source-instance identity/capability, and keep fake transports confined to a non-authoritative `fixture_protocol_test` harness.
+- [x] Persist complete fixture/public/unavailable provenance and summary hashes inside the authoritative JSONB bundle; apply one canonical SQL/JSON/hash/safety validator during target verification, replay, load, and inspect; and add committed-row, restart, replay, conflict, and provenance-tamper regressions without migration `0027`.
+- [x] Upgrade to verifier v4 with seven distinct executable concurrency semantics whose expected/observed classifications, run IDs, hashes, result hashes, and passed flags are rerun and compared exactly.
 
 ## Todo
 

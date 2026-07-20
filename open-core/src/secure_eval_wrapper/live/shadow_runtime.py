@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from types import MappingProxyType
 from typing import Callable, Mapping
+from secrets import token_hex
 from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -52,6 +53,7 @@ from .provider_identity import OKX_PRODUCTION_SPOT_ADAPTER_IMPLEMENTATION_HASH
 from .reservations import calculate_live_reservation
 from .risk import evaluate_live_risk
 from .shadow_models import (
+    ShadowDataProvenance,
     ShadowDecisionRecord,
     ShadowDecisionRequest,
     ShadowEvidenceClassification,
@@ -94,8 +96,9 @@ _PUBLIC_ENDPOINT_IDENTITIES = (
     "GET /api/v5/public/instruments",
     "GET /api/v5/market/history-trades",
 )
-_PUBLIC_PROVENANCE_CAPABILITY = object()
-_TEST_TRANSPORT_CAPABILITY = object()
+_AUDITED_URLLIB_TRANSPORT_TYPE = UrlLibHttpTransport
+_AUDITED_URLLIB_SEND_METHOD = UrlLibHttpTransport.send
+_SOURCE_INSTANCE_ID_FACTORY = token_hex
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +108,7 @@ class _PublicSourceProvenance:
     actual_send_count: int
     response_source_hashes: tuple[str, ...]
     instrument: str
+    source_instance_id: str
     classification: str
     payload_hash: str
     failure_kind: str | None
@@ -155,6 +159,7 @@ def _provenance_core(
     actual_send_count: int,
     response_source_hashes: tuple[str, ...],
     instrument: str,
+    source_instance_id: str,
     classification: str,
     payload_hash: str,
     failure_kind: str | None,
@@ -165,6 +170,7 @@ def _provenance_core(
         "actual_send_count": actual_send_count,
         "response_source_hashes": response_source_hashes,
         "instrument": instrument,
+        "source_instance_id": source_instance_id,
         "classification": classification,
         "payload_hash": payload_hash,
         "failure_kind": failure_kind,
@@ -183,13 +189,15 @@ class ShadowPublicDataFailure(RuntimeError):
 class _CountingPublicTransport:
     __slots__ = (
         "_delegate",
+        "_send_method",
         "actual_send_count",
         "endpoint_identities",
         "response_hashes",
     )
 
-    def __init__(self, delegate: HttpTransport) -> None:
+    def __init__(self, delegate: HttpTransport, *, send_method=None) -> None:
         self._delegate = delegate
+        self._send_method = send_method
         self.actual_send_count = 0
         self.endpoint_identities: list[str] = []
         self.response_hashes: list[str] = []
@@ -207,14 +215,19 @@ class _CountingPublicTransport:
             raise ShadowAuthorityError("public shadow transport rejected request identity")
         self.actual_send_count += 1
         self.endpoint_identities.append(identity)
-        response = self._delegate.send(request)
+        response = (
+            self._delegate.send(request)
+            if self._send_method is None
+            else self._send_method(self._delegate, request)
+        )
         if type(response) is not HttpResponse:
             raise ShadowAuthorityError("public shadow transport returned an invalid response type")
-        self.response_hashes.append(sha256_payload({
-            "status": response.status,
-            "body_sha256": sha256(response.body_bytes).hexdigest(),
-            "headers": dict(response.headers),
-        }))
+        if 200 <= response.status < 300:
+            self.response_hashes.append(sha256_payload({
+                "status": response.status,
+                "body_sha256": sha256(response.body_bytes).hexdigest(),
+                "headers": dict(response.headers),
+            }))
         return response
 
 
@@ -229,59 +242,74 @@ class FixtureShadowMarketSource:
 
 
 class OkxPublicShadowMarketSource:
-    """Construct only the audited unauthenticated provider and seal its provenance."""
+    """Construct only the audited transport and issue instance-bound provenance."""
 
-    __slots__ = ("_timeout_seconds", "_transport", "_last_provenance")
+    __slots__ = (
+        "__timeout_seconds",
+        "__transport",
+        "__source_instance_id",
+        "__provenance_capability",
+        "__sealed",
+    )
+
+    def __setattr__(self, name: str, value: object) -> None:
+        if getattr(self, "_OkxPublicShadowMarketSource__sealed", False):
+            raise AttributeError("public shadow source authority is immutable")
+        object.__setattr__(self, name, value)
 
     def __init__(
         self,
         *,
         allow_public_network: bool,
         timeout_seconds: float = 3.0,
-        _transport_for_test: HttpTransport | None = None,
-        _test_capability: object | None = None,
     ) -> None:
         if allow_public_network is not True:
             raise ShadowAuthorityError("public network source requires the exact opt-in flag")
         if isinstance(timeout_seconds, bool) or not 0 < timeout_seconds <= 10:
             raise ValueError("public network timeout must be in (0, 10] seconds")
-        if _transport_for_test is not None and _test_capability is not _TEST_TRANSPORT_CAPABILITY:
-            raise ShadowAuthorityError("fake public transport is test-internal only")
-        self._timeout_seconds = float(timeout_seconds)
-        self._transport = (
-            UrlLibHttpTransport() if _transport_for_test is None else _transport_for_test
+        transport = _AUDITED_URLLIB_TRANSPORT_TYPE()
+        if (
+            type(transport) is not _AUDITED_URLLIB_TRANSPORT_TYPE
+            or _AUDITED_URLLIB_TRANSPORT_TYPE.send is not _AUDITED_URLLIB_SEND_METHOD
+        ):
+            raise ShadowAuthorityError("audited public transport construction was replaced")
+        object.__setattr__(
+            self,
+            "_OkxPublicShadowMarketSource__timeout_seconds",
+            float(timeout_seconds),
         )
-        self._last_provenance: _PublicSourceProvenance | None = None
-
-    @classmethod
-    def _for_test(
-        cls,
-        transport: HttpTransport,
-        *,
-        timeout_seconds: float = 3.0,
-    ) -> "OkxPublicShadowMarketSource":
-        return cls(
-            allow_public_network=True,
-            timeout_seconds=timeout_seconds,
-            _transport_for_test=transport,
-            _test_capability=_TEST_TRANSPORT_CAPABILITY,
+        object.__setattr__(
+            self,
+            "_OkxPublicShadowMarketSource__transport",
+            transport,
+        )
+        object.__setattr__(
+            self,
+            "_OkxPublicShadowMarketSource__source_instance_id",
+            _SOURCE_INSTANCE_ID_FACTORY(32),
+        )
+        object.__setattr__(
+            self,
+            "_OkxPublicShadowMarketSource__provenance_capability",
+            object(),
+        )
+        object.__setattr__(
+            self,
+            "_OkxPublicShadowMarketSource__sealed",
+            True,
         )
 
     @property
     def timeout_seconds(self) -> float:
-        return self._timeout_seconds
+        return object.__getattribute__(
+            self, "_OkxPublicShadowMarketSource__timeout_seconds"
+        )
 
     @property
     def safety_facts(self) -> ShadowSafetyFacts:
-        provenance = self._last_provenance
-        return ShadowSafetyFacts(
-            network_read_count=0 if provenance is None else provenance.actual_send_count,
-            network_write_count=0,
-            authenticated_endpoint_call_count=0,
-            production_transport_call_count=0,
-        )
+        return ShadowSafetyFacts(network_read_count=0)
 
-    def _issue_provenance(
+    def __issue_provenance(
         self,
         *,
         transport: _CountingPublicTransport,
@@ -291,25 +319,39 @@ class OkxPublicShadowMarketSource:
         failure_kind: str | None,
     ) -> _PublicSourceProvenance:
         source_exact_type = f"{type(self).__module__}.{type(self).__qualname__}"
+        source_instance_id = object.__getattribute__(
+            self, "_OkxPublicShadowMarketSource__source_instance_id"
+        )
         core = _provenance_core(
             source_exact_type=source_exact_type,
             endpoint_identities=tuple(transport.endpoint_identities),
             actual_send_count=transport.actual_send_count,
             response_source_hashes=response_source_hashes,
             instrument="BTC-USDT",
+            source_instance_id=source_instance_id,
             classification=classification,
             payload_hash=payload_hash,
             failure_kind=failure_kind,
         )
-        provenance = _PublicSourceProvenance(
-            **core,
-            token_hash=sha256_payload(core),
-            _capability=_PUBLIC_PROVENANCE_CAPABILITY,
+        durable = ShadowDataProvenance(
+            classification,
+            tuple(transport.endpoint_identities),
+            transport.actual_send_count,
+            response_source_hashes,
+            source_instance_id,
+            payload_hash,
+            failure_kind,
         )
-        self._last_provenance = provenance
-        return provenance
+        return _PublicSourceProvenance(
+            **core,
+            token_hash=durable.provenance_hash,
+            _capability=object.__getattribute__(
+                self,
+                "_OkxPublicShadowMarketSource__provenance_capability",
+            ),
+        )
 
-    def _failure(
+    def __failure(
         self,
         exc: Exception,
         *,
@@ -328,7 +370,8 @@ class OkxPublicShadowMarketSource:
             public_timestamp_utc=at_utc.isoformat(),
             public_source_hashes=response_source_hashes,
         )
-        provenance = self._issue_provenance(
+        provenance = _AUDITED_PUBLIC_ISSUE_METHOD(
+            self,
             transport=transport,
             response_source_hashes=response_source_hashes,
             classification="unavailable",
@@ -350,7 +393,18 @@ class OkxPublicShadowMarketSource:
 
         key = okx_spot_instrument_key("BTC-USDT")
         collection_id = shadow_uuid("public-collection", {"at": at_utc, "instrument": "BTC-USDT"})
-        counting = _CountingPublicTransport(self._transport)
+        transport = object.__getattribute__(
+            self, "_OkxPublicShadowMarketSource__transport"
+        )
+        if (
+            type(transport) is not _AUDITED_URLLIB_TRANSPORT_TYPE
+            or _AUDITED_URLLIB_TRANSPORT_TYPE.send is not _AUDITED_URLLIB_SEND_METHOD
+        ):
+            raise ShadowAuthorityError("audited public transport authority was replaced")
+        counting = _CountingPublicTransport(
+            transport,
+            send_method=_AUDITED_URLLIB_SEND_METHOD,
+        )
         provider = OkxPublicProvider(
             transport=counting,
             timeout=self.timeout_seconds,
@@ -370,12 +424,14 @@ class OkxPublicShadowMarketSource:
                 )
             )
         except Exception as exc:
-            raise self._failure(
+            raise _AUDITED_PUBLIC_FAILURE_METHOD(
+                self,
                 exc, at_utc=at_utc, transport=counting, response_source_hashes=response_hashes
             ) from exc
         if len(instruments) != 1:
             exc = ValueError("public instrument response must contain exactly one record")
-            raise self._failure(
+            raise _AUDITED_PUBLIC_FAILURE_METHOD(
+                self,
                 exc, at_utc=at_utc, transport=counting, response_source_hashes=response_hashes
             )
         response_hashes = (instruments[0].source_sha256,)
@@ -393,12 +449,14 @@ class OkxPublicShadowMarketSource:
                 )
             )
         except Exception as exc:
-            raise self._failure(
+            raise _AUDITED_PUBLIC_FAILURE_METHOD(
+                self,
                 exc, at_utc=at_utc, transport=counting, response_source_hashes=response_hashes
             ) from exc
         if not trades:
             exc = ValueError("public trade response must contain at least one record")
-            raise self._failure(
+            raise _AUDITED_PUBLIC_FAILURE_METHOD(
+                self,
                 exc, at_utc=at_utc, transport=counting, response_source_hashes=response_hashes
             )
         latest = max(trades, key=lambda observation: observation.observed_at_utc)
@@ -435,7 +493,8 @@ class OkxPublicShadowMarketSource:
             "failure_kind": None,
             "public_source_hashes": response_hashes,
         }
-        provenance = self._issue_provenance(
+        provenance = _AUDITED_PUBLIC_ISSUE_METHOD(
+            self,
             transport=counting,
             response_source_hashes=response_hashes,
             classification="public_network",
@@ -445,6 +504,14 @@ class OkxPublicShadowMarketSource:
         return _PublicMarketLoad(MappingProxyType(payload), provenance)
 
 
+_AUDITED_PUBLIC_INIT_METHOD = OkxPublicShadowMarketSource.__init__
+_AUDITED_PUBLIC_SETATTR_METHOD = OkxPublicShadowMarketSource.__setattr__
+_AUDITED_PUBLIC_ISSUE_METHOD = (
+    OkxPublicShadowMarketSource._OkxPublicShadowMarketSource__issue_provenance
+)
+_AUDITED_PUBLIC_FAILURE_METHOD = (
+    OkxPublicShadowMarketSource._OkxPublicShadowMarketSource__failure
+)
 _AUDITED_PUBLIC_LOAD_METHOD = OkxPublicShadowMarketSource.load
 
 
@@ -453,11 +520,17 @@ def _validate_public_source_provenance(
     provenance: _PublicSourceProvenance,
     market_payload: Mapping[str, object],
 ) -> None:
+    source_instance_id = object.__getattribute__(
+        source, "_OkxPublicShadowMarketSource__source_instance_id"
+    )
+    source_capability = object.__getattribute__(
+        source, "_OkxPublicShadowMarketSource__provenance_capability"
+    )
     if (
         type(source) is not OkxPublicShadowMarketSource
-        or source._last_provenance is not provenance
         or type(provenance) is not _PublicSourceProvenance
-        or provenance._capability is not _PUBLIC_PROVENANCE_CAPABILITY
+        or provenance._capability is not source_capability
+        or provenance.source_instance_id != source_instance_id
     ):
         raise ShadowAuthorityError("public shadow provenance capability is invalid")
     source_type = (
@@ -496,6 +569,7 @@ def _validate_public_source_provenance(
         actual_send_count=provenance.actual_send_count,
         response_source_hashes=provenance.response_source_hashes,
         instrument=provenance.instrument,
+        source_instance_id=provenance.source_instance_id,
         classification=provenance.classification,
         payload_hash=provenance.payload_hash,
         failure_kind=provenance.failure_kind,
@@ -506,10 +580,21 @@ def _validate_public_source_provenance(
         or provenance.classification != classification
         or provenance.failure_kind != failure_kind
         or provenance.payload_hash != payload_hash
-        or provenance.token_hash != sha256_payload(core)
         or provenance.actual_send_count != int(market_payload.get("network_read_count", -1))
     ):
         raise ShadowAuthorityError("public shadow provenance token does not bind the payload")
+    durable = ShadowDataProvenance(
+        provenance.classification,
+        provenance.endpoint_identities,
+        provenance.actual_send_count,
+        provenance.response_source_hashes,
+        provenance.source_instance_id,
+        provenance.payload_hash,
+        provenance.failure_kind,
+        provenance.token_hash,
+    )
+    if durable.provenance_hash != provenance.token_hash:
+        raise ShadowAuthorityError("public shadow durable provenance binding is invalid")
 
 
 _ALLOWED_SOURCE_TYPES = (FixtureShadowMarketSource, OkxPublicShadowMarketSource)
@@ -868,8 +953,12 @@ class ShadowAssuranceRuntime:
         if type(self.market_source) is not OkxPublicShadowMarketSource:
             raise ShadowAuthorityError("public execution requires the exact public source")
         bound_load = getattr(self.market_source, "load", None)
-        if getattr(bound_load, "__func__", None) is not _AUDITED_PUBLIC_LOAD_METHOD:
-            raise ShadowAuthorityError("public source load implementation was replaced")
+        if (
+            getattr(bound_load, "__func__", None) is not _AUDITED_PUBLIC_LOAD_METHOD
+            or type(self.market_source).__init__ is not _AUDITED_PUBLIC_INIT_METHOD
+            or type(self.market_source).__setattr__ is not _AUDITED_PUBLIC_SETATTR_METHOD
+        ):
+            raise ShadowAuthorityError("public source authority implementation was replaced")
         if provider.lower() != "okx" or instrument.upper() != "BTC-USDT":
             raise ShadowAuthorityError("public shadow mode permits only audited OKX BTC-USDT Spot")
         now = datetime.now(timezone.utc) if at_utc is None else at_utc
@@ -948,11 +1037,19 @@ class ShadowAssuranceRuntime:
             raise ShadowAuthorityError("unknown shadow source mode")
         if crash_at is not None and crash_at not in RUNTIME_CRASH_POINTS:
             raise ValueError("unknown Phase 8B shadow crash point")
-        public_source_hashes = (
-            () if _public_provenance is None else _public_provenance.response_source_hashes
-        )
-        public_provenance_hash = (
-            None if _public_provenance is None else _public_provenance.token_hash
+        data_provenance = (
+            ShadowDataProvenance.fixture()
+            if _public_provenance is None
+            else ShadowDataProvenance(
+                _public_provenance.classification,
+                _public_provenance.endpoint_identities,
+                _public_provenance.actual_send_count,
+                _public_provenance.response_source_hashes,
+                _public_provenance.source_instance_id,
+                _public_provenance.payload_hash,
+                _public_provenance.failure_kind,
+                _public_provenance.token_hash,
+            )
         )
         identity = self.identity_resolver()
         repository_sha = identity.observed_commit_sha
@@ -1070,14 +1167,13 @@ class ShadowAssuranceRuntime:
                 preflight_blockers,
                 None,
                 safety,
+                data_provenance,
                 repository_sha,
                 parent_input_hash,
             )
             return self._persist_and_summarize(
                 decision,
                 crash_at=crash_at,
-                public_source_hashes=public_source_hashes,
-                public_provenance_hash=public_provenance_hash,
             )
 
         series = SeriesIdentity(
@@ -1345,14 +1441,13 @@ class ShadowAssuranceRuntime:
             tuple(blockers),
             shadow_intent,
             safety,
+            data_provenance,
             repository_sha,
             parent_input_hash,
         )
         return self._persist_and_summarize(
             decision,
             crash_at=crash_at,
-            public_source_hashes=public_source_hashes,
-            public_provenance_hash=public_provenance_hash,
         )
 
     def _persist_and_summarize(
@@ -1360,8 +1455,6 @@ class ShadowAssuranceRuntime:
         decision: ShadowDecisionRecord,
         *,
         crash_at: str | None,
-        public_source_hashes: tuple[str, ...],
-        public_provenance_hash: str | None,
     ) -> ShadowRunSummary:
         if crash_at == "before_decision_persist":
             raise ShadowInjectedCrash(crash_at)
@@ -1378,8 +1471,7 @@ class ShadowAssuranceRuntime:
             "idempotent_replay" if replayed else "persisted",
             replayed,
             decision.safety_facts,
-            public_source_hashes,
-            public_provenance_hash,
+            decision.data_provenance,
         )
 
 
