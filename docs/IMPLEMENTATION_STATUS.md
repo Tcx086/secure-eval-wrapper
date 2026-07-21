@@ -9,7 +9,7 @@ Every future functional PR must update both files in the same change:
 
 Completed work must be listed under `Completed`. Everything not done must remain under `Todo`.
 
-Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarded-live dry-run/read-only runtime, the Phase 8B authenticated read-only proof implementation, and the dedicated Phase 8B local operator bootstrap implementation are independently audited and accepted. The real authenticated proof remains unexecuted and its authorization remains NO. Phase 8 remains `in_progress`, Phase 8C is not started, Phase 9 remains todo, and production submit/cancel remain disabled and unreachable.
+Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarded-live dry-run/read-only runtime, the Phase 8B authenticated read-only proof implementation, and the dedicated Phase 8B local operator bootstrap implementation are independently audited and accepted. The public-data/synthetic-account Phase 8B shadow-assurance implementation candidate is pending independent audit. The real authenticated proof and operator bootstrap remain unexecuted and real-proof authorization remains NO. Phase 8 remains `in_progress`, Phase 8C is not started, Phase 9 remains todo, and production submit/cancel remain disabled and unreachable.
 
 ## Non-Negotiable Constraints
 - PostgreSQL is the only authoritative storage layer.
@@ -356,6 +356,23 @@ Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarde
 - [x] Independently audit and accept the dedicated Phase 8B local operator bootstrap with audit conclusion PASS: PR `#7` candidate head `134b22cacd88dc0488f3f9546ac7a9e98b50cd03` merged as `448d5201cc2db096e7415ecefd7ab807c45eaa00`; final-main Actions run `29557019429` passed Ubuntu Python 3.11 job `87811218674`, Ubuntu Python 3.12 job `87811218652`, Ubuntu Python 3.13 job `87811218640`, Windows Python 3.12 job `87811218658`, PostgreSQL 16 integration job `87811218626`, and public/private and runtime boundary job `87811218619`.
 - [x] Verify migrations `0001` through `0026` remain immutable, migration `0026` has canonical SHA-256 `698772fb68c5c4981256682d064c3be641193ab10c8dbf55e1a5b390ca7c504a`, and no migration `0027` exists; this acceptance accessed no credentials, made no OKX request, accessed no real or operator database, and executed no authenticated proof, while production submit/cancel remain disabled and unreachable.
 
+### Phase 8B: public-data shadow assurance (implementation candidate; independent audit pending)
+
+- [x] Implement a separate fixture-default, socket-free shadow runtime with 27 deterministic synthetic-account cases and 27 replayable public-market cases, plus an explicit bounded unauthenticated OKX BTC-USDT Spot public-data mode.
+- [x] Reuse the guarded-live configuration, standardized signal, preflight, approval, manifest, risk, reservation, repository-identity, and audit contracts while emitting only permanently hypothetical, non-routable shadow intents.
+- [x] Enforce an exact dependency allowlist with no production broker, submit/cancel, credentials, authenticated endpoint, arbitrary transport, real account, operator-database, or production-write authority.
+- [x] Reuse `audit.run_manifests` for atomic PostgreSQL 16 shadow bundles without adding migration `0027`; require exact disposable database names, immutable migrations `0001` through `0026`, canonical migration `0026`, restart reload, idempotent replay, explicit conflict, lineage, seven concurrency cases, and nine crash-recovery cases.
+- [x] Add eight focused suites, six-job CI integration, CLI/documentation, and a fixed-allowlist public assurance artifact with forbidden-key, secret/path, and high-entropy scans; the artifact remains `implemented_pending_independent_audit` and never claims authenticated proof or production authority.
+- [x] Confirm this candidate uses no real credentials, real account data, authenticated endpoints, operator database, production transport, production order, or production cancellation; real proof authorization remains NO and the operator bootstrap remains unexecuted.
+- [x] Repair the shadow public-source boundary with the exact two anonymous OKX GETs, a symbols-only bounded trade request, true send-boundary counts, and source-instance-issued provenance that is validated before persistence.
+- [x] Require literal loopback and exact disposable shadow PostgreSQL targets before connect, delegate authentication to libpq without a password CLI argument, reject catalog and row contamination, and share one canonical ordered migration `0001`-`0026` identity with bootstrap.
+- [x] Replace caller-fed assurance counts with an executable repository/catalog/runtime-bound verifier, classify PostgreSQL and public smoke as not executed in the checked artifact, and add fake-transport, provenance, migration, CLI, evidence-tamper, contamination, restart, replay, concurrency, and crash regressions while keeping independent audit pending.
+- [x] Make verifier v3 deterministic across thread completion order by canonicalizing concurrent persistence outcomes, and repair the fresh-process libpq environment regression exposed by the first branch and pull-request CI attempt.
+- [x] Remove the production public-source test transport factory, seal the exact internally constructed `UrlLibHttpTransport`, bind provenance to an internally generated source-instance identity/capability, and keep fake transports confined to a non-authoritative `fixture_protocol_test` harness.
+- [x] Persist complete fixture/public/unavailable provenance and summary hashes inside the authoritative JSONB bundle; apply one canonical SQL/JSON/hash/safety validator during target verification, replay, load, and inspect; and add committed-row, restart, replay, conflict, and provenance-tamper regressions without migration `0027`.
+- [x] Upgrade to verifier v4 with seven distinct executable concurrency semantics whose expected/observed classifications, run IDs, hashes, result hashes, and passed flags are rerun and compared exactly.
+- [x] Preserve source-issued public read counts across downstream runtime, persistence, replay/conflict, and serialization failures with an immutable public-safe operation carrier and CLI regressions that cannot expose private exception text.
+
 ## Todo
 
 ### Future provider enhancements
@@ -364,6 +381,7 @@ Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarde
 
 
 ### Phase 8: guarded live execution (remaining)
+- [ ] Independently audit the public-data/synthetic-account Phase 8B shadow-assurance implementation candidate and its public evidence before accepting it.
 - [ ] Prepare a separately and explicitly authorized local `secure_eval_phase8b` database bootstrap operation; bootstrap authorization and authenticated-proof authorization must remain distinct, and neither bootstrap nor authenticated proof may run automatically.
 - [ ] Keep real authenticated proof authorization at NO; optionally execute exactly one controlled local authenticated read-only proof with operator-owned environment credentials that are never persisted only after separate exact operator authorization.
 - [ ] Independently review the resulting redacted proof before accepting the operational Phase 8B checkpoint.

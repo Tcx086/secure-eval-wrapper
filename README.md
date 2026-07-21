@@ -6,7 +6,7 @@ A public, auditable, and reproducible framework for building crypto trading syst
 
 The project is developed in explicit, auditable phases. Architecture, PostgreSQL foundations, public market data, public alpha, and standardized signals are complete. Deterministic simulated execution and event-driven backtesting are complete after local PostgreSQL 16 and independent GitHub Actions validation.
 
-> **Current status:** Phases 0-7 are completed checkpoints. Phase 8A and the Phase 8B authenticated read-only proof implementation are independently audited and accepted; the optional real local authenticated proof has not yet been executed. Production submit/cancel and external production FIX remain disabled and unreachable.
+> **Current status:** Phases 0-7 are completed checkpoints. Phase 8A and the Phase 8B authenticated read-only proof implementation are independently audited and accepted. A public-data/synthetic-account Phase 8B shadow-assurance implementation candidate is pending independent audit; the optional real local authenticated proof has not been executed. Production submit/cancel and external production FIX remain disabled and unreachable.
 
 ## Why this project exists
 
@@ -73,7 +73,7 @@ Signals are not fills. Phase 5 backtests create order intents, pass them through
 | 5 | Simulated Execution and Event-Driven Backtesting | Completed; PostgreSQL and CI validated |
 | 6 | Monitoring and strictly simulated FIX 4.4-compatible profile | Completed; first-independent-audit repairs accepted |
 | 7 | Paper Trading | Completed through fifth independent audit |
-| 8 | Guarded Live Execution | Phase 8A and Phase 8B implementation accepted; real authenticated proof not yet executed; production writes disabled |
+| 8 | Guarded Live Execution | Phase 8A/proof accepted; shadow-assurance candidate pending audit; real proof unexecuted; production writes disabled |
 | 9 | Reporting and Public Delivery | Future |
 
 The authoritative progress records are:
@@ -82,6 +82,7 @@ The authoritative progress records are:
 - [Monitoring and simulated FIX](docs/MONITORING_AND_SIMULATED_FIX.md)
 - [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md)
 - [Guarded live execution](docs/GUARDED_LIVE_EXECUTION.md)
+- [Phase 8B shadow assurance](docs/PHASE8B_SHADOW_ASSURANCE.md)
 - [`.project/implementation_status.json`](.project/implementation_status.json)
 
 Completed and planned work must remain synchronized between these two files.
@@ -356,3 +357,5 @@ The public framework includes deterministic point-in-time monitoring and a stric
 ## Phase 8 guarded live dry-run and authenticated read-only proof
 
 `secure-eval-live-dry-run`, `secure-eval-live-status`, `secure-eval-live-reconcile`, and `secure-eval-live-kill` remain safe, write-free commands. `secure-eval-live-preflight` is socket-free without its explicit Phase 8B network flag; with every reviewed configuration, identity, fingerprint, credential-source, PostgreSQL, and CI gate satisfied, it can issue only the exact six catalogued OKX GETs and persist a public-safe proof. No Phase 8 command calls production submit or cancel. See [Guarded Live Execution](docs/GUARDED_LIVE_EXECUTION.md).
+
+`secure-eval-live-shadow` is a separate, permanently hypothetical assurance path. Its default fixture mode evaluates deterministic synthetic accounts and replayable public-market fixtures through the shared guarded-live preflight, approval, manifest, risk, reservation, and PostgreSQL audit contracts. Public-network mode is explicit, bounded, unauthenticated, and limited to exactly two OKX BTC-USDT Spot public GETs. The production source always constructs its own sealed `UrlLibHttpTransport`; offline fake transports remain confined to a `fixture_protocol_test` request-contract harness and cannot create public-network authority. Source-instance-bound provenance is persisted inside the decision/summary hash chain. One canonical validator rechecks every existing, replayed, loaded, or inspected bundle and fails closed on committed-row tampering without repair. Verifier v4 executes the seven distinct concurrency semantics rather than repeating one idempotency pattern. Persistent runs accept only literal loopback and disposable `secure_eval_phase8b_shadow_<suffix>` PostgreSQL 16 targets, with libpq-managed authentication and no password CLI argument. The checked public artifact reports both PostgreSQL verification and public smoke as not executed and remains pending independent audit. The shadow dependency graph has no production broker, submit, cancel, credentials, authenticated endpoints, or operator-database authority. See [Phase 8B Shadow Assurance](docs/PHASE8B_SHADOW_ASSURANCE.md).
