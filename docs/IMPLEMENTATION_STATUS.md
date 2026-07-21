@@ -9,7 +9,7 @@ Every future functional PR must update both files in the same change:
 
 Completed work must be listed under `Completed`. Everything not done must remain under `Todo`.
 
-Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarded-live dry-run/read-only runtime, the Phase 8B authenticated read-only proof implementation, and the dedicated Phase 8B local operator bootstrap implementation are independently audited and accepted. The public-data/synthetic-account Phase 8B shadow-assurance implementation candidate is pending independent audit. The real authenticated proof and operator bootstrap remain unexecuted and real-proof authorization remains NO. Phase 8 remains `in_progress`, Phase 8C is not started, Phase 9 remains todo, and production submit/cancel remain disabled and unreachable.
+Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarded-live dry-run/read-only runtime, the Phase 8B authenticated read-only proof implementation, the dedicated Phase 8B local operator bootstrap implementation, and the public-data/synthetic-account Phase 8B shadow-assurance implementation are independently audited and accepted. The real authenticated proof and operator bootstrap remain unexecuted and real-proof authorization remains NO. Phase 8 remains `in_progress`, Phase 8C is not started, Phase 9 remains todo, and production submit/cancel remain disabled and unreachable.
 
 ## Non-Negotiable Constraints
 - PostgreSQL is the only authoritative storage layer.
@@ -356,7 +356,7 @@ Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarde
 - [x] Independently audit and accept the dedicated Phase 8B local operator bootstrap with audit conclusion PASS: PR `#7` candidate head `134b22cacd88dc0488f3f9546ac7a9e98b50cd03` merged as `448d5201cc2db096e7415ecefd7ab807c45eaa00`; final-main Actions run `29557019429` passed Ubuntu Python 3.11 job `87811218674`, Ubuntu Python 3.12 job `87811218652`, Ubuntu Python 3.13 job `87811218640`, Windows Python 3.12 job `87811218658`, PostgreSQL 16 integration job `87811218626`, and public/private and runtime boundary job `87811218619`.
 - [x] Verify migrations `0001` through `0026` remain immutable, migration `0026` has canonical SHA-256 `698772fb68c5c4981256682d064c3be641193ab10c8dbf55e1a5b390ca7c504a`, and no migration `0027` exists; this acceptance accessed no credentials, made no OKX request, accessed no real or operator database, and executed no authenticated proof, while production submit/cancel remain disabled and unreachable.
 
-### Phase 8B: public-data shadow assurance (implementation candidate; independent audit pending)
+### Phase 8B: public-data shadow assurance (implementation independently audited and accepted; no operational proof or bootstrap execution)
 
 - [x] Implement a separate fixture-default, socket-free shadow runtime with 27 deterministic synthetic-account cases and 27 replayable public-market cases, plus an explicit bounded unauthenticated OKX BTC-USDT Spot public-data mode.
 - [x] Reuse the guarded-live configuration, standardized signal, preflight, approval, manifest, risk, reservation, repository-identity, and audit contracts while emitting only permanently hypothetical, non-routable shadow intents.
@@ -372,6 +372,7 @@ Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarde
 - [x] Persist complete fixture/public/unavailable provenance and summary hashes inside the authoritative JSONB bundle; apply one canonical SQL/JSON/hash/safety validator during target verification, replay, load, and inspect; and add committed-row, restart, replay, conflict, and provenance-tamper regressions without migration `0027`.
 - [x] Upgrade to verifier v4 with seven distinct executable concurrency semantics whose expected/observed classifications, run IDs, hashes, result hashes, and passed flags are rerun and compared exactly.
 - [x] Preserve source-issued public read counts across downstream runtime, persistence, replay/conflict, and serialization failures with an immutable public-safe operation carrier and CLI regressions that cannot expose private exception text.
+- [x] Independently audit and accept the public-data/synthetic-account Phase 8B shadow-assurance implementation with audit conclusion PASS and 0 blockers: PR `#9` candidate head `3e2849f0cc6262b75cb983a9876e19cf7c5356d9` merged as `376aa35e5b8b77d67b24efca5bbc9fffc95137a5`; accept `docs/evidence/phase8b_shadow_assurance_public.json` payload SHA-256 `666c0e229c9b002a78ee5b235f11eef42fa3d0403b9169c2528c0ba30c8ae0dd` and `phase8b-shadow-assurance-verifier-v4` result SHA-256 `a90b6730d527d42527be697d498c6e8c0fb0793a94bc0c03f84d0a743ad6542a`; final-main Actions run `29865978929` checked out `376aa35e5b8b77d67b24efca5bbc9fffc95137a5` and passed Ubuntu Python 3.11 job `88754184792`, Ubuntu Python 3.12 job `88754184786`, Ubuntu Python 3.13 job `88754184811`, Windows Python 3.12 job `88754184779`, PostgreSQL 16 integration job `88754184783`, and public/private and runtime boundary job `88754184785`; migrations `0001` through `0026` remain immutable with no `0027`; no real public-network smoke, operator bootstrap, or authenticated proof was executed, real-proof authorization remains NO, and production submit/cancel remain disabled and unreachable.
 
 ## Todo
 
@@ -381,7 +382,6 @@ Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarde
 
 
 ### Phase 8: guarded live execution (remaining)
-- [ ] Independently audit the public-data/synthetic-account Phase 8B shadow-assurance implementation candidate and its public evidence before accepting it.
 - [ ] Prepare a separately and explicitly authorized local `secure_eval_phase8b` database bootstrap operation; bootstrap authorization and authenticated-proof authorization must remain distinct, and neither bootstrap nor authenticated proof may run automatically.
 - [ ] Keep real authenticated proof authorization at NO; optionally execute exactly one controlled local authenticated read-only proof with operator-owned environment credentials that are never persisted only after separate exact operator authorization.
 - [ ] Independently review the resulting redacted proof before accepting the operational Phase 8B checkpoint.
