@@ -6,7 +6,7 @@ from hashlib import sha256
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from types import MappingProxyType
-from typing import Callable, Mapping
+from typing import Callable, Mapping, TypeVar
 from secrets import token_hex
 from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -90,6 +90,73 @@ RUNTIME_CRASH_POINTS = frozenset({
 
 class ShadowAuthorityError(PermissionError):
     pass
+
+
+_SHADOW_OPERATION_FAILURE_CODES = MappingProxyType({
+    "provenance_validation": "shadow_public_provenance_failed",
+    "runtime": "shadow_public_runtime_failed",
+    "persistence": "shadow_public_persistence_failed",
+})
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class ShadowOperationFailure(RuntimeError):
+    """Immutable public-safe downstream failure with truthful safety authority."""
+
+    safety_facts: ShadowSafetyFacts
+    data_provenance: ShadowDataProvenance | None
+    failure_stage: str
+    failure_code: str
+
+    def __init__(
+        self,
+        safety_facts: ShadowSafetyFacts,
+        data_provenance: ShadowDataProvenance | None,
+        *,
+        failure_stage: str,
+    ) -> None:
+        failure_code = _SHADOW_OPERATION_FAILURE_CODES.get(failure_stage)
+        if failure_code is None:
+            raise ValueError("unsupported public-safe shadow failure stage")
+        if type(safety_facts) is not ShadowSafetyFacts:
+            raise TypeError("shadow operation failure requires exact safety facts")
+        if data_provenance is not None:
+            if type(data_provenance) is not ShadowDataProvenance:
+                raise TypeError("shadow operation failure provenance type is invalid")
+            if safety_facts.network_read_count != data_provenance.network_read_count:
+                raise ValueError("shadow operation failure facts and provenance disagree")
+        object.__setattr__(self, "safety_facts", safety_facts)
+        object.__setattr__(self, "data_provenance", data_provenance)
+        object.__setattr__(self, "failure_stage", failure_stage)
+        object.__setattr__(self, "failure_code", failure_code)
+        RuntimeError.__init__(self, failure_code)
+
+
+_ShadowOperationResult = TypeVar("_ShadowOperationResult")
+
+
+def _run_public_operation(
+    operation: Callable[[], _ShadowOperationResult],
+    *,
+    safety_facts: ShadowSafetyFacts,
+    data_provenance: ShadowDataProvenance | None,
+    failure_stage: str,
+) -> _ShadowOperationResult:
+    """Discard private exceptions and raise only the immutable public-safe carrier."""
+
+    failure: ShadowOperationFailure | None = None
+    try:
+        return operation()
+    except ShadowOperationFailure:
+        raise
+    except Exception:
+        failure = ShadowOperationFailure(
+            safety_facts,
+            data_provenance,
+            failure_stage=failure_stage,
+        )
+    # Raise outside the handled exception context so no private exception or traceback is chained.
+    raise failure
 
 
 _PUBLIC_ENDPOINT_IDENTITIES = (
@@ -583,7 +650,15 @@ def _validate_public_source_provenance(
         or provenance.actual_send_count != int(market_payload.get("network_read_count", -1))
     ):
         raise ShadowAuthorityError("public shadow provenance token does not bind the payload")
-    durable = ShadowDataProvenance(
+    durable = _durable_public_provenance(provenance)
+    if durable.provenance_hash != provenance.token_hash:
+        raise ShadowAuthorityError("public shadow durable provenance binding is invalid")
+
+
+def _durable_public_provenance(
+    provenance: _PublicSourceProvenance,
+) -> ShadowDataProvenance:
+    return ShadowDataProvenance(
         provenance.classification,
         provenance.endpoint_identities,
         provenance.actual_send_count,
@@ -593,8 +668,6 @@ def _validate_public_source_provenance(
         provenance.failure_kind,
         provenance.token_hash,
     )
-    if durable.provenance_hash != provenance.token_hash:
-        raise ShadowAuthorityError("public shadow durable provenance binding is invalid")
 
 
 _ALLOWED_SOURCE_TYPES = (FixtureShadowMarketSource, OkxPublicShadowMarketSource)
@@ -969,34 +1042,54 @@ class ShadowAssuranceRuntime:
             loaded = exc.load
         if type(loaded) is not _PublicMarketLoad:
             raise ShadowAuthorityError("public source returned an unsealed payload")
-        market = dict(loaded.payload)
-        _validate_public_source_provenance(self.market_source, loaded.provenance, market)
-        failure_blocker = {
-            "timeout": "public_network_timeout",
-            "rate_limit": "public_network_rate_limit",
-            "malformed_json": "malformed_public_response",
-            "connection_failure": "public_network_connection_failure",
-        }.get(market.get("failure_kind"))
-        request = dict(base.request_payload)
-        request["decision_at_utc"] = now.isoformat()
-        scenario = ShadowScenarioSpec(
-            "public_network_okx_btc_usdt",
-            "market",
-            base.account_payload,
-            market,
-            request,
-            "accepted" if failure_blocker is None else "blocked",
-            () if failure_blocker is None else (failure_blocker,),
-            1 if failure_blocker is None else 0,
-            loaded.provenance.actual_send_count,
-            0,
-            "persisted",
+        safety_facts = ShadowSafetyFacts(loaded.provenance.actual_send_count)
+        data_provenance = _run_public_operation(
+            lambda: _durable_public_provenance(loaded.provenance),
+            safety_facts=safety_facts,
+            data_provenance=None,
+            failure_stage="provenance_validation",
         )
-        return self._run_validated_input(
-            scenario,
-            shadow_run_id=shadow_run_id,
-            _source_mode="public",
-            _public_provenance=loaded.provenance,
+
+        def run_downstream() -> ShadowRunSummary:
+            market = dict(loaded.payload)
+            _validate_public_source_provenance(
+                self.market_source, loaded.provenance, market
+            )
+            failure_blocker = {
+                "timeout": "public_network_timeout",
+                "rate_limit": "public_network_rate_limit",
+                "malformed_json": "malformed_public_response",
+                "connection_failure": "public_network_connection_failure",
+            }.get(market.get("failure_kind"))
+            request = dict(base.request_payload)
+            request["decision_at_utc"] = now.isoformat()
+            scenario = ShadowScenarioSpec(
+                "public_network_okx_btc_usdt",
+                "market",
+                base.account_payload,
+                market,
+                request,
+                "accepted" if failure_blocker is None else "blocked",
+                () if failure_blocker is None else (failure_blocker,),
+                1 if failure_blocker is None else 0,
+                loaded.provenance.actual_send_count,
+                0,
+                "persisted",
+            )
+            return self._run_validated_input(
+                scenario,
+                shadow_run_id=shadow_run_id,
+                _source_mode="public",
+                _public_provenance=loaded.provenance,
+                _authoritative_safety_facts=safety_facts,
+                _authoritative_data_provenance=data_provenance,
+            )
+
+        return _run_public_operation(
+            run_downstream,
+            safety_facts=safety_facts,
+            data_provenance=data_provenance,
+            failure_stage="runtime",
         )
 
     def _run_validated_input(
@@ -1008,6 +1101,8 @@ class ShadowAssuranceRuntime:
         crash_at: str | None = None,
         _source_mode: str,
         _public_provenance: _PublicSourceProvenance | None,
+        _authoritative_safety_facts: ShadowSafetyFacts | None = None,
+        _authoritative_data_provenance: ShadowDataProvenance | None = None,
     ) -> ShadowRunSummary:
         if type(scenario) is not ShadowScenarioSpec:
             raise ShadowAuthorityError("shadow input must use the exact scenario type")
@@ -1019,6 +1114,8 @@ class ShadowAssuranceRuntime:
                 or classification != "fixture"
                 or reads != 0
                 or _public_provenance is not None
+                or _authoritative_safety_facts is not None
+                or _authoritative_data_provenance is not None
                 or "public_source_hashes" in scenario.market_payload
             ):
                 raise ShadowAuthorityError(
@@ -1028,6 +1125,8 @@ class ShadowAssuranceRuntime:
             if (
                 type(self.market_source) is not OkxPublicShadowMarketSource
                 or _public_provenance is None
+                or type(_authoritative_safety_facts) is not ShadowSafetyFacts
+                or type(_authoritative_data_provenance) is not ShadowDataProvenance
             ):
                 raise ShadowAuthorityError("public execution requires source-produced provenance")
             _validate_public_source_provenance(
@@ -1037,20 +1136,13 @@ class ShadowAssuranceRuntime:
             raise ShadowAuthorityError("unknown shadow source mode")
         if crash_at is not None and crash_at not in RUNTIME_CRASH_POINTS:
             raise ValueError("unknown Phase 8B shadow crash point")
-        data_provenance = (
-            ShadowDataProvenance.fixture()
-            if _public_provenance is None
-            else ShadowDataProvenance(
-                _public_provenance.classification,
-                _public_provenance.endpoint_identities,
-                _public_provenance.actual_send_count,
-                _public_provenance.response_source_hashes,
-                _public_provenance.source_instance_id,
-                _public_provenance.payload_hash,
-                _public_provenance.failure_kind,
-                _public_provenance.token_hash,
-            )
-        )
+        if _public_provenance is None:
+            data_provenance = ShadowDataProvenance.fixture()
+        else:
+            expected_provenance = _durable_public_provenance(_public_provenance)
+            if _authoritative_data_provenance != expected_provenance:
+                raise ShadowAuthorityError("authoritative public provenance changed downstream")
+            data_provenance = _authoritative_data_provenance
         identity = self.identity_resolver()
         repository_sha = identity.observed_commit_sha
         raw_account_hash = sha256_payload(dict(scenario.account_payload))
@@ -1088,7 +1180,16 @@ class ShadowAssuranceRuntime:
             market_blockers + account_blockers + request_blockers
         ))
         network_reads = int(scenario.market_payload.get("network_read_count", 0))
-        safety = ShadowSafetyFacts(network_reads)
+        safety = (
+            ShadowSafetyFacts(network_reads)
+            if _authoritative_safety_facts is None
+            else _authoritative_safety_facts
+        )
+        if (
+            safety.network_read_count != network_reads
+            or safety.network_read_count != data_provenance.network_read_count
+        ):
+            raise ShadowAuthorityError("authoritative public safety facts changed downstream")
         run_id = shadow_run_id or shadow_uuid("run", {
             "scenario": scenario.scenario_id,
             "input": scenario.input_hash,
@@ -1456,22 +1557,32 @@ class ShadowAssuranceRuntime:
         *,
         crash_at: str | None,
     ) -> ShadowRunSummary:
-        if crash_at == "before_decision_persist":
-            raise ShadowInjectedCrash(crash_at)
-        replayed = self.repository.persist_bundle(decision, crash_at=crash_at)
-        return ShadowRunSummary(
-            decision.shadow_run_id,
-            decision.scenario_id,
-            decision.input_hash,
-            decision.decision_hash,
-            decision.manifest_hash,
-            decision.accepted,
-            decision.blockers,
-            int(decision.shadow_intent is not None),
-            "idempotent_replay" if replayed else "persisted",
-            replayed,
-            decision.safety_facts,
-            decision.data_provenance,
+        def persist_and_build_summary() -> ShadowRunSummary:
+            if crash_at == "before_decision_persist":
+                raise ShadowInjectedCrash(crash_at)
+            replayed = self.repository.persist_bundle(decision, crash_at=crash_at)
+            return ShadowRunSummary(
+                decision.shadow_run_id,
+                decision.scenario_id,
+                decision.input_hash,
+                decision.decision_hash,
+                decision.manifest_hash,
+                decision.accepted,
+                decision.blockers,
+                int(decision.shadow_intent is not None),
+                "idempotent_replay" if replayed else "persisted",
+                replayed,
+                decision.safety_facts,
+                decision.data_provenance,
+            )
+
+        if decision.data_provenance.classification == "fixture":
+            return persist_and_build_summary()
+        return _run_public_operation(
+            persist_and_build_summary,
+            safety_facts=decision.safety_facts,
+            data_provenance=decision.data_provenance,
+            failure_stage="persistence",
         )
 
 
@@ -1481,5 +1592,6 @@ __all__ = [
     "RUNTIME_CRASH_POINTS",
     "ShadowAssuranceRuntime",
     "ShadowAuthorityError",
+    "ShadowOperationFailure",
     "ShadowPublicDataFailure",
 ]

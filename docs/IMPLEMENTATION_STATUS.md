@@ -371,6 +371,7 @@ Current phase: `phase_8_guarded_live_execution` (`in_progress`). Phase 8A guarde
 - [x] Remove the production public-source test transport factory, seal the exact internally constructed `UrlLibHttpTransport`, bind provenance to an internally generated source-instance identity/capability, and keep fake transports confined to a non-authoritative `fixture_protocol_test` harness.
 - [x] Persist complete fixture/public/unavailable provenance and summary hashes inside the authoritative JSONB bundle; apply one canonical SQL/JSON/hash/safety validator during target verification, replay, load, and inspect; and add committed-row, restart, replay, conflict, and provenance-tamper regressions without migration `0027`.
 - [x] Upgrade to verifier v4 with seven distinct executable concurrency semantics whose expected/observed classifications, run IDs, hashes, result hashes, and passed flags are rerun and compared exactly.
+- [x] Preserve source-issued public read counts across downstream runtime, persistence, replay/conflict, and serialization failures with an immutable public-safe operation carrier and CLI regressions that cannot expose private exception text.
 
 ## Todo
 

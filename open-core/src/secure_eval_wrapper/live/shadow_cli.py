@@ -19,6 +19,7 @@ from .shadow_runtime import (
     FixtureShadowMarketSource,
     OkxPublicShadowMarketSource,
     ShadowAssuranceRuntime,
+    ShadowOperationFailure,
 )
 
 
@@ -170,7 +171,14 @@ def run_main(args) -> int:
             summary = runtime.run_fixture(args.fixture)
         emitted = _emit(summary.public_payload(), serialization_facts=summary.safety_facts)
         return 0 if emitted and summary.accepted else 2
+    except ShadowOperationFailure as exc:
+        facts = exc.safety_facts
+        payload = _blocked_payload(exc.failure_code, facts)
+        payload["failure_stage"] = exc.failure_stage
+        _emit(payload, serialization_facts=facts)
+        return 2
     except Exception:
+        # Generic failures are limited to pre-provenance/pre-send setup boundaries.
         facts = _source_facts(source)
         _emit(_blocked_payload("shadow_runtime_failed_closed", facts), serialization_facts=facts)
         return 2
